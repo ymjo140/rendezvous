@@ -20,41 +20,56 @@ from constants import (
     GEMINI_API_KEY, PURPOSE_CONFIG, TAG_KEYWORD_EXPANSIONS, PURPOSE_DURATIONS
 )
 
-# AI 및 데이터 제공자 설정
 genai.configure(api_key=GEMINI_API_KEY)
 data_provider = RealDataProvider(NAVER_SEARCH_ID, NAVER_SEARCH_SECRET, NAVER_MAP_ID, NAVER_MAP_SECRET)
 flow_engine = agora_algo.AdvancedRecommender([], []) 
 
 router = APIRouter()
 
-# =========================================================
-# [Helper Functions]
-# =========================================================
+# --- Helper Functions ---
 
-# 🌟 [핵심 수정] 태그 선택 시 '맛집' 등 일반 키워드 완전 배제
+def save_place_to_db(db: Session, poi_list: List[Any]):
+    for p in poi_list:
+        existing = db.query(models.Place).filter(models.Place.name == p.name).first()
+        if not existing:
+            new_place = models.Place(
+                name=p.name, category=p.category, tags=p.tags,
+                lat=float(p.location[0]), lng=float(p.location[1]),
+                wemeet_rating=p.avg_rating
+            )
+            db.add(new_place)
+    try: db.commit()
+    except: db.rollback()
+
+# 🌟 [핵심 수정] 필터링 로직 (엄격 모드)
 def expand_tags_to_keywords(purpose: str, user_tags: List[str]) -> List[str]:
     keywords = []
     
-    # 1. 사용자가 태그를 선택한 경우 (엄격 모드)
+    # 1. 태그가 선택된 경우 -> 오직 태그 관련 키워드만 사용 (맛집 섞기 금지!)
     if user_tags:
         for tag in user_tags:
-            # 사전에 정의된 확장 키워드 (예: 양식 -> 파스타, 스테이크)
             if tag in TAG_KEYWORD_EXPANSIONS:
-                expanded = TAG_KEYWORD_EXPANSIONS[tag]
-                # 랜덤 샘플링하지 않고, 가능한 모든 세부 키워드를 포함하여 정확도 높임
-                # (너무 많으면 5개 정도로 제한)
-                keywords.extend(expanded[:5])
+                # 확장 키워드 (예: 일식 -> 스시, 라멘...)
+                keywords.extend(TAG_KEYWORD_EXPANSIONS[tag])
             
-            # 원본 태그도 검색어에 포함 (예: "강남역 양식")
+            # 원본 태그도 포함 (예: 일식)
             keywords.append(tag)
         
-        # 🚨 여기서 바로 반환! (아래의 기본 키워드가 섞이지 않도록 함)
+        # 중복 제거 후 즉시 리턴 (밑으로 안 내려감!)
         return list(dict.fromkeys(keywords))
     
-    # 2. 태그가 없는 경우 (기본 모드)
-    # 이때만 목적에 따른 기본 키워드(맛집, 술집 등)를 사용
-    base_keywords = PURPOSE_CONFIG.get(purpose, {}).get("keywords", ["맛집"])
-    keywords.extend(base_keywords)
+    # 2. 태그가 없는 경우 -> 목적에 따른 기본 키워드 사용
+    if "비즈니스" in purpose:
+        keywords = ["룸식당", "조용한카페", "회의실"]
+    elif "스터디" in purpose:
+        keywords = ["스터디카페", "북카페", "조용한카페"]
+    elif "카페" in purpose:
+        keywords = ["카페", "디저트", "베이커리"]
+    elif "술" in purpose:
+        keywords = ["술집", "이자카야", "요리주점"]
+    else:
+        # 식사/데이트 등
+        keywords = ["맛집", "핫플", "가볼만한곳"]
     
     return list(dict.fromkeys(keywords))
 
@@ -87,49 +102,24 @@ def compute_availability_slots(user_ids: List[int], days_to_check: int, db: Sess
             for m in [0, 30]:
                 start_check = datetime.combine(curr_date, time(h, m))
                 if start_check < datetime.now(): continue
-                
-                check_str = start_check.strftime("%Y-%m-%d %H:%M")
-                is_free = True
-                needed_blocks = int(required_duration * 2)
-                temp_curr = start_check
-                
-                for _ in range(needed_blocks):
-                    if temp_curr.strftime("%Y-%m-%d %H:%M") in booked_slots:
-                        is_free = False
-                        break
-                    temp_curr += timedelta(minutes=30)
-                
-                if is_free:
-                    avail.append(check_str)
+                if start_check.strftime("%Y-%m-%d %H:%M") not in booked_slots:
+                     avail.append(start_check.strftime("%Y-%m-%d %H:%M"))
         curr_date += timedelta(days=1)
     return avail
 
-# =========================================================
-# [Request Models]
-# =========================================================
-
+# --- Request Models ---
 class RecommendRequest(BaseModel):
-    users: List[Any] = []
-    purpose: str = "식사"
-    location_name: str = ""
-    friend_location_manual: Optional[str] = None 
-    manual_locations: List[str] = [] 
-    user_selected_tags: List[str] = []
-    current_lat: float = 37.566
-    current_lng: float = 126.978
-    transport_mode: str = "subway"
-    room_id: Optional[str] = None
-
+    users: List[Any] = []; purpose: str = "식사"; location_name: str = ""
+    friend_location_manual: Optional[str] = None; manual_locations: List[str] = [] 
+    user_selected_tags: List[str] = []; current_lat: float = 37.566
+    current_lng: float = 126.978; transport_mode: str = "subway"; room_id: Optional[str] = None
 class NlpRequest(BaseModel): text: str
 class ParticipantSchema(BaseModel): id: int; name: str; lat: float; lng: float; transport: str = "subway"; history_poi_ids: List[int] = []
 class MeetingFlowRequest(BaseModel): room_id: Optional[str] = None; participants: List[ParticipantSchema] = []; purpose: str = "식사"; user_tags: List[str] = []; existing_midpoints: Optional[List[Dict[str, Any]]] = None; days_to_check: int = 7; manual_locations: List[str] = []
 class EventSchema(BaseModel): id: Optional[str] = None; user_id: int; title: str; date: str; time: str; duration_hours: float = 1.5; location_name: Optional[str] = None; purpose: str; model_config = ConfigDict(from_attributes=True)
 class AvailabilityRequest(BaseModel): user_ids: List[int]; days_to_check: int = 7
 
-# =========================================================
-# [Logic]
-# =========================================================
-
+# --- Logic ---
 FALLBACK_COORDINATES = {
     "강남": (37.4980, 127.0276), "역삼": (37.5006, 127.0364), "홍대": (37.5575, 126.9244), "합정": (37.5489, 126.9166),
     "건대": (37.5407, 127.0702), "성수": (37.5445, 127.0560), "을지로": (37.5662, 126.9926), "종로": (37.5716, 126.9918),
@@ -144,28 +134,6 @@ def get_fuzzy_coordinate(place_name: str):
         if key in place_name: return coords
     return 0.0, 0.0
 
-def get_or_create_place(db: Session, poi_data: dict):
-    """장소 데이터를 우리 DB에 저장하거나 가져옴"""
-    existing = db.query(models.Place).filter(models.Place.name == poi_data['name']).first()
-    if existing:
-        return existing
-    
-    new_place = models.Place(
-        name=poi_data['name'],
-        category=poi_data['category'],
-        tags=poi_data['tags'],
-        lat=float(poi_data['location'][0]),
-        lng=float(poi_data['location'][1]),
-        wemeet_rating=poi_data.get('avg_rating', 0.0)
-    )
-    db.add(new_place)
-    try:
-        db.commit()
-        db.refresh(new_place)
-    except:
-        db.rollback()
-    return new_place
-
 def run_general_search(req: RecommendRequest, db: Session):
     search_query = req.location_name
     if not search_query or search_query in ["내 위치", "중간지점", ""]:
@@ -179,14 +147,12 @@ def run_general_search(req: RecommendRequest, db: Session):
         pois = data_provider.search_places_all_queries(keywords, search_query, lat, lng, allowed_types=None)
         
         # DB 저장
-        for p in pois:
-            get_or_create_place(db, {
-                "name": p.name, "category": p.category, "tags": p.tags, "location": p.location, "avg_rating": p.avg_rating
-            })
+        save_place_to_db(db, pois)
         
         return [{ "region_name": search_query, "lat": lat, "lng": lng, "transit_info": {"avg_time": 0, "details": []}, "places": _format_pois(pois) }]
     else:
         pois = data_provider.search_places_all_queries([search_query], "", req.current_lat, req.current_lng, allowed_types=None)
+        save_place_to_db(db, pois)
         return [{ "region_name": "검색 결과", "lat": req.current_lat, "lng": req.current_lng, "transit_info": {"avg_time": 0, "details": []}, "places": _format_pois(pois) }]
 
 def run_group_recommendation(req: RecommendRequest, db: Session):
@@ -225,15 +191,16 @@ def run_group_recommendation(req: RecommendRequest, db: Session):
             regions.extend(TransportEngine.find_best_midpoints(participants)[:2])
         except: pass
     
+    # 카테고리 필터링 (태그 기반)
     config = PURPOSE_CONFIG.get(req.purpose, PURPOSE_CONFIG["식사"])
     allowed_types = config.get("allowed", ["restaurant"])
-    
     user_tags_str = str(req.user_selected_tags)
+    
     if "비즈니스" in req.purpose:
         if any(x in user_tags_str for x in ["회의", "워크샵", "스터디", "공유오피스"]): allowed_types = ["workspace"]
         elif any(x in user_tags_str for x in ["식사", "접대", "회식"]): allowed_types = ["restaurant", "fine_dining"]
         else: allowed_types = ["restaurant", "cafe", "workspace"]
-
+    
     final_keywords = expand_tags_to_keywords(req.purpose, req.user_selected_tags)
     
     final_response = []
@@ -244,12 +211,8 @@ def run_group_recommendation(req: RecommendRequest, db: Session):
 
             pois = data_provider.search_places_all_queries(final_keywords, r_name, region.get("lat"), region.get("lng"), allowed_types=allowed_types)
             
-            # 🌟 검색 결과 DB 자산화
-            for p in pois:
-                get_or_create_place(db, {
-                    "name": p.name, "category": p.category, "tags": p.tags, "location": p.location, "avg_rating": p.avg_rating
-                })
-
+            save_place_to_db(db, pois)
+            
             algo_users = [agora_algo.UserProfile(id=0, preferences={}, history=[]) for _ in range(len(participants))]
             engine = agora_algo.AdvancedRecommender(algo_users, pois)
             results = engine.recommend(req.purpose, np.array([region.get("lat"), region.get("lng")]), req.user_selected_tags)
@@ -327,11 +290,7 @@ class MeetingFlowEngine:
             algo_users = [agora_algo.UserProfile(id=p.get('id',0), preferences={}, history=[]) for p in part_dicts]
             pois = self.provider.search_places_all_queries(final_keywords, r_name, region.get("lat"), region.get("lng"), allowed_types=allowed_types)
             
-            # DB 자산화
-            for p in pois:
-                get_or_create_place(db, {
-                    "name": p.name, "category": p.category, "tags": p.tags, "location": p.location, "avg_rating": p.avg_rating
-                })
+            save_place_to_db(db, pois)
 
             try:
                 engine = agora_algo.AdvancedRecommender(algo_users, pois)
@@ -422,7 +381,8 @@ def update_event(event_id: str, updated: EventSchema, db: Session = Depends(get_
 @router.delete("/api/events/{event_id}")
 def delete_event(event_id: str, db: Session = Depends(get_db)):
     ev = db.query(models.Event).filter(models.Event.id == event_id).first()
-    if not ev: raise HTTPException(status_code=404, detail="Not found"); db.delete(ev); db.commit(); return {"detail": "Deleted"}
+    if not ev: raise HTTPException(status_code=404, detail="Not found")
+    db.delete(ev); db.commit(); return {"detail": "Deleted"}
 @router.post("/api/group-availability")
 def group_availability(req: AvailabilityRequest, db: Session = Depends(get_db)):
     avail = compute_availability_slots(req.user_ids, req.days_to_check, db)
