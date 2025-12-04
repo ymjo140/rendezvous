@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate, Sparkles } from "lucide-react"
+import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,7 +15,7 @@ import { Slider } from "@/components/ui/slider"
 
 declare global { interface Window { naver: any; } }
 
-// 🌟 [수정됨] AI 페르소나 4인방 (구조를 지도 로직에 맞게 통일)
+// AI 페르소나 4인방 (지도 로직에 맞게 수정됨)
 const AI_PERSONAS = [
   { 
       id: 2, name: "김직장 (강남)", locationName: "강남역", 
@@ -99,7 +99,8 @@ const MAP_CATEGORIES = ["전체", "맛집", "카페", "술집", "편의점", "�
 export function HomeTab() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("")
-  const [myLocationInput, setMyLocationInput] = useState("") 
+  const [myLocationInput, setMyLocationInput] = useState("위치 확인 중...") 
+  
   const [manualInputs, setManualInputs] = useState<string[]>([""]); 
   const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
   const [includeMe, setIncludeMe] = useState(true);
@@ -137,6 +138,7 @@ export function HomeTab() {
   const myMarkerRef = useRef<any>(null)
   const friendMarkersRef = useRef<any[]>([])
 
+  // 1. 내 정보 및 GPS
   useEffect(() => {
     const fetchMyInfo = async () => {
         const token = localStorage.getItem("token");
@@ -148,27 +150,38 @@ export function HomeTab() {
         try {
             const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", { headers: { "Authorization": `Bearer ${token}` } });
             if (res.ok) {
-                const user = await res.json();
+                const user: any = await res.json();
                 setMyProfile({ ...user, locationName: "현위치" });
-                setMyLocationInput("안암 (현위치)");
+                setMyLocationInput("📍 현위치 (GPS)");
             }
         } catch (e) { console.error(e); }
     }
     fetchMyInfo();
+
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const { latitude, longitude } = pos.coords;
+                setMyProfile((prev: any) => prev ? { ...prev, location: { lat: latitude, lng: longitude } } : { location: { lat: latitude, lng: longitude } });
+            },
+            () => setMyLocationInput("서울 시청 (기본)")
+        );
+    }
   }, []);
 
+  // 2. 지도 및 마커
   useEffect(() => {
     const initMap = () => {
       if (typeof window.naver === 'undefined' || !window.naver.maps) { setTimeout(initMap, 100); return; }
       if (!mapRef.current) { 
-        const center = myProfile ? new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng) : new window.naver.maps.LatLng(37.566, 126.978);
-        mapRef.current = new window.naver.maps.Map("map", { center: center, zoom: 14 }); 
+        const centerLat = myProfile?.location?.lat || 37.5665;
+        const centerLng = myProfile?.location?.lng || 126.9780;
+        mapRef.current = new window.naver.maps.Map("map", { center: new window.naver.maps.LatLng(centerLat, centerLng), zoom: 14 }); 
       }
 
       const createAvatarMarker = (user: any, isMe: boolean) => {
           const equipped = user.avatar?.equipped || {};
           const getUrl = (id: string) => id ? `/assets/avatar/${id}.png` : null;
-          
           const body = getUrl(equipped.body || "body_basic");
           const eyes = getUrl(equipped.eyes || "eyes_normal");
           const brows = getUrl(equipped.eyebrows || "brows_basic");
@@ -195,7 +208,6 @@ export function HomeTab() {
                 <div style="position: absolute; bottom: -10px; background: ${isMe ? '#3b82f6' : 'white'}; color: ${isMe ? 'white' : 'black'}; padding: 1px 6px; border-radius: 10px; border: 1px solid #3b82f6; font-size: 10px; font-weight: bold; white-space: nowrap; z-index: 20;">${user.name.split('(')[0]}</div>
             </div>
           `;
-
           return new window.naver.maps.Marker({
               position: new window.naver.maps.LatLng(user.location.lat, user.location.lng),
               map: mapRef.current,
@@ -208,7 +220,7 @@ export function HomeTab() {
           if (myMarkerRef.current) myMarkerRef.current.setMap(null);
           if (includeMe) {
             myMarkerRef.current = createAvatarMarker(myProfile, true);
-            mapRef.current.setCenter(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng));
+            if (!currentDisplayRegion) mapRef.current.setCenter(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng));
           }
       }
 
@@ -241,8 +253,6 @@ export function HomeTab() {
 
   const fetchRecommendations = async (users: any[], locationNameOverride?: string) => {
     const validUsers = users.filter(u => u !== null && u !== undefined);
-    if (validUsers.length === 0) return;
-
     setLoading(true);
     try {
       const allTags = Object.values(selectedFilters).flat();
@@ -251,19 +261,15 @@ export function HomeTab() {
       const response = await fetch('https://wemeet-backend-xqlo.onrender.com/api/recommend', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          users: usersToSend,
-          purpose: selectedPurpose,
-          location_name: locationNameOverride || "중간지점",
-          manual_locations: manualInputs.filter(txt => txt && txt.trim() !== ""),
-          user_selected_tags: allTags
+          users: usersToSend, purpose: selectedPurpose, location_name: locationNameOverride || "중간지점",
+          manual_locations: manualInputs.filter(txt => txt && txt.trim() !== ""), user_selected_tags: allTags
         })
       })
 
       if (response.ok) {
-          const data = await response.json();
+          const data = await response.json() as any[];
           setRecommendedRegions(data);
-          setActiveTabIdx(0);
-          setIsExpanded(false);
+          setActiveTabIdx(0); setIsExpanded(false);
           if (data.length > 0) setCurrentDisplayRegion(data[0]);
       }
     } catch (e) { console.error(e) } finally { setLoading(false) }
@@ -273,87 +279,63 @@ export function HomeTab() {
       const token = localStorage.getItem("token");
       try {
           const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/rooms", { headers: { "Authorization": `Bearer ${token}` } });
-          if (res.ok) setMyRooms(await res.json());
+          if (res.ok) setMyRooms(await res.json() as any[]);
       } catch (e) {}
   };
 
   const handlePlaceClick = async (place: any) => {
-      setSelectedPlace(place);
-      setIsDetailOpen(true);
-      setPlaceReviews([]);
-      setIsReviewing(false);
-      if (myProfile?.favorites?.some((f: any) => f.id === place.id)) setIsFavorite(true);
-      else setIsFavorite(false);
-      try {
-          const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/reviews/${place.name}`);
-          if (res.ok) setPlaceReviews(await res.json());
-      } catch (e) { console.error(e); }
+      setSelectedPlace(place); setIsDetailOpen(true); setPlaceReviews([]); setIsReviewing(false);
+      if (myProfile?.favorites?.some((f: any) => f.id === place.id)) setIsFavorite(true); else setIsFavorite(false);
+      try { const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/reviews/${place.name}`); if (res.ok) setPlaceReviews(await res.json() as any[]); } catch (e) { console.error(e); }
   };
 
   const handleSubmitReview = async () => {
       if (!selectedPlace) return;
       const token = localStorage.getItem("token");
-      if (!token) { if(confirm("리뷰를 작성하려면 로그인이 필요합니다. 이동할까요?")) router.push("/login"); return; }
+      if (!token) { if(confirm("리뷰 작성은 로그인이 필요합니다.")) router.push("/login"); return; }
       const payload = {
-          place_name: selectedPlace.name,
-          rating: 0, 
-          score_taste: reviewScores.taste,
-          score_service: reviewScores.service,
-          score_price: reviewScores.price,
-          score_vibe: reviewScores.vibe,
-          comment: reviewText,
-          tags: selectedPlace.tags
+          place_name: selectedPlace.name, rating: 0, 
+          score_taste: reviewScores.taste, score_service: reviewScores.service, score_price: reviewScores.price, score_vibe: reviewScores.vibe,
+          comment: reviewText, tags: selectedPlace.tags
       };
       try {
           const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/reviews", {
-              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-              body: JSON.stringify(payload)
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify(payload)
           });
-          if (res.ok) {
-              alert("리뷰가 등록되었습니다!");
-              setIsReviewing(false);
-              setReviewScores({ taste: 3, service: 3, price: 3, vibe: 3 });
-              setReviewText("");
-              handlePlaceClick(selectedPlace); 
-          }
+          if (res.ok) { alert("리뷰 등록!"); setIsReviewing(false); setReviewScores({ taste: 3, service: 3, price: 3, vibe: 3 }); setReviewText(""); handlePlaceClick(selectedPlace); }
       } catch (e) { alert("오류 발생"); }
   };
 
   const handleToggleFavorite = async () => {
       if (!selectedPlace) return;
       const token = localStorage.getItem("token");
-      if (!token) { if(confirm("즐겨찾기를 하려면 로그인이 필요합니다. 이동할까요?")) router.push("/login"); return; }
+      if (!token) { if(confirm("즐겨찾기는 로그인이 필요합니다.")) router.push("/login"); return; }
       try {
           const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/favorites", {
-              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-              body: JSON.stringify({ place_id: selectedPlace.id, place_name: selectedPlace.name })
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ place_id: selectedPlace.id, place_name: selectedPlace.name })
           });
-          if (res.ok) {
-              const data = await res.json();
-              setIsFavorite(data.message === "Added");
-          }
+          if (res.ok) { const data = await res.json() as any; setIsFavorite(data.message === "Added"); }
       } catch (e) { alert("오류 발생"); }
   };
 
   const handleShare = async (roomId: string) => {
       const token = localStorage.getItem("token");
-      if (!token) { if (confirm("로그인이 필요한 기능입니다. 로그인하시겠습니까?")) { router.push("/login"); } return; }
+      if (!token) { if (confirm("공유 기능은 로그인이 필요합니다.")) { router.push("/login"); } return; }
       if (!placeToShare) return;
       try {
           await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/share", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-              body: JSON.stringify({
-                  room_id: roomId,
-                  place_name: placeToShare.name,
-                  place_category: placeToShare.category,
-                  place_tags: placeToShare.tags
-              })
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              body: JSON.stringify({ room_id: roomId, place_name: placeToShare.name, place_category: placeToShare.category, place_tags: placeToShare.tags })
           });
-          alert("채팅방에 공유했습니다!");
-          setIsShareModalOpen(false);
-          setIsDetailOpen(false); 
+          alert("채팅방에 공유 완료!"); setIsShareModalOpen(false); setIsDetailOpen(false); 
       } catch (e) { alert("공유 실패"); }
+  };
+
+  // 🌟 [신규] 카카오톡 초대 (링크 복사)
+  const handleKakaoInvite = () => {
+      const inviteLink = "https://v0-we-meet-app-features.vercel.app";
+      navigator.clipboard.writeText(inviteLink);
+      alert("카카오톡 초대 링크가 복사되었습니다! 친구에게 공유하세요.");
   };
 
   const handleTopSearch = () => { if(searchQuery) fetchRecommendations([myProfile], searchQuery); }
@@ -361,10 +343,7 @@ export function HomeTab() {
   const handleMidpointSearch = () => {
       const participants = (includeMe && myProfile) ? [myProfile, ...selectedFriends] : [...selectedFriends];
       const hasManualInput = manualInputs.some(txt => txt && txt.trim() !== "");
-      if (participants.length === 0 && !hasManualInput) {
-          alert("출발지를 하나 이상 설정해주세요!");
-          return;
-      }
+      if (participants.length === 0 && !hasManualInput) { alert("출발지를 설정해주세요!"); return; }
       fetchRecommendations(participants, "중간지점");
   };
 
@@ -376,39 +355,15 @@ export function HomeTab() {
           return { ...prev, [groupKey]: [...list, value] };
       });
   };
-  
-  const removeTag = (tag: string) => {
-      for (const [key, vals] of Object.entries(selectedFilters)) {
-          if (vals.includes(tag)) toggleFilter(key, tag);
-      }
-  };
+  const removeTag = (tag: string) => { for (const [key, vals] of Object.entries(selectedFilters)) { if (vals.includes(tag)) toggleFilter(key, tag); } };
+  const toggleFriend = (friend: any) => { if (selectedFriends.find(f => f.id === friend.id)) setSelectedFriends(prev => prev.filter(f => f.id !== friend.id)); else setSelectedFriends(prev => [...prev, friend]); };
 
-  const toggleFriend = (friend: any) => {
-      if (selectedFriends.find(f => f.id === friend.id)) setSelectedFriends(prev => prev.filter(f => f.id !== friend.id));
-      else setSelectedFriends(prev => [...prev, friend]);
-  };
-
-  const handleManualInputChange = (idx: number, val: string) => {
-      const newInputs = [...manualInputs]; newInputs[idx] = val; setManualInputs(newInputs);
-  };
+  const handleManualInputChange = (idx: number, val: string) => { const newInputs = [...manualInputs]; newInputs[idx] = val; setManualInputs(newInputs); };
   const addManualInput = () => setManualInputs([...manualInputs, ""]);
-  const removeManualInput = (idx: number) => {
-      if (manualInputs.length > 1) setManualInputs(manualInputs.filter((_, i) => i !== idx));
-      else setManualInputs([""]);
-  };
+  const removeManualInput = (idx: number) => { if (manualInputs.length > 1) setManualInputs(manualInputs.filter((_, i) => i !== idx)); else setManualInputs([""]); };
   const handleTabChange = (idx: number) => { setActiveTabIdx(idx); setCurrentDisplayRegion(recommendedRegions[idx]); setIsExpanded(false); };
-
-  // 🌟 [신규] 현재 위치로 이동 버튼 핸들러
-  const moveToMyLocation = () => {
-    if (myProfile?.location && mapRef.current) {
-        mapRef.current.morph(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng));
-    }
-  }
-
-  const visiblePlaces = currentDisplayRegion 
-      ? (isExpanded ? currentDisplayRegion.places : currentDisplayRegion.places.slice(0, 3)) 
-      : [];
-
+  const moveToMyLocation = () => { if (myProfile?.location && mapRef.current) { mapRef.current.morph(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng)); } }
+  const visiblePlaces = currentDisplayRegion ? (isExpanded ? currentDisplayRegion.places : currentDisplayRegion.places.slice(0, 3)) : [];
   const currentFilters = PURPOSE_FILTERS[selectedPurpose];
 
   return (
@@ -421,39 +376,34 @@ export function HomeTab() {
         </div>
         
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            <Button variant="outline" size="sm" className="h-8 rounded-full border-dashed text-xs flex-shrink-0" onClick={() => setIsFilterOpen(true)}>
-                <Filter className="w-3 h-3 mr-1"/> 필터 설정
-            </Button>
-            <Badge variant="secondary" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-indigo-50 text-indigo-600 border-indigo-100">
-                {currentFilters?.label || selectedPurpose}
-            </Badge>
+            <Button variant="outline" size="sm" className="h-8 rounded-full border-dashed text-xs flex-shrink-0" onClick={() => setIsFilterOpen(true)}><Filter className="w-3 h-3 mr-1"/> 필터 설정</Button>
+            <Badge variant="secondary" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-indigo-50 text-indigo-600 border-indigo-100">{currentFilters?.label || selectedPurpose}</Badge>
             {Object.entries(selectedFilters).flatMap(([k, v]) => v).map(tag => {
-                if (tag === selectedPurpose) return null; 
+                if (tag === selectedPurpose) return null;
+
                 let parentKey = "";
+                
                 if (currentFilters) {
-                    for (const [key, data] of Object.entries(currentFilters.tabs)) {
-                        // @ts-ignore
-                        if (data.options.includes(tag)) parentKey = key;
+                  const tabs = currentFilters.tabs as Record<string, { label: string; options: string[] }>;
+                
+                  for (const [key, data] of Object.entries(tabs)) {
+                    if (data.options.includes(tag)) {
+                      parentKey = key;
+                      break;
                     }
+                  }
                 }
+                
                 if (!parentKey) return null;
-                return (
-                    <Badge key={tag} variant="outline" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-indigo-200 text-indigo-600 bg-white">
-                        {tag} <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeTag(tag)}/>
-                    </Badge>
-                )
+                return (<Badge key={tag} variant="outline" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-indigo-200 text-indigo-600 bg-white">{tag} <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeTag(tag)}/></Badge>)
             })}
         </div>
       </div>
 
       <div className="relative h-64 border-b w-full">
           <div id="map" className="w-full h-full bg-muted"></div>
-          <div className="absolute bottom-3 left-3 bg-white/95 px-3 py-1.5 rounded-full text-xs font-bold shadow-md text-primary border border-primary/20 flex items-center gap-1">
-              📍 {currentDisplayRegion ? currentDisplayRegion.region_name : (myProfile?.locationName || "위치 찾는 중...")}
-          </div>
-          <Button variant="secondary" size="icon" className="absolute bottom-3 right-3 rounded-full shadow-md h-8 w-8 bg-white border" onClick={moveToMyLocation}>
-              <Locate className="w-4 h-4 text-gray-600"/>
-          </Button>
+          <div className="absolute bottom-3 left-3 bg-white/95 px-3 py-1.5 rounded-full text-xs font-bold shadow-md text-primary border border-primary/20 flex items-center gap-1">📍 {currentDisplayRegion ? currentDisplayRegion.region_name : (myProfile?.locationName || "위치 확인 중...")}</div>
+          <Button variant="secondary" size="icon" className="absolute bottom-3 right-3 rounded-full shadow-md h-8 w-8 bg-white border" onClick={moveToMyLocation}><Locate className="w-4 h-4 text-gray-600"/></Button>
       </div>
 
       <div className="px-4 py-5 border-b bg-white">
@@ -463,100 +413,67 @@ export function HomeTab() {
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm">👤</div>
                     <Input className="flex-1 bg-gray-50" value={myLocationInput} readOnly />
-                    <Button variant="ghost" size="icon" onClick={() => setIncludeMe(false)}>
-                        <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-500"/>
-                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => setIncludeMe(false)}><Trash2 className="w-4 h-4 text-gray-400 hover:text-red-500"/></Button>
                 </div>
             ) : null}
-
             {selectedFriends.map(friend => (
                 <div key={friend.id} className="flex items-center gap-2">
                     <Avatar className="w-8 h-8 border"><AvatarFallback>{friend.name[0]}</AvatarFallback></Avatar>
                     <div className="flex-1 relative">
-                        <Input className="bg-white border-blue-200 text-blue-600 font-bold pr-8" value={`${friend.name} (${friend.locationName})`} readOnly />
+                        <Input className="bg-white border-blue-200 text-blue-600 font-bold pr-8" value={`${friend.name} (${friend.locationName || "위치"})`} readOnly />
                         <button onClick={() => toggleFriend(friend)} className="absolute right-2 top-2 text-gray-400 hover:text-red-500"><X className="w-4 h-4"/></button>
                     </div>
                 </div>
             ))}
-
             {manualInputs.map((input, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                     <div className="w-8 h-8 flex items-center justify-center text-gray-400"><MapPin className="w-5 h-5"/></div>
                     <div className="flex-1 relative">
-                        <PlaceAutocomplete 
-                            value={input} 
-                            onChange={(val) => handleManualInputChange(idx, val)} 
-                            placeholder="장소 입력 (예: 강남역)"
-                        />
-                        <Button variant="ghost" size="icon" className="absolute right-0 top-0 h-full" onClick={() => removeManualInput(idx)}>
-                            <Trash2 className="w-4 h-4 text-gray-400"/>
-                        </Button>
+                        <PlaceAutocomplete value={input} onChange={(val) => handleManualInputChange(idx, val)} placeholder="장소 입력 (예: 강남역)"/>
+                        <Button variant="ghost" size="icon" className="absolute right-0 top-0 h-full" onClick={() => removeManualInput(idx)}><Trash2 className="w-4 h-4 text-gray-400"/></Button>
                     </div>
                 </div>
             ))}
         </div>
-
         <div className="grid grid-cols-2 gap-2 mt-3">
-             {!includeMe && (
-                 <Button variant="outline" onClick={() => setIncludeMe(true)} className="col-span-2 border-blue-200 text-blue-600">
-                     <Locate className="w-4 h-4 mr-1"/> 내 위치 다시 추가
-                 </Button>
-             )}
-             <Button variant="outline" onClick={() => setIsFriendModalOpen(true)}><Users className="w-4 h-4 mr-1"/> 👪 AI 페르소나 추가</Button>
+             {!includeMe && (<Button variant="outline" onClick={() => setIncludeMe(true)} className="col-span-2 border-blue-200 text-blue-600"><Locate className="w-4 h-4 mr-1"/> 내 위치 다시 추가</Button>)}
+             <Button variant="outline" onClick={() => setIsFriendModalOpen(true)}><Users className="w-4 h-4 mr-1"/> 👪 친구 추가</Button>
              <Button variant="outline" onClick={addManualInput}><Plus className="w-4 h-4 mr-1"/> 장소 추가</Button>
         </div>
-        
         <Button className="w-full mt-4 h-10 font-bold bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleMidpointSearch}>🚀 중간지점 찾기</Button>
       </div>
 
       <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
           <DialogContent className="sm:max-w-md h-[70vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
               <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b"><DialogTitle>상세 필터 설정</DialogTitle></DialogHeader>
-              <div className="px-4 py-3 bg-gray-50 border-b">
-                  <div className="text-xs font-bold text-gray-500 mb-2">모임의 목적</div>
-                  <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-                      {Object.keys(PURPOSE_FILTERS).map((purposeKey) => (
-                          <Button key={purposeKey} variant={selectedPurpose === purposeKey ? "default" : "outline"} className={`rounded-full h-8 text-xs flex-shrink-0 ${selectedPurpose === purposeKey ? "bg-indigo-600" : "text-gray-600"}`} onClick={() => { setSelectedPurpose(purposeKey); setSelectedFilters({ PURPOSE: [purposeKey], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] }); }}>{PURPOSE_FILTERS[purposeKey].label}</Button>
-                      ))}
-                  </div>
-              </div>
-              <div className="flex-1 flex flex-col bg-white overflow-hidden">
-                  {currentFilters && (
-                    <Tabs defaultValue={Object.keys(currentFilters.tabs)[0]} className="flex-1 flex flex-col">
-                        <div className="px-4 pt-2 border-b">
-                            <TabsList className="w-full grid grid-cols-3 h-auto p-1 bg-gray-100 rounded-lg">{Object.keys(currentFilters.tabs).map((tabKey) => (<TabsTrigger key={tabKey} value={tabKey} className="text-xs py-1.5">{currentFilters.tabs[tabKey].label}</TabsTrigger>))}</TabsList>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4">
-                            {Object.entries(currentFilters.tabs).map(([tabKey, tabData]: any) => (
-                                <TabsContent key={tabKey} value={tabKey} className="mt-0 h-full">
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {tabData.options.map((opt: string) => (
-                                            <Button key={opt} variant={selectedFilters[tabKey]?.includes(opt) ? "default" : "outline"} className={`h-auto py-2 px-1 text-xs break-keep ${selectedFilters[tabKey]?.includes(opt) ? "bg-indigo-100 text-indigo-700 border-indigo-300" : "text-gray-600 border-gray-200"}`} onClick={() => toggleFilter(tabKey, opt)}>{opt}</Button>
-                                        ))}
-                                    </div>
-                                </TabsContent>
-                            ))}
-                        </div>
-                    </Tabs>
-                  )}
-              </div>
+              <div className="px-4 py-3 bg-gray-50 border-b"><div className="text-xs font-bold text-gray-500 mb-2">모임의 목적</div><div className="flex gap-2 overflow-x-auto scrollbar-hide">{Object.keys(PURPOSE_FILTERS).map((purposeKey) => (<Button key={purposeKey} variant={selectedPurpose === purposeKey ? "default" : "outline"} className={`rounded-full h-8 text-xs flex-shrink-0 ${selectedPurpose === purposeKey ? "bg-indigo-600" : "text-gray-600"}`} onClick={() => { setSelectedPurpose(purposeKey); setSelectedFilters({ PURPOSE: [purposeKey], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] }); }}>{PURPOSE_FILTERS[purposeKey].label}</Button>))}</div></div>
+              <div className="flex-1 flex flex-col bg-white overflow-hidden">{currentFilters && (<Tabs defaultValue={Object.keys(currentFilters.tabs)[0]} className="flex-1 flex flex-col"><div className="px-4 pt-2 border-b"><TabsList className="w-full grid grid-cols-3 h-auto p-1 bg-gray-100 rounded-lg">{Object.keys(currentFilters.tabs).map((tabKey) => (<TabsTrigger key={tabKey} value={tabKey} className="text-xs py-1.5">{currentFilters.tabs[tabKey].label}</TabsTrigger>))}</TabsList></div><div className="flex-1 overflow-y-auto p-4">{Object.entries(currentFilters.tabs).map(([tabKey, tabData]: any) => (<TabsContent key={tabKey} value={tabKey} className="mt-0 h-full"><div className="grid grid-cols-3 gap-2">{tabData.options.map((opt: string) => (<Button key={opt} variant={selectedFilters[tabKey]?.includes(opt) ? "default" : "outline"} className={`h-auto py-2 px-1 text-xs break-keep ${selectedFilters[tabKey]?.includes(opt) ? "bg-indigo-100 text-indigo-700 border-indigo-300" : "text-gray-600 border-gray-200"}`} onClick={() => toggleFilter(tabKey, opt)}>{opt}</Button>))}</div></TabsContent>))}</div></Tabs>)}</div>
               <div className="p-4 border-t bg-white"><Button className="w-full bg-indigo-600 hover:bg-indigo-700 font-bold" onClick={() => setIsFilterOpen(false)}>선택 완료 ({Object.values(selectedFilters).flat().length - 1}개)</Button></div>
           </DialogContent>
       </Dialog>
 
+      {/* 🌟 친구 추가 모달 (페르소나 + 카카오톡 초대) */}
       <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}>
           <DialogContent>
-              <DialogHeader><DialogTitle>AI 페르소나 친구 선택</DialogTitle></DialogHeader>
-              <div className="py-2 space-y-2">
-                  {AI_PERSONAS.map(f => (
-                      <div key={f.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer border" onClick={() => toggleFriend(f)}>
-                          <div className="flex items-center gap-3">
-                              <Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar>
-                              <div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName} · {f.desc}</div></div>
+              <DialogHeader><DialogTitle>친구 추가</DialogTitle></DialogHeader>
+              <div className="py-2 space-y-4">
+                  <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-gray-500">AI 페르소나 (테스트용)</h4>
+                      {AI_PERSONAS.map(f => (
+                          <div key={f.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer border" onClick={() => toggleFriend(f)}>
+                              <div className="flex items-center gap-3"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName} · {f.desc}</div></div></div>
+                              {selectedFriends.find(sf => sf.id === f.id) && <Check className="w-5 h-5 text-blue-600"/>}
                           </div>
-                          {selectedFriends.find(sf => sf.id === f.id) && <Check className="w-5 h-5 text-blue-600"/>}
-                      </div>
-                  ))}
+                      ))}
+                  </div>
+                  
+                  {/* 실제 친구 초대 버튼 */}
+                  <div className="pt-2 border-t">
+                      <h4 className="text-xs font-bold text-gray-500 mb-2">실제 친구 초대</h4>
+                      <Button className="w-full bg-[#FEE500] hover:bg-[#FEE500]/90 text-black font-bold gap-2" onClick={handleKakaoInvite}>
+                          <MessageSquare className="w-5 h-5"/> 카카오톡으로 초대하기
+                      </Button>
+                  </div>
               </div>
           </DialogContent>
       </Dialog>
@@ -569,7 +486,7 @@ export function HomeTab() {
                       <Button key={room.id} variant="outline" className="w-full justify-start p-4 h-auto" onClick={() => handleShare(room.id)}>
                           <div className="flex flex-col items-start"><span className="font-bold text-base">💬 {room.name}</span><span className="text-xs text-gray-500">최근 대화: {room.lastMessage}</span></div>
                       </Button>
-                  )) : <div className="text-center text-gray-500 text-sm py-6">참여 중인 채팅방이 없습니다.<br/>커뮤니티 탭에서 모임에 참여해보세요!</div>}
+                  )) : <div className="text-center text-gray-500 text-sm py-6">참여 중인 채팅방이 없습니다.</div>}
               </div>
           </DialogContent>
       </Dialog>
@@ -637,6 +554,7 @@ export function HomeTab() {
   )
 }
 
+// [내부 컴포넌트] 자동완성 입력
 function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder: string }) {
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -645,7 +563,7 @@ function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, on
         const timer = setTimeout(async () => {
             try {
                 const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/places/search?query=${value}`);
-                if (res.ok) { const data = await res.json(); setSuggestions(data); setShowSuggestions(true); }
+                if (res.ok) { const data = await res.json() as any[]; setSuggestions(data); setShowSuggestions(true); }
             } catch {}
         }, 300);
         return () => clearTimeout(timer);

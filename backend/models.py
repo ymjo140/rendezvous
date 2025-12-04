@@ -19,67 +19,59 @@ class ItemCategory(str, enum.Enum):
     PET = "pet"
     FOOTPRINT = "footprint"
 
-# 🌟 [신규] 장소 자산화 (API 결과 캐싱 및 관리)
 class Place(Base):
     __tablename__ = "places"
-    
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    category = Column(String) # restaurant, cafe, workspace ...
+    category = Column(String) 
     address = Column(String)
     lat = Column(Float)
     lng = Column(Float)
-    
-    # 우리 서비스만의 데이터
-    tags = Column(JSON, default=[]) # ["조용한", "가성비", "한식"]
-    wemeet_rating = Column(Float, default=0.0) # 우리 유저들의 평균 평점
-    review_count = Column(Integer, default=0) # 리뷰 수
-    
+    tags = Column(JSON, default=[]) 
+    wemeet_rating = Column(Float, default=0.0) 
+    review_count = Column(Integer, default=0) 
     external_link = Column(String, nullable=True)
 
-# 🌟 [신규] 모임 히스토리 (AI 학습용)
 class MeetingLog(Base):
     __tablename__ = "meeting_logs"
-    
     id = Column(String, primary_key=True, default=generate_uuid)
     community_id = Column(String, nullable=True)
     host_id = Column(Integer, ForeignKey("users.id"))
-    
     place_id = Column(Integer, ForeignKey("places.id"), nullable=True)
     place_name = Column(String) 
-    
     date = Column(String) 
     purpose = Column(String) 
     participants = Column(JSON) 
-    
     is_successful = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class User(Base):
     __tablename__ = "users"
-    
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     name = Column(String, index=True)
     avatar = Column(String)
     manner = Column(Float, default=36.5)
-    
     lat = Column(Float, default=37.566)
     lng = Column(Float, default=126.978)
-    
-    # 🌟 [수정] 정적 설정 + 동적 AI 가중치
     preferences = Column(JSON, default={"tag_weights": {}, "avg_spend": 20000}) 
-    preference_vector = Column(JSON, default={}) # {"한식": 1.5, "조용한": 2.0 ...}
-    
+    preference_vector = Column(JSON, default={}) 
     payment_history = Column(JSON, default=[])
     favorites = Column(JSON, default=[]) 
-
     wallet_balance = Column(Integer, default=3000) 
     avatar_info = relationship("UserAvatar", uselist=False, back_populates="user")
-    
     review_count = Column(Integer, default=0)
     avg_rating_given = Column(Float, default=0.0)
+
+# 🌟 [신규] 친구 관계 테이블
+class Friendship(Base):
+    __tablename__ = "friendships"
+    id = Column(Integer, primary_key=True, index=True)
+    requester_id = Column(Integer, ForeignKey("users.id")) # 요청한 사람
+    receiver_id = Column(Integer, ForeignKey("users.id"))  # 받은 사람
+    status = Column(String, default="pending") # pending(대기), accepted(수락)
+    created_at = Column(DateTime, default=datetime.now)
 
 class AvatarItem(Base):
     __tablename__ = "avatar_items"
@@ -146,8 +138,6 @@ class Event(Base):
     duration_hours = Column(Float, default=1.5)
     location_name = Column(String, nullable=True)
     purpose = Column(String)
-    # 🌟 [신규] 공개 여부 (기본: 공개)
-    is_private = Column(Boolean, default=False)
 
 class Community(Base):
     __tablename__ = "communities"
@@ -168,10 +158,8 @@ class Review(Base):
     __tablename__ = "reviews"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    
-    # 🌟 [수정] 장소 테이블과 연동 (데이터 무결성)
     place_id = Column(Integer, ForeignKey("places.id"), nullable=True)
-    place_name = Column(String) # 기존 호환용
+    place_name = Column(String)
     
     score_taste = Column(Integer, default=3)
     score_service = Column(Integer, default=3)
@@ -181,10 +169,9 @@ class Review(Base):
     rating = Column(Float) 
     calibrated_rating = Column(Float, nullable=True) 
     reason = Column(String, nullable=True)
-
     comment = Column(String, nullable=True)
     tags = Column(JSON) 
     created_at = Column(DateTime, default=datetime.now)
     
     user = relationship("User")
-    place = relationship("Place") # 관계 설정
+    place = relationship("Place")
