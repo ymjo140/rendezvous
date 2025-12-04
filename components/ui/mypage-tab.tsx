@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { MapPin, Settings, Bell, HelpCircle, LogOut, Palette, Coins, ShoppingBag, Heart, Star, MessageSquare } from "lucide-react"
+import { MapPin, Settings, Bell, HelpCircle, LogOut, Palette, Coins, ShoppingBag, Heart, Star, MessageSquare, Pencil, Check, X } from "lucide-react" // 아이콘 추가
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
@@ -13,12 +13,27 @@ import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 
 const CATEGORIES = [
-  { id: "hair", label: "헤어", icon: "💇" }, { id: "eyes", label: "눈", icon: "👀" }, { id: "eyebrows", label: "눈썹", icon: "🤨" },
-  { id: "top", label: "상의", icon: "👕" }, { id: "bottom", label: "하의", icon: "👖" }, { id: "shoes", label: "신발", icon: "👟" }, { id: "body", label: "피부", icon: "🎨" },
+  { id: "hair", label: "헤어", icon: "💇" },
+  { id: "eyes", label: "눈", icon: "👀" },
+  { id: "eyebrows", label: "눈썹", icon: "🤨" },
+  { id: "top", label: "상의", icon: "👕" },
+  { id: "bottom", label: "하의", icon: "👖" },
+  { id: "shoes", label: "신발", icon: "👟" },
+  { id: "body", label: "피부", icon: "🎨" },
 ];
 
 interface AvatarItem { id: string; category: string; name: string; image_url: string; price_coin: number; }
-interface UserInfo { id: number; name: string; email: string; wallet_balance: number; avatar: { level: number; equipped: Record<string, string | null>; inventory: string[]; }; favorites: { id: number; name: string }[]; reviews: any[]; }
+interface UserInfo { 
+    id: number; name: string; email: string; wallet_balance: number; 
+    avatar: { level: number; equipped: Record<string, string | null>; inventory: string[]; }; 
+    favorites: { id: number; name: string }[]; 
+    reviews: any[]; 
+}
+
+const VISIT_HISTORY = [
+    { id: 101, name: "감성타코 강남점", tags: ["멕시칸", "맛집", "시끌벅적"] },
+    { id: 102, name: "블루보틀 성수", tags: ["카페", "감성", "웨이팅"] },
+];
 
 export function MyPageTab() {
   const router = useRouter();
@@ -36,6 +51,10 @@ export function MyPageTab() {
   const [scores, setScores] = useState({ taste: 3, service: 3, price: 3, vibe: 3 });
   const [reviewText, setReviewText] = useState("");
 
+  // 🌟 [신규] 닉네임 변경 상태
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newName, setNewName] = useState("");
+
   const fetchMyInfo = async () => {
       const token = localStorage.getItem("token");
       if (!token) { setIsGuest(true); return; }
@@ -44,6 +63,7 @@ export function MyPageTab() {
           if (res.ok) {
               const data = await res.json();
               setUser(data);
+              setNewName(data.name); // 초기값 설정
               if (data.avatar) setPreviewEquipped(data.avatar.equipped || {});
           } else { setIsGuest(true); }
       } catch (e) { setIsGuest(true); }
@@ -92,6 +112,24 @@ export function MyPageTab() {
       } catch (e) { alert("오류 발생"); }
   };
 
+  // 🌟 [신규] 닉네임 변경 핸들러
+  const handleUpdateName = async () => {
+      if (!newName.trim()) return;
+      const token = localStorage.getItem("token");
+      try {
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              body: JSON.stringify({ name: newName })
+          });
+          if (res.ok) {
+              const data = await res.json();
+              setUser(prev => prev ? { ...prev, name: data.name } : null);
+              setIsEditingName(false);
+          }
+      } catch (e) { alert("변경 실패"); }
+  };
+
   const currentItems = activeTab === "shop" ? shopItems.filter(i => i.category === activeCategory) : shopItems.filter(i => i.category === activeCategory && user?.avatar?.inventory?.includes(i.id));
 
   const renderAvatarLayered = (equippedState: Record<string, string | null>, height: number = 300) => {
@@ -127,19 +165,46 @@ export function MyPageTab() {
         <h1 className="text-2xl font-bold">마이페이지</h1>
         <div className="flex items-center gap-1 bg-yellow-100 px-3 py-1 rounded-full text-yellow-700 font-bold text-sm"><Coins className="w-4 h-4" />{(user.wallet_balance || 0).toLocaleString()} C</div>
       </div>
+
       <div className="px-4 space-y-4">
         <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white border-none shadow-lg">
             <CardContent className="p-6">
                 <div className="flex items-center gap-4">
                     <div className="w-24 h-24 bg-white/20 rounded-full border-2 border-white/50 backdrop-blur-sm overflow-hidden relative">{renderAvatarLayered(user.avatar?.equipped || {}, 96)}</div>
-                    <div className="flex-1"><h2 className="text-xl font-bold">{user.name}</h2><Badge variant="secondary" className="bg-white/20 text-white border-0">Lv.{user.avatar?.level || 1}</Badge></div>
+                    <div className="flex-1">
+                        {/* 🌟 닉네임 수정 UI */}
+                        {isEditingName ? (
+                            <div className="flex items-center gap-2 mb-1">
+                                <Input value={newName} onChange={e => setNewName(e.target.value)} className="h-8 text-black bg-white/90 border-none w-32" />
+                                <Button size="icon" className="h-8 w-8 bg-green-500 hover:bg-green-600 text-white rounded-full" onClick={handleUpdateName}><Check className="w-4 h-4"/></Button>
+                                <Button size="icon" variant="ghost" className="h-8 w-8 text-white hover:bg-white/20 rounded-full" onClick={() => setIsEditingName(false)}><X className="w-4 h-4"/></Button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 mb-1">
+                                <h2 className="text-xl font-bold">{user.name}</h2>
+                                <button onClick={() => setIsEditingName(true)} className="text-white/70 hover:text-white"><Pencil className="w-4 h-4"/></button>
+                            </div>
+                        )}
+                        <Badge variant="secondary" className="bg-white/20 text-white border-0">Lv.{user.avatar?.level || 1}</Badge>
+                    </div>
                 </div>
                 <Button className="w-full mt-5 bg-white text-indigo-600 hover:bg-indigo-50 font-bold gap-2" onClick={() => setIsEditorOpen(true)}><Palette className="w-4 h-4" /> 아바타 꾸미기 & 상점</Button>
             </CardContent>
         </Card>
+
         <div className="px-1">
             <Tabs defaultValue="reviews" className="w-full">
-                <TabsList className="w-full grid grid-cols-2 mb-4"><TabsTrigger value="reviews">내 리뷰</TabsTrigger><TabsTrigger value="favorites">즐겨찾기</TabsTrigger></TabsList>
+                <TabsList className="w-full grid grid-cols-3 mb-4"><TabsTrigger value="history">방문 기록</TabsTrigger><TabsTrigger value="reviews">내 리뷰</TabsTrigger><TabsTrigger value="favorites">즐겨찾기</TabsTrigger></TabsList>
+                
+                <TabsContent value="history" className="space-y-3">
+                    {VISIT_HISTORY.map(place => (
+                        <Card key={place.id} className="p-3 flex justify-between items-center bg-white shadow-sm">
+                            <div><div className="font-bold text-sm">{place.name}</div><div className="text-xs text-gray-500 mt-1">{place.tags.join(" · ")}</div></div>
+                            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => { setTargetPlace(place); setIsReviewOpen(true); }}>리뷰 쓰기</Button>
+                        </Card>
+                    ))}
+                </TabsContent>
+
                 <TabsContent value="reviews" className="space-y-3">
                     {user.reviews && user.reviews.length > 0 ? user.reviews.map((review: any) => (
                         <Card key={review.id} className="p-3 bg-white shadow-sm">
@@ -149,6 +214,7 @@ export function MyPageTab() {
                         </Card>
                     )) : <div className="text-center text-gray-400 py-10 text-sm">작성한 리뷰가 없습니다.</div>}
                 </TabsContent>
+                
                 <TabsContent value="favorites" className="space-y-3">
                     {user.favorites && user.favorites.length > 0 ? user.favorites.map((fav: any, i: number) => (
                         <Card key={i} className="p-3 flex justify-between items-center bg-white shadow-sm">
@@ -160,6 +226,7 @@ export function MyPageTab() {
         </div>
         <Card><CardHeader><CardTitle className="text-lg flex items-center gap-2"><Settings className="w-5 h-5 text-indigo-600" /> 설정</CardTitle></CardHeader><CardContent className="space-y-1"><Button variant="ghost" className="w-full justify-start gap-3 h-12"><Bell className="w-5 h-5" /> 알림 설정</Button><Button variant="ghost" className="w-full justify-start gap-3 text-red-500 hover:text-red-600 hover:bg-red-50 h-12" onClick={() => { if (confirm("로그아웃?")) { localStorage.removeItem("token"); window.location.href = "/login"; } }}><LogOut className="w-5 h-5" /> 로그아웃</Button></CardContent></Card>
       </div>
+
       <Dialog open={isEditorOpen} onOpenChange={setIsEditorOpen}>
         <DialogContent className="sm:max-w-md h-[80vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
             <DialogHeader className="px-6 pt-4 pb-2 bg-white"><DialogTitle>아바타 꾸미기</DialogTitle></DialogHeader>
@@ -185,6 +252,7 @@ export function MyPageTab() {
             </div>
         </DialogContent>
       </Dialog>
+
       <Dialog open={isReviewOpen} onOpenChange={setIsReviewOpen}>
           <DialogContent className="sm:max-w-sm">
               <DialogHeader><DialogTitle>✍️ 상세 리뷰</DialogTitle><DialogDescription><span className="font-bold text-indigo-600">{targetPlace?.name}</span> 상세 평가</DialogDescription></DialogHeader>
