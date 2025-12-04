@@ -1,18 +1,31 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
-    return [
-      {
-        source: "/:path*",
-        headers: [
+      return [
           {
-            key: "Content-Security-Policy",
-            // 👇 ws, http, https 및 네이버 관련 모든 도메인 허용
-            value: "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://oapi.map.naver.com http://oapi.map.naver.com *.map.naver.com *.map.naver.net *.pstatic.net https://v0-we-meet-app-features.vercel.app/auth/callback/kakao; img-src 'self' data: blob: *.map.naver.com *.map.naver.net *.pstatic.net http://static.naver.net https://v0-we-meet-app-features.vercel.app/auth/callback/kakao; connect-src 'self' *.map.naver.com *.map.naver.net *.pstatic.net https://kr-col-ext.nelo.navercorp.com https://v0-we-meet-app-features.vercel.app/auth/callback/kakao https://wemeet-backend-xqlo.onrender.com https://wemeet-backend-xqlo.onrender.com ws://localhost:8000;",
+              source: "/:path*",
+              headers: [
+                  {
+                      key: "Content-Security-Policy",
+                      value: [
+                          "default-src 'self';",
+                          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://openapi.map.naver.com https://oapi.map.naver.com;",
+                          "style-src 'self' 'unsafe-inline';",
+                          "img-src 'self' blob: data: https:;",
+                          "font-src 'self' data:;",
+                          // 👇 여기가 핵심! 백엔드 주소(https, wss)와 네이버 API를 허용
+                          "connect-src 'self' https://wemeet-backend-xqlo.onrender.com wss://wemeet-backend-xqlo.onrender.com https://openapi.map.naver.com https://oapi.map.naver.com https://naveropenapi.apigw.ntruss.com;",
+                          "frame-src 'self' https://kauth.kakao.com;",
+                          "object-src 'none';",
+                          "base-uri 'self';",
+                          "form-action 'self';",
+                          "frame-ancestors 'none';",
+                          "upgrade-insecure-requests;"
+                      ].join(" ").replace(/\n/g, ""),
+                  },
+              ],
           },
-        ],
-      },
-    ];
+      ];
   },
 };
 
