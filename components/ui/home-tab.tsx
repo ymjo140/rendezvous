@@ -382,7 +382,23 @@ export function HomeTab() {
             <Button variant="outline" size="sm" className="h-8 rounded-full border-dashed text-xs flex-shrink-0" onClick={() => setIsFilterOpen(true)}><Filter className="w-3 h-3 mr-1"/> 필터 설정</Button>
             <Badge variant="secondary" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-indigo-50 text-indigo-600 border-indigo-100">{currentFilters?.label || selectedPurpose}</Badge>
             {Object.entries(selectedFilters).flatMap(([k, v]) => v).map(tag => {
-                if (tag === selectedPurpose) return null; let parentKey = ""; if (currentFilters) { for (const [key, data] of Object.entries(currentFilters.tabs)) { if (data.options.includes(tag)) parentKey = key; } } if (!parentKey) return null;
+                if (tag === selectedPurpose) return null;
+
+                let parentKey = "";
+                
+                if (currentFilters) {
+                  const tabs = currentFilters.tabs as Record<string, { label: string; options: string[] }>;
+                
+                  for (const [key, data] of Object.entries(tabs)) {
+                    if (data.options.includes(tag)) {
+                      parentKey = key;
+                      break;
+                    }
+                  }
+                }
+                
+                if (!parentKey) return null;
+                
                 return (<Badge key={tag} variant="outline" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-indigo-200 text-indigo-600 bg-white">{tag} <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeTag(tag)}/></Badge>)
             })}
         </div>
