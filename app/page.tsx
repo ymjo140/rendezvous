@@ -1,50 +1,25 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { CalendarTab } from "@/components/ui/calendar-tab"
+import { HomeTab } from "@/components/ui/home-tab"
 import { ChatTab } from "@/components/ui/chat-tab"
 import { CommunityTab } from "@/components/ui/community-tab"
-import { HomeTab } from "@/components/ui/home-tab"
+import { CalendarTab } from "@/components/ui/calendar-tab"
 import { MyPageTab } from "@/components/ui/mypage-tab"
 import { SettingsTab } from "@/components/ui/settings-tab"
-import { PreferenceModal } from "@/components/ui/preference-modal"
-import { Home, MessageCircle, Users, Calendar, User } from "lucide-react"
+import { Map, MessageCircle, Users, Calendar, User } from "lucide-react"
 
 export default function WeMeetApp() {
   const [activeTab, setActiveTab] = useState("home")
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [showPreferenceModal, setShowPreferenceModal] = useState(false)
-  const router = useRouter()
+  const [isMounted, setIsMounted] = useState(false)
 
   useEffect(() => {
-    const checkAuth = async () => {
-        const token = localStorage.getItem("token")
-        if (!token) {
-            router.replace("/login")
-            return
-        }
-        
-        // 취향 설정 여부 확인
-        try {
-            const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", {
-                headers: { "Authorization": `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const user = await res.json();
-                if (!user.preferences || !user.preferences.foods || user.preferences.foods.length === 0) {
-                    setShowPreferenceModal(true);
-                }
-                setIsLoaded(true);
-            } else {
-                router.replace("/login");
-            }
-        } catch { setIsLoaded(true); }
-    }
-    checkAuth();
-  }, [router])
+    setIsMounted(true)
+    // 🚨 강제 리다이렉트 제거됨: 비로그인 상태에서도 홈 화면 접근 가능
+  }, [])
 
-  if (!isLoaded) return <div className="h-screen flex items-center justify-center">로딩 중...</div>
+  if (!isMounted) return null 
 
   const renderContent = () => {
     switch (activeTab) {
@@ -59,19 +34,16 @@ export default function WeMeetApp() {
   }
 
   return (
-    <div className="flex flex-col h-screen max-w-md mx-auto bg-gray-50 shadow-xl overflow-hidden">
-      <PreferenceModal isOpen={showPreferenceModal} onClose={() => setShowPreferenceModal(false)} onSave={() => setShowPreferenceModal(false)} />
-      
-      <main className="flex-1 overflow-hidden relative">
+    <div className="flex h-screen w-full flex-col bg-background text-foreground sm:mx-auto sm:max-w-md sm:border-x">
+      <main className="flex-1 overflow-hidden">
         {renderContent()}
       </main>
-
-      <nav className="flex justify-around items-center p-2 bg-white border-t border-gray-200 pb-safe">
-        <button onClick={() => setActiveTab("home")} className={`flex flex-col items-center p-2 min-w-[50px] ${activeTab === "home" ? "text-primary" : "text-gray-400"}`}><Home className="w-6 h-6" /><span className="text-[10px] mt-1 font-medium">홈</span></button>
-        <button onClick={() => setActiveTab("chat")} className={`flex flex-col items-center p-2 min-w-[50px] ${activeTab === "chat" ? "text-primary" : "text-gray-400"}`}><MessageCircle className="w-6 h-6" /><span className="text-[10px] mt-1 font-medium">채팅</span></button>
-        <button onClick={() => setActiveTab("community")} className={`flex flex-col items-center p-2 min-w-[50px] ${activeTab === "community" ? "text-primary" : "text-gray-400"}`}><Users className="w-6 h-6" /><span className="text-[10px] mt-1 font-medium">커뮤니티</span></button>
-        <button onClick={() => setActiveTab("calendar")} className={`flex flex-col items-center p-2 min-w-[50px] ${activeTab === "calendar" ? "text-primary" : "text-gray-400"}`}><Calendar className="w-6 h-6" /><span className="text-[10px] mt-1 font-medium">일정</span></button>
-        <button onClick={() => setActiveTab("mypage")} className={`flex flex-col items-center p-2 min-w-[50px] ${activeTab === "mypage" ? "text-primary" : "text-gray-400"}`}><User className="w-6 h-6" /><span className="text-[10px] mt-1 font-medium">MY</span></button>
+      <nav className="flex h-16 flex-shrink-0 items-center justify-around border-t bg-background px-2 pb-safe">
+        <button onClick={() => setActiveTab("home")} className={`flex flex-col items-center gap-1 p-2 transition-colors ${activeTab === "home" ? "text-indigo-600" : "text-muted-foreground hover:text-foreground"}`}><Map className="h-6 w-6" /><span className="text-[10px] font-medium">홈</span></button>
+        <button onClick={() => setActiveTab("chat")} className={`flex flex-col items-center gap-1 p-2 transition-colors ${activeTab === "chat" ? "text-indigo-600" : "text-muted-foreground hover:text-foreground"}`}><MessageCircle className="h-6 w-6" /><span className="text-[10px] font-medium">채팅</span></button>
+        <button onClick={() => setActiveTab("community")} className={`flex flex-col items-center gap-1 p-2 transition-colors ${activeTab === "community" ? "text-indigo-600" : "text-muted-foreground hover:text-foreground"}`}><Users className="h-6 w-6" /><span className="text-[10px] font-medium">모임</span></button>
+        <button onClick={() => setActiveTab("calendar")} className={`flex flex-col items-center gap-1 p-2 transition-colors ${activeTab === "calendar" ? "text-indigo-600" : "text-muted-foreground hover:text-foreground"}`}><Calendar className="h-6 w-6" /><span className="text-[10px] font-medium">일정</span></button>
+        <button onClick={() => setActiveTab("mypage")} className={`flex flex-col items-center gap-1 p-2 transition-colors ${activeTab === "mypage" ? "text-indigo-600" : "text-muted-foreground hover:text-foreground"}`}><User className="h-6 w-6" /><span className="text-[10px] font-medium">마이</span></button>
       </nav>
     </div>
   )

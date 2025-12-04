@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
 import React, { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 
 const CATEGORIES = [
   { id: "hair", label: "헤어", icon: "💇" },
@@ -35,14 +36,16 @@ const VISIT_HISTORY = [
 ];
 
 export function MyPageTab() {
+  const router = useRouter();
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
+
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [shopItems, setShopItems] = useState<AvatarItem[]>([]);
   const [activeTab, setActiveTab] = useState("inventory");
   const [activeCategory, setActiveCategory] = useState("hair");
   const [previewEquipped, setPreviewEquipped] = useState<Record<string, string | null>>({});
 
-  // 리뷰 모달 상태
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [targetPlace, setTargetPlace] = useState<any>(null);
   const [scores, setScores] = useState({ taste: 3, service: 3, price: 3, vibe: 3 });
@@ -50,15 +53,20 @@ export function MyPageTab() {
 
   const fetchMyInfo = async () => {
       const token = localStorage.getItem("token");
-      if (!token) return;
+      if (!token) {
+          setIsGuest(true);
+          return;
+      }
       try {
           const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", { headers: { "Authorization": `Bearer ${token}` } });
           if (res.ok) {
               const data = await res.json();
               setUser(data);
               if (data.avatar) setPreviewEquipped(data.avatar.equipped || {});
+          } else {
+              setIsGuest(true);
           }
-      } catch (e) { console.error(e); }
+      } catch (e) { setIsGuest(true); }
   };
 
   const fetchShopItems = async () => {
@@ -159,7 +167,6 @@ export function MyPageTab() {
               {equippedState.footprint && <img src={getUrl(equippedState.footprint) || ''} alt="effect" style={{position:'absolute', bottom:0, left:0, width:'100%', opacity:0.8, zIndex: 0}} className="animate-pulse" />}
               {layers.map((layer) => {
                   if (layer.id === 'pet') return null; 
-                  // 🌟 [수정됨] style 속성에 'as React.CSSProperties' 추가하여 타입 오류 해결
                   return layer.url ? (
                     <img 
                         key={layer.id} 
@@ -184,7 +191,25 @@ export function MyPageTab() {
       );
   };
 
-  if (!user) return <div className="p-4 text-center">로그인이 필요합니다.</div>;
+  // 🌟 게스트 모드 처리
+  if (isGuest) {
+      return (
+          <div className="flex flex-col items-center justify-center h-full p-6 space-y-6 bg-slate-50">
+              <div className="text-center space-y-2">
+                  <h2 className="text-2xl font-bold text-gray-800">로그인이 필요해요 🔒</h2>
+                  <p className="text-gray-500">나만의 아바타를 꾸미고<br/>리뷰와 즐겨찾기를 관리해보세요.</p>
+              </div>
+              <Button className="w-full max-w-xs bg-[#FEE500] hover:bg-[#FEE500]/90 text-black font-bold" onClick={() => router.push("/login")}>
+                  카카오로 3초만에 시작하기
+              </Button>
+              <Button variant="outline" className="w-full max-w-xs" onClick={() => router.push("/login")}>
+                  이메일로 로그인
+              </Button>
+          </div>
+      );
+  }
+
+  if (!user) return <div className="p-4 text-center">로딩 중...</div>;
 
   return (
     <div className="space-y-4 h-full bg-slate-50 overflow-y-auto pb-20">
@@ -210,7 +235,7 @@ export function MyPageTab() {
         <div className="px-1">
             <Tabs defaultValue="history" className="w-full">
                 <TabsList className="w-full grid grid-cols-3 mb-4">
-                    <TabsTrigger value="history">최근 방문</TabsTrigger>
+                    <TabsTrigger value="history">방문 기록</TabsTrigger>
                     <TabsTrigger value="reviews">내 리뷰</TabsTrigger>
                     <TabsTrigger value="favorites">즐겨찾기</TabsTrigger>
                 </TabsList>

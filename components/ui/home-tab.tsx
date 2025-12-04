@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation" // 👈 라우터 추가
 import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -41,15 +42,15 @@ const PURPOSE_FILTERS: Record<string, any> = {
     "비즈니스/접대": {
         label: "👔 비즈니스",
         tabs: {
-            "SITUATION": { label: "만남 성격", options: ["회의", "식사미팅", "술", "커피챗", "워크샵"] },
-            "PLACE": { label: "장소 유형", options: ["룸식당", "호텔다이닝", "한정식", "일식코스", "조용한카페", "비즈니스센터"] },
-            "CONDITION": { label: "필수 조건", options: ["조용한", "발렛파킹", "무료주차", "법인카드", "예약필수"] }
+            "SITUATION": { label: "만남 성격", options: ["식사미팅", "술", "커피챗", "회의", "워크샵"] },
+            "PLACE": { label: "장소 유형", options: ["룸식당", "호텔다이닝", "한정식", "일식코스", "조용한카페", "비즈니스센터", "공유오피스", "세미나실"] },
+            "CONDITION": { label: "필수 조건", options: ["조용한", "발렛파킹", "무료주차", "법인카드", "예약필수", "화이트보드", "프로젝터"] }
         }
     },
     "데이트/기념일": {
         label: "💖 데이트",
         tabs: {
-            "COURSE": { label: "데이트 코스", options: ["맛집탐방", "카페투어", "술 한잔", "문화생활", "액티비티", "호캉스"] },
+            "COURSE": { label: "데이트 코스", options: ["맛집탐방", "카페투어", "술 한잔", "문화생활", "액티비티", "호캉스", "방탈출", "전시회"] },
             "VIBE": { label: "분위기", options: ["분위기깡패", "뷰맛집", "로맨틱", "인스타감성", "이색데이트", "조용한"] },
             "MENU": { label: "선호 메뉴", options: ["파스타", "스테이크", "오마카세", "와인", "칵테일", "디저트"] }
         }
@@ -83,11 +84,12 @@ const PURPOSE_FILTERS: Record<string, any> = {
 const MAP_CATEGORIES = ["전체", "맛집", "카페", "술집", "편의점", "은행", "마트"];
 
 export function HomeTab() {
-  // 검색 및 위치 상태
+  const router = useRouter(); // 👈 [추가됨] 라우터 훅 사용
+  
   const [searchQuery, setSearchQuery] = useState("")
   const [myLocationInput, setMyLocationInput] = useState("") 
   
-  // 🌟 [핵심] 수동 입력 상태 (배열)
+  // 다중 입력 상태
   const [manualInputs, setManualInputs] = useState<string[]>([""]); 
   const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
   const [includeMe, setIncludeMe] = useState(true);
@@ -98,14 +100,9 @@ export function HomeTab() {
   const [selectedPurpose, setSelectedPurpose] = useState("식사")
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({
-      PURPOSE: ["식사"],
-      CATEGORY: [],
-      PRICE: [],
-      VIBE: [],
-      CONDITION: []
+      PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: []
   });
   
-  // 결과 상태
   const [myProfile, setMyProfile] = useState<any>(null)
   const [recommendedRegions, setRecommendedRegions] = useState<any[]>([])
   const [currentDisplayRegion, setCurrentDisplayRegion] = useState<any>(null)
@@ -113,7 +110,6 @@ export function HomeTab() {
   const [loading, setLoading] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false); 
   
-  // 공유 모달 상태
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [placeToShare, setPlaceToShare] = useState<any>(null);
   const [myRooms, setMyRooms] = useState<any[]>([]);
@@ -132,16 +128,13 @@ export function HomeTab() {
   const myMarkerRef = useRef<any>(null)
   const friendMarkersRef = useRef<any[]>([])
 
-  // 1. 내 정보 초기화
   useEffect(() => {
     const fetchMyInfo = async () => {
         const token = localStorage.getItem("token");
         if (!token) {
-             setMyProfile({ 
-                 id: 1, name: "나", locationName: "안암", location: {lat: 37.586, lng: 127.029}, 
-                 avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_tshirt", bottom: "bottom_shorts", shoes: "shoes_sneakers" } } 
-             });
-             setMyLocationInput("안암");
+             // 비로그인 상태 (게스트 모드)
+             setMyProfile(null);
+             setMyLocationInput("비회원 (위치 설정 필요)");
              return;
         }
         try {
@@ -156,7 +149,6 @@ export function HomeTab() {
     fetchMyInfo();
   }, []);
 
-  // 2. 지도 초기화 및 아바타 마커
   useEffect(() => {
     const initMap = () => {
       if (typeof window.naver === 'undefined' || !window.naver.maps) { setTimeout(initMap, 100); return; }
@@ -189,7 +181,7 @@ export function HomeTab() {
                     ${brows ? `<img src="${brows}" style="position: absolute; top:0; left:0; width:100%; height:100%; object-fit: contain; z-index: 2;" />` : ''}
                     ${bottom ? `<img src="${bottom}" style="position: absolute; top:0; left:0; width:100%; height:100%; object-fit: contain; z-index: 3;" />` : ''}
                     ${top ? `<img src="${top}" style="position: absolute; top:0; left:0; width:100%; height:100%; object-fit: contain; z-index: 4;" />` : ''}
-                    ${shoes ? `<img src="${shoes}" style="position: absolute; top:0; left:0; width:100%; height:100%; object-fit: contain; z-index: 5;" />` : ''}
+                    ${shoes ? `<img src="${shoes}" style="position: absolute; bottom: 0; left: 10%; width: 80%; height: 20%; object-fit: contain; z-index: 5;" />` : ''}
                     ${hair ? `<img src="${hair}" style="position: absolute; top:0; left:0; width:100%; height:100%; object-fit: contain; z-index: 6;" />` : ''}
                 </div>
                 <div style="position: absolute; bottom: -10px; background: ${isMe ? '#3b82f6' : 'white'}; color: ${isMe ? 'white' : 'black'}; padding: 1px 6px; border-radius: 10px; border: 1px solid #3b82f6; font-size: 10px; font-weight: bold; white-space: nowrap; z-index: 20;">${user.name.split('(')[0]}</div>
@@ -213,8 +205,8 @@ export function HomeTab() {
       if (myProfile && mapRef.current) {
           if (myMarkerRef.current) myMarkerRef.current.setMap(null);
           if (includeMe) {
-              myMarkerRef.current = createAvatarMarker(myProfile, true);
-              mapRef.current.setCenter(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng));
+            myMarkerRef.current = createAvatarMarker(myProfile, true);
+            mapRef.current.setCenter(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng));
           }
       }
 
@@ -245,11 +237,10 @@ export function HomeTab() {
     initMap();
   }, [myProfile, selectedFriends, currentDisplayRegion, includeMe]);
 
-  // 3. API 호출 (추천 요청)
   const fetchRecommendations = async (users: any[], locationNameOverride?: string) => {
     const validUsers = users.filter(u => u !== null && u !== undefined);
-    // 예외 처리: 사용자가 한 명도 없고 수동 입력도 없는 경우 방지 (호출처에서 처리하지만 안전장치)
-    
+    // 참여자가 0명이어도 수동 입력이 있으면 검색 가능하도록 수정됨
+
     setLoading(true);
     try {
       const allTags = Object.values(selectedFilters).flat();
@@ -261,7 +252,6 @@ export function HomeTab() {
           users: usersToSend,
           purpose: selectedPurpose,
           location_name: locationNameOverride || "중간지점",
-          // 🌟 [핵심] 수동 입력 리스트 전송
           manual_locations: manualInputs.filter(txt => txt && txt.trim() !== ""),
           user_selected_tags: allTags
         })
@@ -301,6 +291,10 @@ export function HomeTab() {
   const handleSubmitReview = async () => {
       if (!selectedPlace) return;
       const token = localStorage.getItem("token");
+      if (!token) {
+          if(confirm("리뷰를 작성하려면 로그인이 필요합니다. 이동할까요?")) router.push("/login");
+          return;
+      }
       const payload = {
           place_name: selectedPlace.name,
           rating: 0, 
@@ -329,6 +323,10 @@ export function HomeTab() {
   const handleToggleFavorite = async () => {
       if (!selectedPlace) return;
       const token = localStorage.getItem("token");
+      if (!token) {
+          if(confirm("즐겨찾기를 하려면 로그인이 필요합니다. 이동할까요?")) router.push("/login");
+          return;
+      }
       try {
           const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/favorites", {
               method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -341,9 +339,17 @@ export function HomeTab() {
       } catch (e) { alert("오류 발생"); }
   };
 
+  // 🌟 [수정] 공유하기 로그인 체크
   const handleShare = async (roomId: string) => {
-      if (!placeToShare) return;
       const token = localStorage.getItem("token");
+      if (!token) {
+          if (confirm("로그인이 필요한 기능입니다. 로그인하시겠습니까?")) {
+              router.push("/login");
+          }
+          return;
+      }
+
+      if (!placeToShare) return;
       try {
           await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/share", {
               method: "POST",
@@ -363,20 +369,15 @@ export function HomeTab() {
 
   const handleTopSearch = () => { if(searchQuery) fetchRecommendations([myProfile], searchQuery); }
   
-  // [중간 지점 찾기 로직]
   const handleMidpointSearch = () => {
-      // includeMe가 true면 나를 포함, false면 제외
+      // 🌟 내 위치 포함 여부에 따라 참가자 목록 구성
       const participants = (includeMe && myProfile) ? [myProfile, ...selectedFriends] : [...selectedFriends];
-      
-      // 수동 입력이 있는지 확인
       const hasManualInput = manualInputs.some(txt => txt && txt.trim() !== "");
       
-      // 참가자도 없고 수동 입력도 없으면 경고
       if (participants.length === 0 && !hasManualInput) {
           alert("출발지를 하나 이상 설정해주세요!");
           return;
       }
-      
       fetchRecommendations(participants, "중간지점");
   };
 
@@ -400,7 +401,6 @@ export function HomeTab() {
       else setSelectedFriends(prev => [...prev, friend]);
   };
 
-  // 수동 입력 핸들러
   const handleManualInputChange = (idx: number, val: string) => {
       const newInputs = [...manualInputs]; newInputs[idx] = val; setManualInputs(newInputs);
   };
@@ -409,7 +409,6 @@ export function HomeTab() {
       if (manualInputs.length > 1) setManualInputs(manualInputs.filter((_, i) => i !== idx));
       else setManualInputs([""]);
   };
-  
   const handleTabChange = (idx: number) => { setActiveTabIdx(idx); setCurrentDisplayRegion(recommendedRegions[idx]); setIsExpanded(false); };
 
   const visiblePlaces = currentDisplayRegion 
@@ -484,13 +483,19 @@ export function HomeTab() {
                 </div>
             ))}
 
-            {/* 수동 입력 (무제한) */}
+            {/* 수동 입력 (자동완성) */}
             {manualInputs.map((input, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                     <div className="w-8 h-8 flex items-center justify-center text-gray-400"><MapPin className="w-5 h-5"/></div>
-                    <div className="flex-1 flex gap-1">
-                        <Input placeholder="장소 입력 (예: 강남역)" value={input} onChange={(e) => handleManualInputChange(idx, e.target.value)} />
-                        <Button variant="ghost" size="icon" onClick={() => removeManualInput(idx)}><Trash2 className="w-4 h-4 text-gray-400"/></Button>
+                    <div className="flex-1 relative">
+                        <PlaceAutocomplete 
+                            value={input} 
+                            onChange={(val) => handleManualInputChange(idx, val)} 
+                            placeholder="장소 입력 (예: 강남역)"
+                        />
+                        <Button variant="ghost" size="icon" className="absolute right-0 top-0 h-full" onClick={() => removeManualInput(idx)}>
+                            <Trash2 className="w-4 h-4 text-gray-400"/>
+                        </Button>
                     </div>
                 </div>
             ))}
@@ -637,4 +642,40 @@ export function HomeTab() {
       )}
     </div>
   )
+}
+
+// [내부 컴포넌트] 자동완성 입력
+function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder: string }) {
+    const [suggestions, setSuggestions] = useState<any[]>([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+
+    useEffect(() => {
+        if (value.length < 2) { setSuggestions([]); return; }
+        const timer = setTimeout(async () => {
+            try {
+                const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/places/search?query=${value}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setSuggestions(data);
+                    setShowSuggestions(true);
+                }
+            } catch {}
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [value]);
+
+    return (
+        <div className="relative w-full">
+            <Input placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} onFocus={() => value.length >= 2 && setShowSuggestions(true)} />
+            {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute z-50 w-full bg-white border rounded-md shadow-lg mt-1 max-h-40 overflow-y-auto">
+                    {suggestions.map((item, idx) => (
+                        <div key={idx} className="p-2 hover:bg-gray-100 cursor-pointer text-sm" onClick={() => { onChange(item.title); setShowSuggestions(false); }}>
+                            <div className="font-bold">{item.title}</div><div className="text-xs text-gray-500">{item.address}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
 }

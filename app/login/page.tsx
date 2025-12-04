@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 
 // 👇 여기에 본인의 카카오 REST API 키를 넣으세요!
 const KAKAO_REST_API_KEY = "ee65ae84782ed20fc6df3256de747e74"; 
-const REDIRECT_URI = "http://localhost:3000/auth/callback/kakao";
+const REDIRECT_URI = "https://v0-we-meet-app-features.vercel.app/auth/callback/kakao";
 const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?client_id=${KAKAO_REST_API_KEY}&redirect_uri=${REDIRECT_URI}&response_type=code`;
 
 export default function LoginPage() {
