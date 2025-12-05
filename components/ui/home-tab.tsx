@@ -101,27 +101,20 @@ export function HomeTab() {
   const [manualInputs, setManualInputs] = useState<string[]>([""]); 
   const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
   const [includeMe, setIncludeMe] = useState(true);
-
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-
   const [selectedPurpose, setSelectedPurpose] = useState("식사")
   const [selectedTags, setSelectedTags] = useState<string[]>([])
-  const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({
-      PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: []
-  });
-  
+  const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({ PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] });
   const [myProfile, setMyProfile] = useState<any>(null)
   const [recommendedRegions, setRecommendedRegions] = useState<any[]>([])
   const [currentDisplayRegion, setCurrentDisplayRegion] = useState<any>(null)
   const [activeTabIdx, setActiveTabIdx] = useState(0)
   const [loading, setLoading] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false); 
-  
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [placeToShare, setPlaceToShare] = useState<any>(null);
   const [myRooms, setMyRooms] = useState<any[]>([]);
-  
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<any>(null);
   const [placeReviews, setPlaceReviews] = useState<any[]>([]);
@@ -129,9 +122,8 @@ export function HomeTab() {
   const [reviewScores, setReviewScores] = useState({ taste: 3, service: 3, price: 3, vibe: 3 });
   const [reviewText, setReviewText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
-  
   const [myFriendList, setMyFriendList] = useState<any[]>([]);
-  
+  const [searchEmail, setSearchEmail] = useState("");
   const mapRef = useRef<any>(null)
   const markersRef = useRef<any[]>([])
   const myMarkerRef = useRef<any>(null)
@@ -160,7 +152,6 @@ export function HomeTab() {
         } catch (e) { console.error(e); }
     }
     fetchMyInfo();
-
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -199,8 +190,6 @@ export function HomeTab() {
           const shoes = getUrl(equipped.shoes);
           const pet = getUrl(equipped.pet);
           const foot = getUrl(equipped.footprint);
-
-          // 🌟 [수정] 안전한 이름 처리 (split 에러 방지)
           const displayName = (user.name || "User").split('(')[0];
 
           const avatarHtml = `
@@ -219,12 +208,7 @@ export function HomeTab() {
                 <div style="position: absolute; bottom: -10px; background: ${isMe ? '#3b82f6' : 'white'}; color: ${isMe ? 'white' : 'black'}; padding: 1px 6px; border-radius: 10px; border: 1px solid #3b82f6; font-size: 10px; font-weight: bold; white-space: nowrap; z-index: 20;">${displayName}</div>
             </div>
           `;
-          return new window.naver.maps.Marker({
-              position: new window.naver.maps.LatLng(user.location.lat, user.location.lng),
-              map: mapRef.current,
-              icon: { content: avatarHtml, anchor: new window.naver.maps.Point(30, 100) },
-              zIndex: isMe ? 100 : 50
-          });
+          return new window.naver.maps.Marker({ position: new window.naver.maps.LatLng(user.location.lat, user.location.lng), map: mapRef.current, icon: { content: avatarHtml, anchor: new window.naver.maps.Point(30, 100) }, zIndex: isMe ? 100 : 50 });
       };
 
       if (myProfile && mapRef.current) {
@@ -247,11 +231,7 @@ export function HomeTab() {
           markersRef.current.forEach(m => m.setMap(null));
           markersRef.current = [];
           currentDisplayRegion.places.forEach((p: any) => {
-              const marker = new window.naver.maps.Marker({ 
-                  position: new window.naver.maps.LatLng(p.location[0], p.location[1]), 
-                  map: mapRef.current, 
-                  title: p.name
-              });
+              const marker = new window.naver.maps.Marker({ position: new window.naver.maps.LatLng(p.location[0], p.location[1]), map: mapRef.current, title: p.name });
               markersRef.current.push(marker);
           });
           if (currentDisplayRegion.places.length > 0) {
@@ -268,15 +248,10 @@ export function HomeTab() {
     try {
       const allTags = Object.values(selectedFilters).flat();
       const usersToSend = validUsers.map(u => ({ id: u.id || 0, name: u.name || "User", location: u.location || { lat: 37.566, lng: 126.978 } }));
-
       const response = await fetch('https://wemeet-backend-xqlo.onrender.com/api/recommend', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          users: usersToSend, purpose: selectedPurpose, location_name: locationNameOverride || "중간지점",
-          manual_locations: manualInputs.filter(txt => txt && txt.trim() !== ""), user_selected_tags: allTags
-        })
+        body: JSON.stringify({ users: usersToSend, purpose: selectedPurpose, location_name: locationNameOverride || "중간지점", manual_locations: manualInputs.filter(txt => txt && txt.trim() !== ""), user_selected_tags: allTags })
       })
-
       if (response.ok) {
           const data = await response.json() as any[];
           setRecommendedRegions(data);
@@ -304,15 +279,9 @@ export function HomeTab() {
       if (!selectedPlace) return;
       const token = localStorage.getItem("token");
       if (!token) { if(confirm("리뷰 작성은 로그인이 필요합니다.")) router.push("/login"); return; }
-      const payload = {
-          place_name: selectedPlace.name, rating: 0, 
-          score_taste: reviewScores.taste, score_service: reviewScores.service, score_price: reviewScores.price, score_vibe: reviewScores.vibe,
-          comment: reviewText, tags: selectedPlace.tags
-      };
+      const payload = { place_name: selectedPlace.name, rating: 0, score_taste: reviewScores.taste, score_service: reviewScores.service, score_price: reviewScores.price, score_vibe: reviewScores.vibe, comment: reviewText, tags: selectedPlace.tags };
       try {
-          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/reviews", {
-              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify(payload)
-          });
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/reviews", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify(payload) });
           if (res.ok) { alert("리뷰 등록!"); setIsReviewing(false); setReviewScores({ taste: 3, service: 3, price: 3, vibe: 3 }); setReviewText(""); handlePlaceClick(selectedPlace); }
       } catch (e) { alert("오류 발생"); }
   };
@@ -322,9 +291,7 @@ export function HomeTab() {
       const token = localStorage.getItem("token");
       if (!token) { if(confirm("즐겨찾기는 로그인이 필요합니다.")) router.push("/login"); return; }
       try {
-          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/favorites", {
-              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ place_id: selectedPlace.id, place_name: selectedPlace.name })
-          });
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/favorites", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ place_id: selectedPlace.id, place_name: selectedPlace.name }) });
           if (res.ok) { const data = await res.json() as any; setIsFavorite(data.message === "Added"); }
       } catch (e) { alert("오류 발생"); }
   };
@@ -334,10 +301,7 @@ export function HomeTab() {
       if (!token) { if (confirm("공유 기능은 로그인이 필요합니다.")) { router.push("/login"); } return; }
       if (!placeToShare) return;
       try {
-          await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/share", {
-              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-              body: JSON.stringify({ room_id: roomId, place_name: placeToShare.name, place_category: placeToShare.category, place_tags: placeToShare.tags })
-          });
+          await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/share", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ room_id: roomId, place_name: placeToShare.name, place_category: placeToShare.category, place_tags: placeToShare.tags }) });
           alert("채팅방에 공유 완료!"); setIsShareModalOpen(false); setIsDetailOpen(false); 
       } catch (e) { alert("공유 실패"); }
   };
@@ -350,17 +314,9 @@ export function HomeTab() {
       fetchRecommendations(participants, "중간지점");
   };
 
-  const toggleFilter = (groupKey: string, value: string) => {
-      setSelectedFilters(prev => {
-          if (groupKey === "PURPOSE") return { ...prev, [groupKey]: [value] };
-          const list = prev[groupKey] || [];
-          if (list.includes(value)) return { ...prev, [groupKey]: list.filter(v => v !== value) };
-          return { ...prev, [groupKey]: [...list, value] };
-      });
-  };
+  const toggleFilter = (groupKey: string, value: string) => { setSelectedFilters(prev => { if (groupKey === "PURPOSE") return { ...prev, [groupKey]: [value] }; const list = prev[groupKey] || []; if (list.includes(value)) return { ...prev, [groupKey]: list.filter(v => v !== value) }; return { ...prev, [groupKey]: [...list, value] }; }); };
   const removeTag = (tag: string) => { for (const [key, vals] of Object.entries(selectedFilters)) { if (vals.includes(tag)) toggleFilter(key, tag); } };
   const toggleFriend = (friend: any) => { if (selectedFriends.find(f => f.id === friend.id)) setSelectedFriends(prev => prev.filter(f => f.id !== friend.id)); else setSelectedFriends(prev => [...prev, friend]); };
-
   const handleManualInputChange = (idx: number, val: string) => { const newInputs = [...manualInputs]; newInputs[idx] = val; setManualInputs(newInputs); };
   const addManualInput = () => setManualInputs([...manualInputs, ""]);
   const removeManualInput = (idx: number) => { if (manualInputs.length > 1) setManualInputs(manualInputs.filter((_, i) => i !== idx)); else setManualInputs([""]); };
@@ -377,28 +333,11 @@ export function HomeTab() {
             <Input className="pl-2 border-none bg-transparent h-11" placeholder="장소, 주소 검색" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleTopSearch()} />
             {searchQuery && <button onClick={() => setSearchQuery("")} className="pr-3 text-gray-400"><X className="w-4 h-4"/></button>}
         </div>
-        
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
             <Button variant="outline" size="sm" className="h-8 rounded-full border-dashed text-xs flex-shrink-0" onClick={() => setIsFilterOpen(true)}><Filter className="w-3 h-3 mr-1"/> 필터 설정</Button>
             <Badge variant="secondary" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-indigo-50 text-indigo-600 border-indigo-100">{currentFilters?.label || selectedPurpose}</Badge>
             {Object.entries(selectedFilters).flatMap(([k, v]) => v).map(tag => {
-                if (tag === selectedPurpose) return null;
-
-                let parentKey = "";
-                
-                if (currentFilters) {
-                  const tabs = currentFilters.tabs as Record<string, { label: string; options: string[] }>;
-                
-                  for (const [key, data] of Object.entries(tabs)) {
-                    if (data.options.includes(tag)) {
-                      parentKey = key;
-                      break;
-                    }
-                  }
-                }
-                
-                if (!parentKey) return null;
-                
+                if (tag === selectedPurpose) return null; let parentKey = ""; if (currentFilters) { const tabs = currentFilters.tabs as any; for (const [key, data] of Object.entries(tabs)) { if ((data as any).options.includes(tag)) parentKey = key; } } if (!parentKey) return null;
                 return (<Badge key={tag} variant="outline" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-indigo-200 text-indigo-600 bg-white">{tag} <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeTag(tag)}/></Badge>)
             })}
         </div>
@@ -456,7 +395,6 @@ export function HomeTab() {
           </DialogContent>
       </Dialog>
 
-      {/* 🌟 친구 추가 모달 (페르소나 + 카카오톡 초대) */}
       <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}>
           <DialogContent>
               <DialogHeader><DialogTitle>친구 추가</DialogTitle></DialogHeader>
@@ -470,8 +408,6 @@ export function HomeTab() {
                           </div>
                       ))}
                   </div>
-                  
-                  {/* 실제 친구 초대 버튼 */}
                   <div className="pt-2 border-t">
                       <h4 className="text-xs font-bold text-gray-500 mb-2">실제 친구 초대</h4>
                       <Button className="w-full bg-[#FEE500] hover:bg-[#FEE500]/90 text-black font-bold gap-2" onClick={handleKakaoInvite}>
@@ -558,7 +494,6 @@ export function HomeTab() {
   )
 }
 
-// [내부 컴포넌트] 자동완성 입력
 function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder: string }) {
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -567,6 +502,7 @@ function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, on
         const timer = setTimeout(async () => {
             try {
                 const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/places/search?query=${value}`);
+                // 🌟 [수정] as any[] 추가
                 if (res.ok) { const data = await res.json() as any[]; setSuggestions(data); setShowSuggestions(true); }
             } catch {}
         }, 300);
