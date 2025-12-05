@@ -27,9 +27,8 @@ flow_engine = agora_algo.AdvancedRecommender([], [])
 
 router = APIRouter()
 
-# 🌟 [대규모 확장] 백업 좌표 리스트
+# 🌟 백업 좌표 리스트
 FALLBACK_COORDINATES = {
-    # 1호선
     "서울역": (37.5559, 126.9723), "시청": (37.5657, 126.9769), "종각": (37.5702, 126.9831),
     "종로3가": (37.5704, 126.9920), "종로5가": (37.5709, 127.0019), "동대문": (37.5717, 127.0113),
     "동묘앞": (37.5732, 127.0165), "신설동": (37.5760, 127.0243), "제기동": (37.5781, 127.0348),
@@ -37,52 +36,20 @@ FALLBACK_COORDINATES = {
     "노량진": (37.5142, 126.9424), "영등포": (37.5155, 126.9076), "신도림": (37.5089, 126.8913),
     "구로": (37.5030, 126.8819), "부천": (37.4840, 126.7826), "부평": (37.4894, 126.7249),
     "안양": (37.4016, 126.9228), "수원": (37.2656, 127.0000),
-
-    # 2호선
     "강남": (37.4980, 127.0276), "역삼": (37.5006, 127.0364), "신논현": (37.5045, 127.0250), "삼성": (37.5088, 127.0631),
-    "잠실": (37.5132, 127.1001), "건대입구": (37.5407, 127.0702),
-    "성수": (37.5445, 127.0560), "왕십리": (37.5612, 127.0371), "을지로3가": (37.5662, 126.9926),
-    "을지로입구": (37.5660, 126.9826), "홍대입구": (37.5575, 126.9244), "합정": (37.5489, 126.9166),
-    "신촌": (37.5551, 126.9369), "이대": (37.5567, 126.9460), "당산": (37.5343, 126.9022),
-    "구로디지털단지": (37.4852, 126.9014), "신림": (37.4842, 126.9297), "사당": (37.4765, 126.9815),
-    "서초": (37.4918, 127.0076), "교대": (37.4934, 127.0140),
-
-    # 3호선
-    "연신내": (37.6190, 126.9210), "불광": (37.6104, 126.9298), "경복궁": (37.5757, 126.9735),
-    "안국": (37.5765, 126.9854), "충무로": (37.5612, 126.9942), "약수": (37.5543, 127.0107),
-    "옥수": (37.5414, 127.0178), "압구정": (37.5270, 127.0284), "신사": (37.5163, 127.0203),
-    "고속터미널": (37.5049, 127.0049), "양재": (37.4841, 127.0346), "수서": (37.4873, 127.1018),
-
-    # 4호선
-    "노원": (37.6551, 127.0613), "창동": (37.6531, 127.0477), "성신여대입구": (37.5926, 127.0170),
-    "혜화": (37.5822, 127.0018), "명동": (37.5609, 126.9863), "회현": (37.5585, 126.9782),
-    "삼각지": (37.5347, 126.9731), "이촌": (37.5222, 126.9743), "이수": (37.4862, 126.9819),
-    "과천": (37.4330, 126.9965), "범계": (37.3897, 126.9507),
-
-    # 5호선
-    "김포공항": (37.5624, 126.8013), "여의도": (37.5215, 126.9243), "공덕": (37.5435, 126.9515),
-    "광화문": (37.5710, 126.9768), "청구": (37.5602, 127.0138), "군자": (37.5571, 127.0794),
-    "천호": (37.5386, 127.1236), "올림픽공원": (37.5162, 127.1309),
-
-    # 6호선
-    "이태원": (37.5345, 126.9943), "한강진": (37.5396, 127.0017), "안암": (37.5863, 127.0292),
-    "고려대": (37.5905, 127.0358), "석계": (37.6148, 127.0656), "망원": (37.5559, 126.9099),
-
-    # 7호선
-    "강남구청": (37.5171, 127.0412), "논현": (37.5110, 127.0214), "내방": (37.4876, 126.9935),
-    "가산디지털단지": (37.4815, 126.8825), "철산": (37.4760, 126.8679), "상봉": (37.5965, 127.0850),
-
-    # 8호선
-    "암사": (37.5499, 127.1271), "석촌": (37.5054, 127.1069), "가락시장": (37.4925, 127.1182),
-    "문정": (37.4858, 127.1225), "모란": (37.4321, 127.1290),
-
-    # 9호선
-    "마곡나루": (37.5667, 126.8272), "신논현": (37.5045, 127.0250), "선정릉": (37.5102, 127.0438),
-    "봉은사": (37.5142, 127.0602), "종합운동장": (37.5109, 127.0736),
-
-    # 경기/인천
+    "잠실": (37.5132, 127.1001), "고속터미널": (37.5049, 127.0049), "교대": (37.4934, 127.0140), "사당": (37.4765, 126.9815),
+    "홍대": (37.5575, 126.9244), "합정": (37.5489, 126.9166), "신촌": (37.5551, 126.9369), "공덕": (37.5435, 126.9515),
+    "여의도": (37.5215, 126.9243), "영등포": (37.5155, 126.9076), "구로디지털단지": (37.4852, 126.9014),
+    "건대": (37.5406, 127.0702), "성수": (37.5445, 127.0560), "왕십리": (37.5612, 127.0371), "안암": (37.5863, 127.0292), "혜화": (37.5822, 127.0019),
+    "약수": (37.5543, 127.0107), "신당": (37.5656, 127.0197), "청구": (37.5602, 127.0138), "옥수": (37.5414, 127.0178), "한남": (37.5294, 127.0092),
+    "이태원": (37.5345, 126.9943), "한강진": (37.5396, 127.0017), "삼각지": (37.5347, 126.9731),
+    "강남구청": (37.5171, 127.0412), "논현": (37.5110, 127.0214), "이수": (37.4862, 126.9819), "가산디지털단지": (37.4815, 126.8825),
+    "철산": (37.4760, 126.8679), "광명사거리": (37.4792, 126.8548), "온수": (37.4922, 126.8233), "상봉": (37.5965, 127.0850),
+    "천호": (37.5386, 127.1236), "석촌": (37.5054, 127.1069), "가락시장": (37.4925, 127.1182), "문정": (37.4858, 127.1225), "모란": (37.4321, 127.1290),
+    "김포공항": (37.5624, 126.8013), "마곡나루": (37.5667, 126.8272), "당산": (37.5343, 126.9022),
+    "선정릉": (37.5102, 127.0438), "봉은사": (37.5142, 127.0602), "종합운동장": (37.5109, 127.0736), "올림픽공원": (37.5162, 127.1309),
     "판교": (37.3947, 127.1112), "분당": (37.3830, 127.1217), "일산": (37.6584, 126.7636), "수원": (37.2656, 127.0000), "인천": (37.4424, 126.6991),
-    "부천": (37.4840, 126.7826), "부평": (37.4895, 126.7245), "송도": (37.3866, 126.6392), "안양": (37.4016, 126.9228), "의정부": (37.7386, 127.0460)
+    "송도": (37.3866, 126.6392), "의정부": (37.7386, 127.0460)
 }
 
 def get_fuzzy_coordinate(place_name: str):
@@ -125,7 +92,9 @@ def search_places_in_db(db: Session, region_name: str, keywords: List[str], allo
         
         is_match = False
         for kw in keywords:
-            if kw in p.name or any(kw in t for t in (p.tags or [])):
+            # tags가 JSON 리스트인 경우 처리
+            tags_list = p.tags if isinstance(p.tags, list) else []
+            if kw in p.name or any(kw in t for t in tags_list):
                 is_match = True
                 break
         
@@ -134,7 +103,6 @@ def search_places_in_db(db: Session, region_name: str, keywords: List[str], allo
                 id=p.id, name=p.name, category=p.category, tags=p.tags,
                 location=np.array([p.lat, p.lng]), price_level=2, avg_rating=p.wemeet_rating or 4.0
             ))
-            
     return candidates
 
 def expand_tags_to_keywords(purpose: str, user_tags: List[str]) -> List[str]:
@@ -193,114 +161,7 @@ class MeetingFlowRequest(BaseModel): room_id: Optional[str] = None; participants
 class EventSchema(BaseModel): id: Optional[str] = None; user_id: int; title: str; date: str; time: str; duration_hours: float = 1.5; location_name: Optional[str] = None; purpose: str; model_config = ConfigDict(from_attributes=True)
 class AvailabilityRequest(BaseModel): user_ids: List[int]; days_to_check: int = 7
 
-# --- Logic & Endpoints ---
-
-def run_general_search(req: RecommendRequest, db: Session):
-    search_query = req.location_name
-    if not search_query or search_query in ["내 위치", "중간지점", ""]:
-        return [{ "region_name": "내 주변", "lat": req.current_lat, "lng": req.current_lng, "transit_info": {"avg_time": 0, "details": []}, "places": [] }]
-    
-    lat, lng = data_provider.get_coordinates(search_query)
-    if lat == 0.0: lat, lng = get_fuzzy_coordinate(search_query)
-
-    if lat != 0.0 and lng != 0.0:
-        keywords = expand_tags_to_keywords(req.purpose, req.user_selected_tags)
-        pois = search_places_in_db(db, search_query, keywords, None)
-        if len(pois) < 5:
-            api_pois = data_provider.search_places_all_queries(keywords, search_query, lat, lng, allowed_types=None)
-            save_place_to_db(db, api_pois)
-            existing_names = {p.name for p in pois}
-            for p in api_pois:
-                if p.name not in existing_names: pois.append(p)
-
-        return [{ "region_name": search_query, "lat": lat, "lng": lng, "transit_info": {"avg_time": 0, "details": []}, "places": _format_pois(pois) }]
-    else:
-        pois = data_provider.search_places_all_queries([search_query], "", req.current_lat, req.current_lng, allowed_types=None)
-        save_place_to_db(db, pois)
-        return [{ "region_name": "검색 결과", "lat": req.current_lat, "lng": req.current_lng, "transit_info": {"avg_time": 0, "details": []}, "places": _format_pois(pois) }]
-
-def run_group_recommendation(req: RecommendRequest, db: Session):
-    participants = []
-    for u in req.users:
-        try:
-            loc = u.get('location') if isinstance(u, dict) else None
-            if loc and isinstance(loc, dict):
-                lat, lng = float(loc.get('lat', 0)), float(loc.get('lng', 0))
-                if lat > 0: participants.append({"id": u.get("id", 0), "name": u.get("name", "User"), "lat": lat, "lng": lng})
-        except: continue
-        
-    if req.manual_locations:
-        for idx, loc_name in enumerate(req.manual_locations):
-            if loc_name.strip():
-                lat, lng = data_provider.get_coordinates(loc_name)
-                if lat == 0.0: lat, lng = get_fuzzy_coordinate(loc_name)
-                if lat != 0.0: participants.append({"id": 9000+idx, "name": loc_name, "lat": lat, "lng": lng})
-    
-    if req.friend_location_manual:
-        lat, lng = data_provider.get_coordinates(req.friend_location_manual)
-        if lat == 0.0: lat, lng = get_fuzzy_coordinate(req.friend_location_manual)
-        if lat != 0.0: participants.append({"id": 9999, "name": req.friend_location_manual, "lat": lat, "lng": lng})
-
-    if len(participants) <= 1:
-        if not participants: center_lat, center_lng = 37.5665, 126.9780; region_name = "서울 시청"
-        else: center_lat = participants[0]['lat']; center_lng = participants[0]['lng']; region_name = "내 주변"
-        regions = [{"region_name": region_name, "lat": center_lat, "lng": center_lng, "transit_info": { "avg_time": 0, "details": [] }}]
-    else:
-        regions = []
-        try:
-            avg_lat = sum(p['lat'] for p in participants) / len(participants)
-            avg_lng = sum(p['lng'] for p in participants) / len(participants)
-            
-            nearest_name = TransportEngine.get_nearest_hotspot(avg_lat, avg_lng)
-            regions.append({"region_name": f"{nearest_name} (중간)", "lat": avg_lat, "lng": avg_lng})
-            regions.extend(TransportEngine.find_best_midpoints(participants)[:2])
-        except: pass
-    
-    config = PURPOSE_CONFIG.get(req.purpose, PURPOSE_CONFIG["식사"])
-    allowed_types = config.get("allowed", ["restaurant"])
-    
-    user_tags_str = str(req.user_selected_tags)
-    if "비즈니스" in req.purpose:
-        if any(x in user_tags_str for x in ["회의", "워크샵", "스터디", "공유오피스"]): allowed_types = ["workspace"]
-        elif any(x in user_tags_str for x in ["식사", "접대", "회식"]): allowed_types = ["restaurant", "fine_dining"]
-        else: allowed_types = ["restaurant", "cafe", "workspace"]
-
-    final_keywords = expand_tags_to_keywords(req.purpose, req.user_selected_tags)
-    final_response = []
-    
-    for region in regions:
-        try:
-            r_name = region.get('region_name', '서울').split('(')[0].strip()
-            if r_name == "중간지점": r_name = "서울" 
-            
-            pois = search_places_in_db(db, r_name, final_keywords, allowed_types)
-            if len(pois) < 5:
-                api_pois = data_provider.search_places_all_queries(final_keywords, r_name, region.get("lat"), region.get("lng"), allowed_types=allowed_types)
-                save_place_to_db(db, api_pois)
-                existing_names = {p.name for p in pois}
-                for p in api_pois:
-                    if p.name not in existing_names: pois.append(p)
-
-            algo_users = [agora_algo.UserProfile(id=0, preferences={}, history=[]) for _ in range(len(participants))]
-            engine = agora_algo.AdvancedRecommender(algo_users, pois)
-            results = engine.recommend(req.purpose, np.array([region.get("lat"), region.get("lng")]), req.user_selected_tags)
-            
-            formatted_places = []
-            for p, s in results[:10]:
-                formatted_places.append({ 
-                    "id": p.id, "name": p.name, "category": p.category, 
-                    "score": max(0.1, round(float(s), 1)), 
-                    "tags": p.tags, "location": [p.location[0], p.location[1]] 
-                })
-            
-            final_response.append({
-                "region_name": region['region_name'], "lat": region["lat"], "lng": region["lng"], 
-                "transit_info": region.get("transit_info"), "places": formatted_places
-            })
-        except: continue
-
-    return final_response
-
+# 🌟 [순서 수정] MeetingFlowEngine 클래스를 Endpoints 위로 올림
 class MeetingFlowEngine:
     def __init__(self, provider: RealDataProvider): self.provider = provider
     def _rank_time_slots(self, slots: List[str], purpose: str) -> List[str]:
@@ -357,8 +218,9 @@ class MeetingFlowEngine:
             r_name = region.get('region_name', '중간지점').split('(')[0].strip()
             if r_name == "지리적 중간" or r_name == "중간지점":
                  r_name = TransportEngine.get_nearest_hotspot(region['lat'], region['lng'])
-
+            
             pois = search_places_in_db(db, r_name, final_keywords, allowed_types)
+            
             if len(pois) < 5:
                 api_pois = self.provider.search_places_all_queries(final_keywords, r_name, region.get("lat"), region.get("lng"), allowed_types=allowed_types)
                 save_place_to_db(db, api_pois)
@@ -393,6 +255,110 @@ class MeetingFlowEngine:
                     place = target_region["recommendations"][0]
             cards.append({"time": time_slot, "region": region_name, "place": place})
         return {"cards": cards, "all_available_slots": sorted(raw_availability)}
+
+# 🌟 [순서 수정] run_... 함수들도 Endpoints 위로 이동
+def run_general_search(req: RecommendRequest, db: Session):
+    search_query = req.location_name
+    if not search_query or search_query in ["내 위치", "중간지점", ""]:
+        return [{ "region_name": "내 주변", "lat": req.current_lat, "lng": req.current_lng, "transit_info": {"avg_time": 0, "details": []}, "places": [] }]
+    
+    lat, lng = data_provider.get_coordinates(search_query)
+    if lat == 0.0: lat, lng = get_fuzzy_coordinate(search_query)
+
+    if lat != 0.0 and lng != 0.0:
+        keywords = expand_tags_to_keywords(req.purpose, req.user_selected_tags)
+        pois = search_places_in_db(db, search_query, keywords, None)
+        if len(pois) < 5:
+            api_pois = data_provider.search_places_all_queries(keywords, search_query, lat, lng, allowed_types=None)
+            save_place_to_db(db, api_pois)
+            existing_names = {p.name for p in pois}
+            for p in api_pois:
+                if p.name not in existing_names: pois.append(p)
+
+        return [{ "region_name": search_query, "lat": lat, "lng": lng, "transit_info": {"avg_time": 0, "details": []}, "places": _format_pois(pois) }]
+    else:
+        pois = data_provider.search_places_all_queries([search_query], "", req.current_lat, req.current_lng, allowed_types=None)
+        save_place_to_db(db, pois)
+        return [{ "region_name": "검색 결과", "lat": req.current_lat, "lng": req.current_lng, "transit_info": {"avg_time": 0, "details": []}, "places": _format_pois(pois) }]
+
+def run_group_recommendation(req: RecommendRequest, db: Session):
+    participants = []
+    for u in req.users:
+        try:
+            loc = u.get('location') if isinstance(u, dict) else None
+            if loc and isinstance(loc, dict):
+                lat, lng = float(loc.get('lat', 0)), float(loc.get('lng', 0))
+                if lat > 0: participants.append({"id": u.get("id", 0), "name": u.get("name", "User"), "lat": lat, "lng": lng})
+        except: continue
+        
+    if req.manual_locations:
+        for idx, loc_name in enumerate(req.manual_locations):
+            if loc_name.strip():
+                lat, lng = data_provider.get_coordinates(loc_name)
+                if lat == 0.0: lat, lng = get_fuzzy_coordinate(loc_name)
+                if lat != 0.0: participants.append({"id": 9000+idx, "name": loc_name, "lat": lat, "lng": lng})
+    
+    if req.friend_location_manual:
+        lat, lng = data_provider.get_coordinates(req.friend_location_manual)
+        if lat == 0.0: lat, lng = get_fuzzy_coordinate(req.friend_location_manual)
+        if lat != 0.0: participants.append({"id": 9999, "name": req.friend_location_manual, "lat": lat, "lng": lng})
+
+    if len(participants) <= 1:
+        if not participants: center_lat, center_lng = 37.5665, 126.9780; region_name = "서울 시청"
+        else: center_lat = participants[0]['lat']; center_lng = participants[0]['lng']; region_name = "내 주변"
+        regions = [{"region_name": region_name, "lat": center_lat, "lng": center_lng, "transit_info": { "avg_time": 0, "details": [] }}]
+    else:
+        regions = []
+        try:
+            avg_lat = sum(p['lat'] for p in participants) / len(participants)
+            avg_lng = sum(p['lng'] for p in participants) / len(participants)
+            nearest_name = TransportEngine.get_nearest_hotspot(avg_lat, avg_lng)
+            regions.append({"region_name": f"{nearest_name} (중간)", "lat": avg_lat, "lng": avg_lng})
+            regions.extend(TransportEngine.find_best_midpoints(participants)[:2])
+        except: pass
+    
+    config = PURPOSE_CONFIG.get(req.purpose, PURPOSE_CONFIG["식사"])
+    allowed_types = config.get("allowed", ["restaurant"])
+    user_tags_str = str(req.user_selected_tags)
+    if "비즈니스" in req.purpose:
+        if any(x in user_tags_str for x in ["회의", "워크샵", "스터디", "공유오피스"]): allowed_types = ["workspace"]
+        elif any(x in user_tags_str for x in ["식사", "접대", "회식"]): allowed_types = ["restaurant", "fine_dining"]
+        else: allowed_types = ["restaurant", "cafe", "workspace"]
+
+    final_keywords = expand_tags_to_keywords(req.purpose, req.user_selected_tags)
+    final_response = []
+    
+    for region in regions:
+        try:
+            r_name_raw = region.get('region_name', '서울')
+            r_name_search = r_name_raw.split('(')[0].strip()
+            if r_name_search == "지리적 중간" or r_name_search == "중간지점": 
+                 r_name_search = TransportEngine.get_nearest_hotspot(region['lat'], region['lng'])
+
+            pois = search_places_in_db(db, r_name_search, final_keywords, allowed_types)
+            if len(pois) < 5:
+                api_pois = data_provider.search_places_all_queries(final_keywords, r_name_search, region.get("lat"), region.get("lng"), allowed_types=allowed_types)
+                save_place_to_db(db, api_pois)
+                existing_names = {p.name for p in pois}
+                for p in api_pois:
+                    if p.name not in existing_names: pois.append(p)
+
+            # 🌟 [수정] part_dicts -> participants (오타 수정)
+            algo_users = [agora_algo.UserProfile(id=p.get('id',0), preferences={}, history=[]) for p in participants]
+            engine = agora_algo.AdvancedRecommender(algo_users, pois)
+            results = engine.recommend(req.purpose, np.array([region.get("lat"), region.get("lng")]), req.user_selected_tags)
+            
+            formatted_places = []
+            for p, s in results[:10]:
+                formatted_places.append({ 
+                    "id": p.id, "name": p.name, "category": p.category, 
+                    "score": max(0.1, round(float(s), 1)), 
+                    "tags": p.tags, "location": [p.location[0], p.location[1]] 
+                })
+            final_response.append({ "region_name": region['region_name'], "lat": region["lat"], "lng": region["lng"], "transit_info": region.get("transit_info"), "places": formatted_places })
+        except: continue
+
+    return final_response
 
 # --- Endpoints ---
 @router.get("/api/places/search")
