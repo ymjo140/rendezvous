@@ -104,22 +104,31 @@ class AvailabilityRequest(BaseModel): user_ids: List[int]; days_to_check: int = 
 
 # 🌟 [3] Helper Functions
 def save_place_to_db(db: Session, poi_list: List[Any]):
+    """검색된 장소를 DB에 자산화 (중복 방지 + 주소 저장)"""
     for p in poi_list:
-        existing = db.query(models.Place).filter(models.Place.name == p.name).all()
+        existing = db.query(models.Place).filter(models.Place.name == p.name).first()
+        
+        # 중복 체크 (좌표 기반)
         is_duplicate = False
         target_lat = float(p.location[0])
         target_lng = float(p.location[1])
         
-        for c in existing:
-            if abs(c.lat - target_lat) < 0.0005 and abs(c.lng - target_lng) < 0.0005:
+        if existing:
+            if abs(existing.lat - target_lat) < 0.0005 and abs(existing.lng - target_lng) < 0.0005:
                 is_duplicate = True
-                break
         
         if not is_duplicate:
+            # 🌟 주소 정보 가져오기 (data_provider에서 넣어준 값)
+            addr = getattr(p, 'address', '주소 정보 없음')
+            
             new_place = models.Place(
-                name=p.name, category=p.category, tags=p.tags,
-                lat=target_lat, lng=target_lng,
-                wemeet_rating=p.avg_rating, address=""
+                name=p.name, 
+                category=p.category, 
+                tags=p.tags,
+                lat=target_lat, 
+                lng=target_lng,
+                wemeet_rating=p.avg_rating,
+                address=addr # 🌟 주소 저장
             )
             db.add(new_place)
     try: db.commit()

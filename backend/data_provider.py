@@ -34,77 +34,61 @@ class RealDataProvider:
         if lat != 0.0: return lat, lng
         return center_lat + random.uniform(-0.002, 0.002), center_lng + random.uniform(-0.002, 0.002)
 
-    # 🌟 [핵심 수정] 카테고리 분류 로직 (문화/액티비티 추가)
+    # 🌟 [핵심 수정] 카테고리 및 태그 분석 강화
     def _analyze_attributes(self, title, category):
-        tags = []
+        tags = set() # 중복 방지 set 사용
         price = 2
         cat_key = "junk" 
         
-        title_clean = title.replace(" ", "")
-        category_clean = category.replace(">", " ").strip()
+        # 카테고리 파싱 (예: "음식점>한식>고기요리")
+        cats = category.split(">")
+        for c in cats:
+            c = c.strip()
+            if c: tags.add(c) # 상세 카테고리를 모두 태그로 추가
         
-        # 🎭 1. 문화생활 (Culture)
-        culture_keywords = ["영화관", "극장", "미술관", "박물관", "전시", "공연", "아트", "갤러리", "CGV", "롯데시네마", "메가박스", "문화"]
-        if any(kw in category_clean or kw in title_clean for kw in culture_keywords):
-            cat_key = "culture"
-            tags.append("문화생활")
-            tags.append("데이트")
-            if "영화" in category_clean or "시네마" in title_clean: tags.append("영화관")
-            if "미술" in category_clean or "갤러리" in title_clean: tags.append("전시회")
-            price = 3
-
-        # 🎳 2. 액티비티/놀거리 (Activity)
-        elif any(kw in category_clean or kw in title_clean for kw in ["방탈출", "보드게임", "볼링", "당구", "오락실", "VR", "노래방", "만화카페", "공방", "클래스", "체험", "공원", "산책"]):
-            cat_key = "activity"
-            tags.append("액티비티")
-            tags.append("놀거리")
-            if "방탈출" in title_clean: tags.append("방탈출")
-            if "보드게임" in category_clean: tags.append("보드게임")
-            if "공원" in category_clean: tags.append("산책")
-            price = 2
-
-        # 🏢 3. 워크스페이스
-        elif any(kw in category_clean or kw in title_clean for kw in ["공간대여", "스터디", "오피스", "회의", "세미나", "사무실", "비즈니스", "파티룸", "스튜디오"]):
+        category_clean = category.replace(">", " ").strip()
+        title_clean = title.replace(" ", "")
+        
+        # 1. 워크스페이스
+        if any(kw in category_clean for kw in ["공간대여", "스터디", "오피스", "회의", "세미나", "사무실", "비즈니스", "파티룸", "스튜디오"]):
             cat_key = "workspace"
-            tags.append("조용한")
-            tags.append("회의실")
+            tags.add("조용한"); tags.add("회의실")
             price = 3
-
-        # ☕ 4. 카페
+        # 2. 카페
         elif any(kw in category_clean for kw in ["카페", "커피", "디저트", "베이커리", "찻집"]):
             cat_key = "cafe"
-            tags.append("카페")
-            if "디저트" in category_clean: tags.append("디저트")
+            tags.add("카페")
+            if "디저트" in category_clean: tags.add("디저트")
             price = 2
-
-        # 🍺 5. 술집
-        elif any(kw in category_clean for kw in ["술집", "주점", "이자카야", "포차", "바", "호프", "맥주", "와인", "Pub"]):
+        # 3. 술집
+        elif any(kw in category_clean for kw in ["술집", "주점", "이자카야", "포차", "바", "호프", "맥주", "와인"]):
             cat_key = "pub"
-            tags.append("술")
-            tags.append("시끌벅적")
+            tags.add("술"); tags.add("시끌벅적")
+            if "이자카야" in category_clean: tags.add("이자카야")
             price = 3
-
-        # 🍽️ 6. 식당
-        elif any(kw in category_clean for kw in ["음식점", "식당", "한식", "양식", "일식", "중식", "분식", "뷔페", "레스토랑", "고기"]):
+        # 4. 식당
+        elif any(kw in category_clean for kw in ["음식점", "식당", "한식", "양식", "일식", "중식", "분식", "뷔페", "레스토랑"]):
             cat_key = "restaurant"
-            tags.append("맛집")
-            if "고기" in category_clean: tags.append("고기")
+            tags.add("맛집")
+            if "한식" in category_clean: tags.add("한식")
+            if "양식" in category_clean: tags.add("양식")
+            if "일식" in category_clean: tags.add("일식")
+            if "중식" in category_clean: tags.add("중식")
             price = 3
         
-        return cat_key, list(set(tags)), price
+        return cat_key, list(tags), price
 
     def search_places_all_queries(self, queries: List[str], region_name: str, center_lat: float, center_lng: float, allowed_types: List[str] = None) -> List[POI]:
         all_pois = []
         seen_titles = set()
 
-        for query in queries[:15]: # 15개까지 검색
+        for query in queries[:15]:
             try:
                 final_query = f"{region_name.split('(')[0]} {query}"
                 headers = { "X-Naver-Client-Id": self.search_client_id, "X-Naver-Client-Secret": self.search_client_secret }
                 resp = requests.get(self.search_api_url, headers=headers, params={"query": final_query, "display": 10, "sort": "random"}, timeout=2)
                 
                 if resp.status_code != 200: continue
-                
                 items = resp.json().get('items', [])
                 
                 for item in items:
@@ -116,19 +100,24 @@ class RealDataProvider:
                     
                     cat_key, tags, price = self._analyze_attributes(title, cat_str)
                     
+                    # 필터링
                     if cat_key == "junk": continue
-                    
-                    # 🌟 [핵심 수정] allowed_types 필터링 (OR 조건)
                     if allowed_types:
                          if cat_key in allowed_types: pass
-                         # 예외: 사용자가 '데이트'를 원하는데 'culture'나 'activity'가 나오면 통과
                          elif "culture" in allowed_types and cat_key in ["culture", "activity", "cafe"]: pass 
                          else: continue
 
-                    address = item.get('roadAddress', item.get('address', ''))
-                    lat, lng = self._get_real_coordinates(address, center_lat, center_lng)
+                    # 🌟 주소 확보 (도로명 우선, 없으면 지번)
+                    road_addr = item.get('roadAddress', '')
+                    jibun_addr = item.get('address', '')
+                    full_address = road_addr if road_addr else jibun_addr
+
+                    # 좌표 확보
+                    lat, lng = self._get_real_coordinates(full_address, center_lat, center_lng)
                     
-                    all_pois.append(POI(
+                    # POI 객체 생성 (주소 정보는 POI 클래스에 없으므로, 임시로 tags에 넣거나 별도 관리 필요하지만, 여기서는 meetings.py에서 처리하도록 함)
+                    # 여기서는 객체 속성으로 address를 슬쩍 끼워넣습니다.
+                    poi = POI(
                         id=random.randint(100000, 999999),
                         name=title,
                         category=cat_key,
@@ -136,7 +125,10 @@ class RealDataProvider:
                         price_level=price,
                         location=np.array([lat, lng]),
                         avg_rating=round(random.uniform(3.5, 5.0), 1)
-                    ))
+                    )
+                    poi.address = full_address # 🌟 주소 필드 추가 (동적 할당)
+                    
+                    all_pois.append(poi)
             except: continue
             
         return all_pois

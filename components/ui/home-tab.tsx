@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate, Sparkles } from "lucide-react"
+import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -98,23 +98,31 @@ export function HomeTab() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("")
   const [myLocationInput, setMyLocationInput] = useState("위치 확인 중...") 
+  
   const [manualInputs, setManualInputs] = useState<string[]>([""]); 
   const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
   const [includeMe, setIncludeMe] = useState(true);
+
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+
   const [selectedPurpose, setSelectedPurpose] = useState("식사")
   const [selectedTags, setSelectedTags] = useState<string[]>([])
-  const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({ PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] });
+  const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({
+      PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: []
+  });
+  
   const [myProfile, setMyProfile] = useState<any>(null)
   const [recommendedRegions, setRecommendedRegions] = useState<any[]>([])
   const [currentDisplayRegion, setCurrentDisplayRegion] = useState<any>(null)
   const [activeTabIdx, setActiveTabIdx] = useState(0)
   const [loading, setLoading] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false); 
+  
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [placeToShare, setPlaceToShare] = useState<any>(null);
   const [myRooms, setMyRooms] = useState<any[]>([]);
+  
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<any>(null);
   const [placeReviews, setPlaceReviews] = useState<any[]>([]);
@@ -122,8 +130,9 @@ export function HomeTab() {
   const [reviewScores, setReviewScores] = useState({ taste: 3, service: 3, price: 3, vibe: 3 });
   const [reviewText, setReviewText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
+  
   const [myFriendList, setMyFriendList] = useState<any[]>([]);
-  const [searchEmail, setSearchEmail] = useState("");
+  
   const mapRef = useRef<any>(null)
   const markersRef = useRef<any[]>([])
   const myMarkerRef = useRef<any>(null)
@@ -140,18 +149,19 @@ export function HomeTab() {
         try {
             const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", { headers: { "Authorization": `Bearer ${token}` } });
             if (res.ok) {
-                const user: any = await res.json();
+                const user = await res.json();
                 setMyProfile({ ...user, locationName: "현위치" });
                 setMyLocationInput("📍 현위치 (GPS)");
             }
             const friendRes = await fetch("https://wemeet-backend-xqlo.onrender.com/api/friends", { headers: { "Authorization": `Bearer ${token}` } });
             if (friendRes.ok) {
-                const data: any = await friendRes.json();
+                const data = await friendRes.json() as any;
                 setMyFriendList(data.friends);
             }
         } catch (e) { console.error(e); }
     }
     fetchMyInfo();
+
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -176,6 +186,8 @@ export function HomeTab() {
         const centerLat = myProfile?.location?.lat || 37.5665;
         const centerLng = myProfile?.location?.lng || 126.9780;
         mapRef.current = new window.naver.maps.Map("map", { center: new window.naver.maps.LatLng(centerLat, centerLng), zoom: 14 }); 
+      } else if (myProfile?.location && !currentDisplayRegion) {
+          mapRef.current.morph(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng));
       }
 
       const createAvatarMarker = (user: any, isMe: boolean) => {
@@ -190,6 +202,7 @@ export function HomeTab() {
           const shoes = getUrl(equipped.shoes);
           const pet = getUrl(equipped.pet);
           const foot = getUrl(equipped.footprint);
+
           const displayName = (user.name || "User").split('(')[0];
 
           const avatarHtml = `
@@ -208,21 +221,26 @@ export function HomeTab() {
                 <div style="position: absolute; bottom: -10px; background: ${isMe ? '#3b82f6' : 'white'}; color: ${isMe ? 'white' : 'black'}; padding: 1px 6px; border-radius: 10px; border: 1px solid #3b82f6; font-size: 10px; font-weight: bold; white-space: nowrap; z-index: 20;">${displayName}</div>
             </div>
           `;
-          return new window.naver.maps.Marker({ position: new window.naver.maps.LatLng(user.location.lat, user.location.lng), map: mapRef.current, icon: { content: avatarHtml, anchor: new window.naver.maps.Point(30, 100) }, zIndex: isMe ? 100 : 50 });
+
+          return new window.naver.maps.Marker({
+              position: new window.naver.maps.LatLng(user.location.lat, user.location.lng),
+              map: mapRef.current,
+              icon: { content: avatarHtml, anchor: new window.naver.maps.Point(30, 100) },
+              zIndex: isMe ? 100 : 50
+          });
       };
 
       if (myProfile && mapRef.current) {
           if (myMarkerRef.current) myMarkerRef.current.setMap(null);
           if (includeMe) {
             myMarkerRef.current = createAvatarMarker(myProfile, true);
-            if (!currentDisplayRegion) mapRef.current.setCenter(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng));
           }
       }
 
       friendMarkersRef.current.forEach(m => m.setMap(null));
       friendMarkersRef.current = [];
       selectedFriends.forEach(friend => {
-          const friendWithAvatar = { ...friend, avatar: friend.avatar || { equipped: { body: "body_basic", hair: "hair_01", top: "top_tshirt", bottom: "bottom_jeans" } } };
+          const friendWithAvatar = { ...friend, avatar: friend.avatar || { equipped: { body: "body_basic" } } };
           const marker = createAvatarMarker(friendWithAvatar, false);
           friendMarkersRef.current.push(marker);
       });
@@ -231,7 +249,11 @@ export function HomeTab() {
           markersRef.current.forEach(m => m.setMap(null));
           markersRef.current = [];
           currentDisplayRegion.places.forEach((p: any) => {
-              const marker = new window.naver.maps.Marker({ position: new window.naver.maps.LatLng(p.location[0], p.location[1]), map: mapRef.current, title: p.name });
+              const marker = new window.naver.maps.Marker({ 
+                  position: new window.naver.maps.LatLng(p.location[0], p.location[1]), 
+                  map: mapRef.current, 
+                  title: p.name
+              });
               markersRef.current.push(marker);
           });
           if (currentDisplayRegion.places.length > 0) {
@@ -248,10 +270,15 @@ export function HomeTab() {
     try {
       const allTags = Object.values(selectedFilters).flat();
       const usersToSend = validUsers.map(u => ({ id: u.id || 0, name: u.name || "User", location: u.location || { lat: 37.566, lng: 126.978 } }));
+
       const response = await fetch('https://wemeet-backend-xqlo.onrender.com/api/recommend', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ users: usersToSend, purpose: selectedPurpose, location_name: locationNameOverride || "중간지점", manual_locations: manualInputs.filter(txt => txt && txt.trim() !== ""), user_selected_tags: allTags })
+        body: JSON.stringify({
+          users: usersToSend, purpose: selectedPurpose, location_name: locationNameOverride || "중간지점",
+          manual_locations: manualInputs.filter(txt => txt && txt.trim() !== ""), user_selected_tags: allTags
+        })
       })
+
       if (response.ok) {
           const data = await response.json() as any[];
           setRecommendedRegions(data);
@@ -279,9 +306,15 @@ export function HomeTab() {
       if (!selectedPlace) return;
       const token = localStorage.getItem("token");
       if (!token) { if(confirm("리뷰 작성은 로그인이 필요합니다.")) router.push("/login"); return; }
-      const payload = { place_name: selectedPlace.name, rating: 0, score_taste: reviewScores.taste, score_service: reviewScores.service, score_price: reviewScores.price, score_vibe: reviewScores.vibe, comment: reviewText, tags: selectedPlace.tags };
+      const payload = {
+          place_name: selectedPlace.name, rating: 0, 
+          score_taste: reviewScores.taste, score_service: reviewScores.service, score_price: reviewScores.price, score_vibe: reviewScores.vibe,
+          comment: reviewText, tags: selectedPlace.tags
+      };
       try {
-          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/reviews", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify(payload) });
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/reviews", {
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify(payload)
+          });
           if (res.ok) { alert("리뷰 등록!"); setIsReviewing(false); setReviewScores({ taste: 3, service: 3, price: 3, vibe: 3 }); setReviewText(""); handlePlaceClick(selectedPlace); }
       } catch (e) { alert("오류 발생"); }
   };
@@ -291,7 +324,9 @@ export function HomeTab() {
       const token = localStorage.getItem("token");
       if (!token) { if(confirm("즐겨찾기는 로그인이 필요합니다.")) router.push("/login"); return; }
       try {
-          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/favorites", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ place_id: selectedPlace.id, place_name: selectedPlace.name }) });
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/favorites", {
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ place_id: selectedPlace.id, place_name: selectedPlace.name })
+          });
           if (res.ok) { const data = await res.json() as any; setIsFavorite(data.message === "Added"); }
       } catch (e) { alert("오류 발생"); }
   };
@@ -301,12 +336,16 @@ export function HomeTab() {
       if (!token) { if (confirm("공유 기능은 로그인이 필요합니다.")) { router.push("/login"); } return; }
       if (!placeToShare) return;
       try {
-          await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/share", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ room_id: roomId, place_name: placeToShare.name, place_category: placeToShare.category, place_tags: placeToShare.tags }) });
+          await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/share", {
+              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              body: JSON.stringify({ room_id: roomId, place_name: placeToShare.name, place_category: placeToShare.category, place_tags: placeToShare.tags })
+          });
           alert("채팅방에 공유 완료!"); setIsShareModalOpen(false); setIsDetailOpen(false); 
       } catch (e) { alert("공유 실패"); }
   };
 
   const handleTopSearch = () => { if(searchQuery) fetchRecommendations([myProfile], searchQuery); }
+  
   const handleMidpointSearch = () => {
       const participants = (includeMe && myProfile) ? [myProfile, ...selectedFriends] : [...selectedFriends];
       const hasManualInput = manualInputs.some(txt => txt && txt.trim() !== "");
@@ -314,9 +353,17 @@ export function HomeTab() {
       fetchRecommendations(participants, "중간지점");
   };
 
-  const toggleFilter = (groupKey: string, value: string) => { setSelectedFilters(prev => { if (groupKey === "PURPOSE") return { ...prev, [groupKey]: [value] }; const list = prev[groupKey] || []; if (list.includes(value)) return { ...prev, [groupKey]: list.filter(v => v !== value) }; return { ...prev, [groupKey]: [...list, value] }; }); };
+  const toggleFilter = (groupKey: string, value: string) => {
+      setSelectedFilters(prev => {
+          if (groupKey === "PURPOSE") return { ...prev, [groupKey]: [value] };
+          const list = prev[groupKey] || [];
+          if (list.includes(value)) return { ...prev, [groupKey]: list.filter(v => v !== value) };
+          return { ...prev, [groupKey]: [...list, value] };
+      });
+  };
   const removeTag = (tag: string) => { for (const [key, vals] of Object.entries(selectedFilters)) { if (vals.includes(tag)) toggleFilter(key, tag); } };
   const toggleFriend = (friend: any) => { if (selectedFriends.find(f => f.id === friend.id)) setSelectedFriends(prev => prev.filter(f => f.id !== friend.id)); else setSelectedFriends(prev => [...prev, friend]); };
+
   const handleManualInputChange = (idx: number, val: string) => { const newInputs = [...manualInputs]; newInputs[idx] = val; setManualInputs(newInputs); };
   const addManualInput = () => setManualInputs([...manualInputs, ""]);
   const removeManualInput = (idx: number) => { if (manualInputs.length > 1) setManualInputs(manualInputs.filter((_, i) => i !== idx)); else setManualInputs([""]); };
@@ -494,31 +541,27 @@ export function HomeTab() {
   )
 }
 
-// components/ui/home-tab.tsx 파일 맨 아래에 있는 함수 교체
-
+// [내부 컴포넌트] 자동완성 입력
 function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder: string }) {
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
 
     useEffect(() => {
-        if (value.length < 1) { setSuggestions([]); return; } // 한 글자만 쳐도 나오게 수정 (원하면 2로 변경)
-        
+        if (value.length < 1) { setSuggestions([]); return; }
         const timer = setTimeout(async () => {
             try {
-                // 🌟 백엔드 API 호출 (이제 백엔드는 FALLBACK_COORDINATES만 뒤집니다)
-                // 주소는 본인의 백엔드 주소(Render)로 변경되어 있어야 합니다.
+                // 🌟 [수정] 백엔드 API 호출 (Render 주소 확인 필수!)
                 const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/places/search?query=${value}`);
                 
                 if (res.ok) {
                     const data = await res.json() as any[];
-                    // 백엔드가 { title: "강남역", address: "주요 지하철역/거점" ... } 형태로 줍니다.
                     setSuggestions(data);
                     setShowSuggestions(true);
                 }
             } catch (e) {
                 console.error("검색 실패:", e);
             }
-        }, 200); // 딜레이를 200ms로 줄여서 더 빠르게 반응하도록 함
+        }, 200);
 
         return () => clearTimeout(timer);
     }, [value]);
@@ -539,12 +582,11 @@ function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, on
                             key={idx} 
                             className="p-2 hover:bg-gray-100 cursor-pointer text-sm flex justify-between items-center" 
                             onClick={() => { 
-                                onChange(item.title); // 클릭 시 해당 역 이름이 입력창에 들어감
+                                onChange(item.title); 
                                 setShowSuggestions(false); 
                             }}
                         >
                             <span className="font-bold">{item.title}</span>
-                            {/* address가 있으면 작게 보여줌 (예: 주요 거점) */}
                             {item.address && <span className="text-xs text-gray-400">{item.address}</span>}
                         </div>
                     ))}
