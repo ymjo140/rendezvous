@@ -26,7 +26,7 @@ export default function RootLayout({
         {/* ✅ [기존 유지] 사용자님이 주신 새 ID와 ncpKeyId 적용 */}
         <Script 
           strategy="beforeInteractive" 
-          src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=6fuj0ui2d3`} 
+          src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=djsgmvkn5q`} 
         />
       </head>
       <body className={inter.className}>
