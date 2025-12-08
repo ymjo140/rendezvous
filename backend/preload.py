@@ -1,8 +1,7 @@
 import sys
 import os
 
-# 🌟 [핵심] 시스템 경로 자동 설정 (Import Error 방지)
-# 현재 파일(preload.py)이 있는 폴더(backend)를 파이썬 검색 경로에 강제 추가합니다.
+# 🌟 [핵심] 시스템 경로 자동 설정
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
@@ -15,14 +14,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from typing import List, Tuple
 
-# 🌟 모듈 임포트 (실패 시 원인 출력)
+# 🌟 모듈 임포트
 try:
     import models
     from database import Base, DATABASE_URL
     from constants import NAVER_SEARCH_ID, NAVER_SEARCH_SECRET, NAVER_MAP_ID, NAVER_MAP_SECRET
 except ImportError as e:
     print(f"❌ 임포트 오류: {e}")
-    print("👉 'backend' 폴더 안에 'models.py', 'database.py', 'constants.py'가 있는지 확인해주세요.")
     sys.exit(1)
 
 # --- 설정 ---
@@ -35,10 +33,9 @@ try:
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 except Exception as e:
     print(f"❌ 데이터베이스 연결 오류: {e}")
-    print("👉 .env 파일의 DATABASE_URL이 정확한지 확인해주세요.")
     sys.exit(1)
 
-# 🌟 [전체 키워드 리스트 - 생략 없음]
+# 🌟 [수정됨] 스튜디오 제거 (사진관 추천 방지)
 TARGET_KEYWORDS_DICT = {
     "한식": ["한식", "한정식", "솥밥", "갈비", "불고기", "보쌈", "한우"],
     "양식": ["양식", "파스타", "스테이크", "브런치", "이탈리안", "뇨끼", "라자냐", "아메리칸", "이태리"],
@@ -48,6 +45,7 @@ TARGET_KEYWORDS_DICT = {
     "술": ["이자카야", "와인바", "위스키바", "프라이빗룸"],
     "커피챗": ["호텔라운지", "조용한카페", "비즈니스카페", "대형카페", "로스터리"],
     "회의": ["회의실", "미팅룸", "세미나실", "공간대여", "스페이스클라우드", "쉐어잇", "비즈니스센터", "공유오피스"],
+    # 🚨 "스튜디오", "렌탈스튜디오" 제거함 (사진관 이슈 해결)
     "워크샵": ["파티룸", "공간대여", "워크샵장소", "아워플레이스", "세미나실"],
     "문화생활": ["영화관", "미술관", "박물관", "전시회", "공연장", "연극", "뮤지컬", "아트센터", "갤러리", "축제"],
     "영화관": ["CGV", "롯데시네마", "메가박스", "독립영화관", "자동차극장", "극장"],
@@ -60,7 +58,7 @@ TARGET_KEYWORDS_DICT = {
     "가성비": ["저렴한", "착한가격", "무한리필"]
 }
 
-# 🌟 [전체 지역 리스트 - 생략 없음]
+# 🌟 [전체 지역 리스트]
 TARGET_REGIONS = [
     # 1호선
     "서울역", "시청", "종각", "종로3가", "종로5가", "동대문", "동묘앞", "신설동", "제기동",
@@ -91,69 +89,82 @@ class Preloader:
         self.db = SessionLocal()
 
     def get_coordinates(self, address: str) -> Tuple[float, float]:
-        if not NAVER_MAP_ID: return 0.0, 0.0
+        if not NAVER_MAP_ID: 
+            print("  ⚠️ 네이버 지도 API 키(NAVER_MAP_ID)가 없습니다.")
+            return 0.0, 0.0
+            
         headers = { "X-NCP-APIGW-API-KEY-ID": NAVER_MAP_ID, "X-NCP-APIGW-API-KEY": NAVER_MAP_SECRET }
         try:
             resp = requests.get(GEOCODE_API_URL, headers=headers, params={"query": address})
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("addresses"):
-                    return float(data["addresses"][0]["y"]), float(data["addresses"][0]["x"])
+            if resp.status_code != 200:
+                print(f"  ⚠️ Geocoding 실패 ({resp.status_code}): {address}")
+                return 0.0, 0.0
+            
+            data = resp.json()
+            if data.get("addresses"):
+                return float(data["addresses"][0]["y"]), float(data["addresses"][0]["x"])
             else:
-                # 좌표 변환 실패 시 에러 로그는 너무 많을 수 있으니 주석 처리하거나 필요 시 해제
-                # print(f"  ⚠️ 좌표 변환 실패: {resp.status_code}")
-                pass
-        except: pass
-        return 0.0, 0.0
+                # print(f"  ⚠️ 좌표 없음: {address}")
+                return 0.0, 0.0
+        except Exception as e:
+            print(f"  ⚠️ 좌표 API 에러: {e}")
+            return 0.0, 0.0
 
     def clean_html(self, text):
         return re.sub('<[^<]+?>', '', text)
 
     def analyze_attributes(self, title, category):
-        """네이버 카테고리 + 사용자 정의 키워드 매칭"""
         tags = set()
         price = 2
         
-        # 1. 네이버 카테고리 파싱
         cats = category.split(">")
         for c in cats:
             c = c.strip()
             if c: tags.add(c)
         
         category_clean = category.replace(">", " ").strip()
-        
-        # 2. 메인 카테고리 결정 (기본 로직)
+        title_clean = title.replace(" ", "")
+
+        # 🌟 [필터링] 사진관/촬영소 절대 제외
+        if any(bad in title_clean or bad in category_clean for bad in ["사진관", "스튜디오", "촬영", "포토", "photo", "studio"]):
+            # 단, "쿠킹스튜디오" 등은 살려야 할 수도 있지만, 일단 워크샵 목적의 안전을 위해 스튜디오는 엄격히 배제하거나
+            # "공간대여"가 명시된 경우만 허용해야 함. 여기서는 일단 'junk' 처리.
+            if "공간대여" not in category_clean and "파티룸" not in category_clean:
+                return "junk", []
+
+        # 메인 카테고리 결정
         final_cat = "restaurant"
-        if any(k in category_clean for k in ["카페", "커피", "디저트", "베이커리"]):
-            final_cat = "cafe"
-        elif any(k in category_clean for k in ["술집", "주점", "이자카야", "바", "호프", "포차"]):
-            final_cat = "pub"
-            price = 3
-        elif any(k in category_clean for k in ["스터디", "독서실", "오피스", "회의", "공간대여"]):
-            final_cat = "workspace"
+        if any(k in category_clean for k in ["카페", "커피", "디저트", "베이커리"]): final_cat = "cafe"
+        elif any(k in category_clean for k in ["술집", "주점", "이자카야", "바", "호프", "포차"]): final_cat = "pub"; price = 3
+        elif any(k in category_clean for k in ["스터디", "독서실", "오피스", "회의", "공간대여", "파티룸"]): final_cat = "workspace"
         
-        # 3. 🌟 [핵심] 사용자 정의 키워드 전체 매칭
+        # 상세 키워드 매칭
         for key, keywords in TARGET_KEYWORDS_DICT.items():
             for kw in keywords:
                 if kw in title or kw in category_clean:
-                    tags.add(kw) # 상세 키워드 (예: 솥밥)
-                    tags.add(key) # 상위 키워드 (예: 한식)
+                    tags.add(kw)
+                    tags.add(key)
         
         return final_cat, list(tags)
 
     def save_to_db(self, item, lat, lng):
         title = self.clean_html(item['title'])
+        category_raw = item.get('category', '')
         
-        # 중복 체크 (이름 + 좌표 50m 반경)
+        # 속성 분석 및 필터링
+        final_cat, tags = self.analyze_attributes(title, category_raw)
+        
+        # 🌟 'junk' 카테고리(사진관 등)는 저장하지 않음
+        if final_cat == "junk": 
+            # print(f"  🗑️ 제외됨(사진관 등): {title}")
+            return
+
+        # 중복 체크
         existing = self.db.query(models.Place).filter(models.Place.name == title).all()
         for ex in existing:
             if abs(ex.lat - lat) < 0.0005 and abs(ex.lng - lng) < 0.0005:
-                # print(f"  ⏭️ 중복 건너뜀: {title}")
                 return 
 
-        category_raw = item.get('category', '')
-        final_cat, tags = self.analyze_attributes(title, category_raw)
-        
         address = item.get('roadAddress') or item.get('address') or ""
         
         new_place = models.Place(
@@ -172,76 +183,66 @@ class Preloader:
             print(f"  ✅ 저장: {title} ({final_cat})")
         except Exception as e:
             self.db.rollback()
-            print(f"  ❌ DB 저장 에러: {e}")
 
     def run(self):
-        print("🚀 [전국구 데이터 수집] 시작합니다.")
-        
-        # 1. API 키 확인 (디버깅용)
-        if not NAVER_SEARCH_ID or not NAVER_SEARCH_SECRET:
-            print("\n❌ [치명적 오류] 네이버 검색 API 키가 없습니다!")
-            print(f"   - ID: {NAVER_SEARCH_ID}")
-            print(f"   - SECRET: {NAVER_SEARCH_SECRET}")
-            print("👉 .env 파일 위치와 내용을 확인해주세요.")
-            return
-
-        # 모든 키워드를 하나의 리스트로 평탄화
+        # 전체 키워드 리스트 생성
         all_keywords = list(set([k for sublist in TARGET_KEYWORDS_DICT.values() for k in sublist]))
         
+        print(f"🚀 [전국구 데이터 수집] 시작합니다.")
         print(f"📍 수집 대상 지역: {len(TARGET_REGIONS)}곳")
-        print(f"🔑 수집 대상 키워드: {len(all_keywords)}개")
+        print(f"🔑 수집 대상 키워드: {len(all_keywords)}개 (사용자가 지정한 전체 리스트)")
         print("--------------------------------------------------")
         
+        if not NAVER_SEARCH_ID:
+            print("❌ 네이버 검색 API 키가 없습니다. .env 파일을 확인하세요.")
+            return
+
         total_saved = 0
         
         for region in TARGET_REGIONS:
             print(f"\n📍 [{region}] 탐색 중...")
             
-            # 🌟 전체 키워드를 돌리면 너무 많으므로, 대표 키워드 위주로 먼저 실행하고
-            # 필요하면 all_keywords로 변경해서 돌리세요.
-            # 지금은 에러 확인을 위해 '대표 키워드 5개'만 돌리도록 설정했습니다.
-            # (전체를 돌리려면 아래 search_keywords를 all_keywords로 바꾸세요)
-            search_keywords = ["맛집", "카페", "술집", "스터디카페", "데이트"] 
-            # search_keywords = all_keywords # ⚠️ 전체 수집 시 주석 해제 (시간 오래 걸림)
-
-            for keyword in search_keywords:
+            # 🌟 사용자가 요청한 '전체 키워드'로 루프 실행
+            for keyword in all_keywords:
                 query = f"{region} {keyword}"
                 try:
                     headers = { 
                         "X-Naver-Client-Id": NAVER_SEARCH_ID, 
                         "X-Naver-Client-Secret": NAVER_SEARCH_SECRET 
                     }
-                    # 검색 결과 5개씩 가져옴
+                    # 정확도순(comment) 대신 random(유사도) or vote(인기도) 사용 가능
+                    # 여기서는 다양한 데이터를 위해 'random' 추천, 혹은 정확한 매칭을 위해 'sim'
                     resp = requests.get(SEARCH_API_URL, headers=headers, params={"query": query, "display": 5, "sort": "comment"}, timeout=3)
                     
-                    if resp.status_code != 200:
-                        print(f"❌ API 호출 실패! 상태 코드: {resp.status_code}")
-                        print(f"👉 원인: {resp.text}")
+                    if resp.status_code != 200: 
+                        print(f"❌ 검색 API 실패: {resp.status_code}")
                         continue
                         
                     items = resp.json().get('items', [])
-                    if not items:
-                        # print(f"  - '{keyword}': 결과 없음")
-                        continue
+                    if not items: continue
 
                     for item in items:
                         addr = item.get('roadAddress') or item.get('address')
                         if not addr: continue
                         
+                        # 좌표 변환 (실패 시 로그 출력됨)
                         lat, lng = self.get_coordinates(addr)
+                        
+                        # 좌표가 0.0이면 저장 불가 (지도에 못 띄움)
                         if lat == 0.0: continue
                         
                         self.save_to_db(item, lat, lng)
                         total_saved += 1
-                        
-                    time.sleep(0.05) # API 제한 방지 딜레이
+                    
+                    # API 호출 제한 방지 (0.05초)
+                    time.sleep(0.05) 
                 except Exception as e:
                     print(f"Error processing {query}: {e}")
         
         print(f"\n✨ 총 {total_saved}개 장소 데이터 저장 완료!")
 
 if __name__ == "__main__":
-    # 테이블이 없으면 생성
+    # 테이블 생성 (혹시 없으면)
     models.Base.metadata.create_all(bind=engine)
     
     loader = Preloader()
