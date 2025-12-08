@@ -1,10 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { HomeTab } from "@/components/ui/home-tab"
-import { MyPageTab } from "@/components/ui/mypage-tab"
-// 아이콘 추가: Users (커뮤니티용)
 import { Map, MessageCircle, Calendar, User, Users } from "lucide-react"
+
+// 🌟 모든 탭 컴포넌트 불러오기 (로직 생략 없음)
+import { HomeTab } from "@/components/ui/home-tab"
+import { CommunityTab } from "@/components/ui/community-tab"
+import { ChatTab } from "@/components/ui/chat-tab"
+import { CalendarTab } from "@/components/ui/calendar-tab"
+import { MyPageTab } from "@/components/ui/mypage-tab"
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState("home")
@@ -14,38 +18,23 @@ export default function Page() {
       
       {/* 메인 콘텐츠 영역 */}
       <main className="flex-1 overflow-hidden relative">
-        {/* 1. 홈 (기존 로직) */}
+        {/* 1. 홈 탭 */}
         {activeTab === "home" && <HomeTab />}
 
-        {/* 2. 커뮤니티 (신규 탭 - 로직 없이 준비 중 표시) */}
-        {activeTab === "community" && (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-                <Users className="w-10 h-10 opacity-20" />
-                <span className="text-sm">커뮤니티 기능 준비 중...</span>
-            </div>
-        )}
+        {/* 2. 커뮤니티 탭 (컴포넌트 연결) */}
+        {activeTab === "community" && <CommunityTab />}
 
-        {/* 3. 채팅 (기존 로직 유지 - 준비 중 표시) */}
-        {activeTab === "chat" && (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-                <MessageCircle className="w-10 h-10 opacity-20" />
-                <span className="text-sm">채팅 기능 준비 중...</span>
-            </div>
-        )}
+        {/* 3. 채팅 탭 (컴포넌트 연결) */}
+        {activeTab === "chat" && <ChatTab />}
 
-        {/* 4. 일정 (기존 로직 유지 - 준비 중 표시) */}
-        {activeTab === "calendar" && (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-                <Calendar className="w-10 h-10 opacity-20" />
-                <span className="text-sm">캘린더 기능 준비 중...</span>
-            </div>
-        )}
+        {/* 4. 일정 탭 (컴포넌트 연결) */}
+        {activeTab === "calendar" && <CalendarTab />}
 
-        {/* 5. 마이페이지 (기존 로직) */}
+        {/* 5. 마이페이지 탭 */}
         {activeTab === "mypage" && <MyPageTab />}
       </main>
 
-      {/* 하단 네비게이션 바 (디자인 업그레이드 + 5개 탭) */}
+      {/* 하단 네비게이션 바 */}
       <nav className="flex h-20 flex-shrink-0 items-center justify-around border-t border-gray-100 bg-white px-1 pb-2 z-30 rounded-t-3xl shadow-[0_-5px_20px_rgba(0,0,0,0.03)]">
         
         {/* 1. 홈 */}
@@ -59,7 +48,7 @@ export default function Page() {
           <span className="text-[10px] font-bold">홈</span>
         </button>
 
-        {/* 2. 커뮤니티 (추가됨) */}
+        {/* 2. 커뮤니티 */}
         <button 
             onClick={() => setActiveTab("community")} 
             className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
