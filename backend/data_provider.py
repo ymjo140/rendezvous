@@ -50,7 +50,7 @@ class RealDataProvider:
         title_clean = title.replace(" ", "")
         
         # 1. 워크스페이스
-        if any(kw in category_clean for kw in ["공간대여", "스터디", "오피스", "회의", "세미나", "사무실", "비즈니스", "파티룸", "스튜디오"]):
+        if any(kw in category_clean for kw in ["공간대여", "스터디", "오피스", "회의", "세미나", "사무실", "비즈니스", "파티룸"]):
             cat_key = "workspace"
             tags.add("조용한"); tags.add("회의실")
             price = 3
