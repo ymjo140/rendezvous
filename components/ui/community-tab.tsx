@@ -15,7 +15,6 @@ export function CommunityTab() {
   const [meetings, setMeetings] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   
-  // 🌟 생성 모달 상태 및 입력값
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [newMeeting, setNewMeeting] = useState({
       title: "", content: "", max_members: 4, location: "", date: "", time: "", category: "전체"
@@ -32,23 +31,35 @@ export function CommunityTab() {
 
   useEffect(() => { fetchCommunities() }, [])
 
-  // 🌟 모임 생성 핸들러 (실제 백엔드 전송)
   const handleCreate = async () => {
       if (!newMeeting.title || !newMeeting.content) { alert("제목과 내용을 입력해주세요."); return; }
+      
       try {
+          // 🌟 422 에러 해결: 숫자 필드(max_members)는 반드시 Number()로 변환
+          const payload = {
+              title: newMeeting.title,
+              content: newMeeting.content,
+              max_members: Number(newMeeting.max_members), // 문자열 -> 숫자 변환
+              location: newMeeting.location,
+              date_time: `${newMeeting.date} ${newMeeting.time}`,
+              category: newMeeting.category,
+              tags: [newMeeting.category] // 태그가 필요하다면 배열로
+          };
+
           const res = await fetchWithAuth("/api/communities", {
               method: "POST",
-              body: JSON.stringify({
-                  ...newMeeting,
-                  date_time: `${newMeeting.date} ${newMeeting.time}`
-              })
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
           });
+
           if (res.ok) {
               alert("모임이 생성되었습니다!");
               setIsCreateOpen(false);
-              fetchCommunities(); // 목록 새로고침
+              fetchCommunities(); 
               setNewMeeting({ title: "", content: "", max_members: 4, location: "", date: "", time: "", category: "전체" });
           } else {
+              const err = await res.json();
+              console.error(err);
               alert("생성 실패: 입력 정보를 확인해주세요.");
           }
       } catch (e) { alert("오류가 발생했습니다."); }
@@ -65,14 +76,12 @@ export function CommunityTab() {
 
   return (
     <div className="flex flex-col h-full bg-slate-50 font-['Pretendard']">
-      {/* 상단 헤더 */}
       <div className="bg-white p-4 pb-2 sticky top-0 z-10 shadow-sm">
         <div className="relative mb-3">
           <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
           <Input className="pl-9 bg-white border-2 border-[#7C3AED]/20 rounded-xl h-10 text-sm" placeholder="모임 검색..." />
         </div>
 
-        {/* 🌟 생성 버튼에 onClick 연결 */}
         <Button className="w-full bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold h-11 rounded-xl mb-4 shadow-md transition-all" onClick={() => setIsCreateOpen(true)}>
           <Plus className="mr-2 h-5 w-5" /> 모임 만들기
         </Button>
@@ -84,7 +93,6 @@ export function CommunityTab() {
         </div>
       </div>
 
-      {/* 리스트 영역 */}
       <ScrollArea className="flex-1 px-4 pb-4">
         <div className="space-y-4 pb-20 mt-2">
           {loading ? <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-[#7C3AED]"/></div> : 
@@ -118,7 +126,6 @@ export function CommunityTab() {
         </div>
       </ScrollArea>
 
-      {/* 🌟 모임 생성 모달 */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogContent className="sm:max-w-md">
               <DialogHeader><DialogTitle>새 모임 만들기</DialogTitle></DialogHeader>
@@ -131,6 +138,7 @@ export function CommunityTab() {
                   <Input placeholder="장소 (예: 강남역)" value={newMeeting.location} onChange={e=>setNewMeeting({...newMeeting, location: e.target.value})} />
                   <div className="flex gap-2 items-center">
                       <span className="text-sm w-20">최대 인원</span>
+                      {/* 🌟 숫자 입력값 받기 */}
                       <Input type="number" min={2} max={20} value={newMeeting.max_members} onChange={e=>setNewMeeting({...newMeeting, max_members: Number(e.target.value)})} />
                   </div>
                   <Textarea placeholder="어떤 모임인가요? 내용을 적어주세요." value={newMeeting.content} onChange={e=>setNewMeeting({...newMeeting, content: e.target.value})} />

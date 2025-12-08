@@ -2,11 +2,10 @@
 
 import React, { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input" 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock } from "lucide-react"
+import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Hourglass } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
 export function CalendarTab() {
@@ -14,9 +13,10 @@ export function CalendarTab() {
     const [events, setEvents] = useState<any[]>([])
     const [selectedDate, setSelectedDate] = useState<Date>(new Date())
     
-    // 🌟 일정 생성 모달 상태
+    // 일정 생성 모달 상태
     const [isCreateOpen, setIsCreateOpen] = useState(false)
-    const [newEvent, setNewEvent] = useState({ title: "", location: "", time: "12:00" })
+    // 🌟 duration(소요 시간) 필드 복구 (기본값 2시간)
+    const [newEvent, setNewEvent] = useState({ title: "", location: "", time: "12:00", duration: 2 })
 
     const loadEvents = async () => {
         try {
@@ -27,31 +27,42 @@ export function CalendarTab() {
 
     useEffect(() => { loadEvents() }, [])
 
-    // 🌟 일정 생성 핸들러
     const handleCreateEvent = async () => {
         if(!newEvent.title) return alert("일정 제목을 입력하세요.");
+        
         try {
-            const dateStr = selectedDate.toISOString().split('T')[0]; // 선택된 날짜
+            const dateStr = selectedDate.toISOString().split('T')[0];
+            
+            // 🌟 422 에러 방지: 숫자는 확실하게 Number()로 변환해서 전송
+            const payload = {
+                title: newEvent.title,
+                date: dateStr,
+                time: newEvent.time,
+                duration: Number(newEvent.duration), // 🌟 소요 시간 추가
+                location_name: newEvent.location,
+                description: "개인 일정"
+            };
+
             const res = await fetchWithAuth("/api/events", {
                 method: "POST",
-                body: JSON.stringify({
-                    title: newEvent.title,
-                    date: dateStr,
-                    time: newEvent.time,
-                    location_name: newEvent.location,
-                    description: "개인 일정"
-                })
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
+
             if(res.ok) {
                 alert("일정이 등록되었습니다.");
                 setIsCreateOpen(false);
                 loadEvents();
-                setNewEvent({ title: "", location: "", time: "12:00" });
+                setNewEvent({ title: "", location: "", time: "12:00", duration: 2 });
+            } else {
+                const err = await res.json();
+                console.error("등록 실패:", err);
+                alert("등록 실패: 입력 값을 확인해주세요.");
             }
-        } catch(e) { alert("등록 실패"); }
+        } catch(e) { alert("등록 중 오류 발생"); }
     }
 
-    // 날짜 계산 로직 (기존 유지)
+    // 날짜 계산 로직
     const getDaysInMonth = (year: number, month: number) => {
         const date = new Date(year, month, 1)
         const days = []
@@ -118,7 +129,7 @@ export function CalendarTab() {
                                         <MoreHorizontal className="w-4 h-4 text-gray-400" />
                                     </div>
                                     <div className="text-xs text-gray-500 space-y-1">
-                                        <div className="flex items-center gap-1"><Clock className="w-3 h-3"/> {ev.time}</div>
+                                        <div className="flex items-center gap-1"><Clock className="w-3 h-3"/> {ev.time} ({ev.duration}시간)</div>
                                         <div className="flex items-center gap-1"><MapPin className="w-3 h-3"/> {ev.location_name || "장소 미정"}</div>
                                     </div>
                                 </div>
@@ -132,7 +143,7 @@ export function CalendarTab() {
                 </div>
             </ScrollArea>
 
-            {/* 🌟 플로팅 생성 버튼 (클릭 시 모달 오픈) */}
+            {/* 플로팅 버튼 */}
             <div className="absolute bottom-24 right-5">
                 <Button className="rounded-full h-14 w-14 bg-[#14B8A6] hover:bg-[#0D9488] text-white shadow-lg flex items-center justify-center p-0" onClick={() => setIsCreateOpen(true)}>
                     <Plus className="w-7 h-7" />
@@ -148,7 +159,24 @@ export function CalendarTab() {
                             {selectedDate.getFullYear()}. {selectedDate.getMonth()+1}. {selectedDate.getDate()}
                         </div>
                         <Input placeholder="일정 제목 (예: 팀 회식)" value={newEvent.title} onChange={e=>setNewEvent({...newEvent, title: e.target.value})} />
-                        <Input type="time" value={newEvent.time} onChange={e=>setNewEvent({...newEvent, time: e.target.value})} />
+                        
+                        <div className="flex gap-2">
+                            <div className="flex-1">
+                                <label className="text-xs text-gray-500 mb-1 block">시작 시간</label>
+                                <Input type="time" value={newEvent.time} onChange={e=>setNewEvent({...newEvent, time: e.target.value})} />
+                            </div>
+                            <div className="flex-1">
+                                <label className="text-xs text-gray-500 mb-1 block">소요 시간(시간)</label>
+                                <Input 
+                                    type="number" 
+                                    min={1} 
+                                    max={24} 
+                                    value={newEvent.duration} 
+                                    onChange={e=>setNewEvent({...newEvent, duration: Number(e.target.value)})} 
+                                />
+                            </div>
+                        </div>
+
                         <Input placeholder="장소" value={newEvent.location} onChange={e=>setNewEvent({...newEvent, location: e.target.value})} />
                     </div>
                     <DialogFooter>
