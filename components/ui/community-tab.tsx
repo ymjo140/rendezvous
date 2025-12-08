@@ -9,7 +9,9 @@ import { Search, Heart, MapPin, Calendar, User, Plus, Loader2 } from "lucide-rea
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { fetchWithAuth } from "@/lib/api-client"
+
+// 백엔드 URL 직접 사용
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 export function CommunityTab() {
   const [meetings, setMeetings] = useState<any[]>([])
@@ -17,13 +19,16 @@ export function CommunityTab() {
   
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [newMeeting, setNewMeeting] = useState({
-      title: "", content: "", max_members: 4, location: "", date: "", time: "", category: "전체"
+      title: "", content: "", max_members: "4", location: "", date: "", time: "", category: "전체"
   })
 
   const fetchCommunities = async () => {
     setLoading(true)
     try {
-      const res = await fetchWithAuth("/api/communities")
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/api/communities`, {
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+      })
       if (res.ok) setMeetings(await res.json())
     } catch (e) { console.error(e) } 
     finally { setLoading(false) }
@@ -35,20 +40,25 @@ export function CommunityTab() {
       if (!newMeeting.title || !newMeeting.content) { alert("제목과 내용을 입력해주세요."); return; }
       
       try {
+          const token = localStorage.getItem("token");
+          
           // 🌟 422 에러 해결: 숫자 필드(max_members)는 반드시 Number()로 변환
           const payload = {
               title: newMeeting.title,
               content: newMeeting.content,
-              max_members: Number(newMeeting.max_members), // 문자열 -> 숫자 변환
+              max_members: Number(newMeeting.max_members), // 문자열 -> 숫자 변환 필수
               location: newMeeting.location,
               date_time: `${newMeeting.date} ${newMeeting.time}`,
               category: newMeeting.category,
-              tags: [newMeeting.category] // 태그가 필요하다면 배열로
+              tags: [newMeeting.category] 
           };
 
-          const res = await fetchWithAuth("/api/communities", {
+          const res = await fetch(`${API_URL}/api/communities`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { 
+                  "Content-Type": "application/json",
+                  ...(token && { "Authorization": `Bearer ${token}` })
+              },
               body: JSON.stringify(payload)
           });
 
@@ -56,7 +66,7 @@ export function CommunityTab() {
               alert("모임이 생성되었습니다!");
               setIsCreateOpen(false);
               fetchCommunities(); 
-              setNewMeeting({ title: "", content: "", max_members: 4, location: "", date: "", time: "", category: "전체" });
+              setNewMeeting({ title: "", content: "", max_members: "4", location: "", date: "", time: "", category: "전체" });
           } else {
               const err = await res.json();
               console.error(err);
@@ -68,7 +78,11 @@ export function CommunityTab() {
   const handleJoin = async (id: string) => {
     if (!confirm("이 모임에 참여하시겠습니까?")) return
     try {
-      const res = await fetchWithAuth(`/api/communities/${id}/join`, { method: "POST" })
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/api/communities/${id}/join`, { 
+          method: "POST",
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+      })
       if (res.ok) { alert("참여 완료!"); fetchCommunities(); }
       else { alert("참여 실패 (이미 참여했거나 오류)"); }
     } catch (e) { alert("오류 발생"); }
@@ -139,7 +153,7 @@ export function CommunityTab() {
                   <div className="flex gap-2 items-center">
                       <span className="text-sm w-20">최대 인원</span>
                       {/* 🌟 숫자 입력값 받기 */}
-                      <Input type="number" min={2} max={20} value={newMeeting.max_members} onChange={e=>setNewMeeting({...newMeeting, max_members: Number(e.target.value)})} />
+                      <Input type="number" min={2} max={20} value={newMeeting.max_members} onChange={e=>setNewMeeting({...newMeeting, max_members: e.target.value})} />
                   </div>
                   <Textarea placeholder="어떤 모임인가요? 내용을 적어주세요." value={newMeeting.content} onChange={e=>setNewMeeting({...newMeeting, content: e.target.value})} />
               </div>

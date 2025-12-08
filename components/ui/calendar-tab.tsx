@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input" 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Hourglass } from "lucide-react"
-import { fetchWithAuth } from "@/lib/api-client"
+import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock } from "lucide-react"
+
+// 백엔드 URL 직접 사용 (오류 방지)
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 export function CalendarTab() {
     const [date, setDate] = useState<Date>(new Date())
@@ -16,11 +18,14 @@ export function CalendarTab() {
     // 일정 생성 모달 상태
     const [isCreateOpen, setIsCreateOpen] = useState(false)
     // 🌟 duration(소요 시간) 필드 복구 (기본값 2시간)
-    const [newEvent, setNewEvent] = useState({ title: "", location: "", time: "12:00", duration: 2 })
+    const [newEvent, setNewEvent] = useState({ title: "", location: "", time: "12:00", duration: "2" })
 
     const loadEvents = async () => {
         try {
-            const res = await fetchWithAuth("/api/events")
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${API_URL}/api/events`, {
+                headers: token ? { "Authorization": `Bearer ${token}` } : {}
+            })
             if (res.ok) setEvents(await res.json())
         } catch(e) { console.error(e) }
     }
@@ -31,6 +36,7 @@ export function CalendarTab() {
         if(!newEvent.title) return alert("일정 제목을 입력하세요.");
         
         try {
+            const token = localStorage.getItem("token");
             const dateStr = selectedDate.toISOString().split('T')[0];
             
             // 🌟 422 에러 방지: 숫자는 확실하게 Number()로 변환해서 전송
@@ -38,14 +44,17 @@ export function CalendarTab() {
                 title: newEvent.title,
                 date: dateStr,
                 time: newEvent.time,
-                duration: Number(newEvent.duration), // 🌟 소요 시간 추가
+                duration: Number(newEvent.duration), // 🌟 문자를 숫자로 변환
                 location_name: newEvent.location,
                 description: "개인 일정"
             };
 
-            const res = await fetchWithAuth("/api/events", {
+            const res = await fetch(`${API_URL}/api/events`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json",
+                    ...(token && { "Authorization": `Bearer ${token}` })
+                },
                 body: JSON.stringify(payload)
             });
 
@@ -53,7 +62,7 @@ export function CalendarTab() {
                 alert("일정이 등록되었습니다.");
                 setIsCreateOpen(false);
                 loadEvents();
-                setNewEvent({ title: "", location: "", time: "12:00", duration: 2 });
+                setNewEvent({ title: "", location: "", time: "12:00", duration: "2" });
             } else {
                 const err = await res.json();
                 console.error("등록 실패:", err);
@@ -143,14 +152,14 @@ export function CalendarTab() {
                 </div>
             </ScrollArea>
 
-            {/* 플로팅 버튼 */}
+            {/* 플로팅 생성 버튼 */}
             <div className="absolute bottom-24 right-5">
                 <Button className="rounded-full h-14 w-14 bg-[#14B8A6] hover:bg-[#0D9488] text-white shadow-lg flex items-center justify-center p-0" onClick={() => setIsCreateOpen(true)}>
                     <Plus className="w-7 h-7" />
                 </Button>
             </div>
 
-            {/* 🌟 일정 생성 모달 */}
+            {/* 🌟 일정 생성 모달 (소요 시간 입력 복구됨) */}
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                 <DialogContent className="sm:max-w-sm">
                     <DialogHeader><DialogTitle>새 일정 추가</DialogTitle></DialogHeader>
@@ -167,12 +176,13 @@ export function CalendarTab() {
                             </div>
                             <div className="flex-1">
                                 <label className="text-xs text-gray-500 mb-1 block">소요 시간(시간)</label>
+                                {/* 🌟 숫자 입력 필드 */}
                                 <Input 
                                     type="number" 
                                     min={1} 
                                     max={24} 
                                     value={newEvent.duration} 
-                                    onChange={e=>setNewEvent({...newEvent, duration: Number(e.target.value)})} 
+                                    onChange={e=>setNewEvent({...newEvent, duration: e.target.value})} 
                                 />
                             </div>
                         </div>
