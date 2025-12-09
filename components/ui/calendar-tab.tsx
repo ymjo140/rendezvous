@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input" 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock } from "lucide-react"
-import { fetchWithAuth } from "@/lib/api-client"
+import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Trash2 } from "lucide-react"
 
 // 백엔드 URL
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
@@ -17,8 +16,15 @@ export function CalendarTab() {
     const [selectedDate, setSelectedDate] = useState<Date>(new Date())
     
     const [isCreateOpen, setIsCreateOpen] = useState(false)
-    // 🌟 duration 복구 (초기값 문자열 '2')
     const [newEvent, setNewEvent] = useState({ title: "", location: "", time: "12:00", duration: "2" })
+
+    // 날짜 포맷 함수 (로컬 시간 기준)
+    const formatDateLocal = (d: Date) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
 
     const loadEvents = async () => {
         try {
@@ -32,14 +38,33 @@ export function CalendarTab() {
 
     useEffect(() => { loadEvents() }, [])
 
+    // 🌟 [추가됨] 일정 삭제 핸들러
+    const handleDeleteEvent = async (eventId: number) => {
+        if (!confirm("정말 이 일정을 삭제하시겠습니까?")) return;
+        
+        try {
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${API_URL}/api/events/${eventId}`, {
+                method: "DELETE",
+                headers: token ? { "Authorization": `Bearer ${token}` } : {}
+            });
+
+            if (res.ok) {
+                // UI에서 즉시 제거 (새로고침 없이)
+                setEvents(prev => prev.filter(e => e.id !== eventId));
+            } else {
+                alert("삭제 실패: 권한이 없거나 오류가 발생했습니다.");
+            }
+        } catch (e) { alert("삭제 중 오류 발생"); }
+    };
+
     const handleCreateEvent = async () => {
         if(!newEvent.title) return alert("일정 제목을 입력하세요.");
         
         try {
             const token = localStorage.getItem("token");
-            const dateStr = selectedDate.toISOString().split('T')[0];
+            const dateStr = formatDateLocal(selectedDate);
             
-            // 🌟 [핵심 수정] 422 에러 해결: 누락된 user_id, purpose 추가
             const payload = {
                 title: newEvent.title,
                 date: dateStr,
@@ -47,9 +72,8 @@ export function CalendarTab() {
                 duration: Number(newEvent.duration),
                 location_name: newEvent.location,
                 description: "개인 일정",
-                // 🚨 백엔드 스키마가 요구하는 필수값 강제 주입
-                user_id: 1, // 백엔드 Pydantic 통과용 더미 값 (실제론 토큰 사용됨)
-                purpose: "개인" // 필수 필드 누락 방지
+                user_id: 1, 
+                purpose: "개인" 
             };
 
             const res = await fetch(`${API_URL}/api/events`, {
@@ -68,7 +92,6 @@ export function CalendarTab() {
                 setNewEvent({ title: "", location: "", time: "12:00", duration: "2" });
             } else {
                 const err = await res.json();
-                console.error("등록 실패 상세:", err);
                 const msg = err.detail ? JSON.stringify(err.detail) : "입력값을 확인해주세요";
                 alert(`등록 실패: ${msg}`);
             }
@@ -88,7 +111,7 @@ export function CalendarTab() {
     const padding = Array(days[0].getDay()).fill(null)
 
     const eventsOnDate = (d: Date) => {
-        const dateStr = d.toISOString().split('T')[0]
+        const dateStr = formatDateLocal(d);
         return events.filter(e => e.date === dateStr)
     }
     const selectedEvents = eventsOnDate(selectedDate)
@@ -118,7 +141,7 @@ export function CalendarTab() {
                             {padding.map((_, i) => <div key={`pad-${i}`} />)}
                             {days.map((d, i) => {
                                 const hasEvent = eventsOnDate(d).length > 0;
-                                const isSelected = d.toDateString() === selectedDate.toDateString();
+                                const isSelected = formatDateLocal(d) === formatDateLocal(selectedDate);
                                 return (
                                     <div key={i} onClick={() => setSelectedDate(d)} className={`relative w-8 h-8 flex items-center justify-center mx-auto cursor-pointer rounded-full ${isSelected ? 'bg-[#7C3AED] text-white' : ''}`}>
                                         {d.getDate()}
@@ -136,10 +159,13 @@ export function CalendarTab() {
                         </h3>
                         <div className="space-y-3">
                             {selectedEvents.length > 0 ? selectedEvents.map((ev: any) => (
-                                <div key={ev.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 relative">
+                                <div key={ev.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 relative group">
                                     <div className="flex justify-between mb-2">
                                         <div className="font-bold text-sm text-gray-800">{ev.title}</div>
-                                        <MoreHorizontal className="w-4 h-4 text-gray-400" />
+                                        {/* 🌟 삭제 버튼 (평소엔 숨김, 카드 호버시 표시하거나 항상 표시) */}
+                                        <button onClick={() => handleDeleteEvent(ev.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
                                     </div>
                                     <div className="text-xs text-gray-500 space-y-1">
                                         <div className="flex items-center gap-1"><Clock className="w-3 h-3"/> {ev.time} ({ev.duration}시간)</div>
@@ -163,7 +189,7 @@ export function CalendarTab() {
                 </Button>
             </div>
 
-            {/* 🌟 일정 생성 모달 */}
+            {/* 일정 생성 모달 */}
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                 <DialogContent className="sm:max-w-sm">
                     <DialogHeader><DialogTitle>새 일정 추가</DialogTitle></DialogHeader>
@@ -180,7 +206,6 @@ export function CalendarTab() {
                             </div>
                             <div className="flex-1">
                                 <label className="text-xs text-gray-500 mb-1 block">소요 시간(시간)</label>
-                                {/* 🌟 복구된 소요 시간 입력창 */}
                                 <Input 
                                     type="number" 
                                     min={1} 
