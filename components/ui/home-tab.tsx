@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Search, MapPin, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Heart, MessageSquare, Locate } from "lucide-react"
+import { Check, Search, MapPin, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Heart, MessageSquare, Locate, Coins, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -14,38 +14,18 @@ import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
 import { motion, AnimatePresence } from "framer-motion" 
 
-// 🌟 신규 컴포넌트 import (이전 단계에서 만드신 파일들)
 import { PreferenceModal } from "@/components/ui/preference-modal"
 import { PlaceCard } from "@/components/ui/place-card"
+import { fetchWithAuth } from "@/lib/api-client"
 
 declare global { interface Window { naver: any; } }
 
-// AI 페르소나 데이터
+// AI 페르소나 데이터 (기존 유지)
 const AI_PERSONAS = [
-    { 
-        id: 2, name: "김직장 (강남)", locationName: "강남역", 
-        location: { lat: 37.498085, lng: 127.027621 },
-        desc: "퇴근 후 한잔을 좋아하는 직장인",
-        avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_jeans", shoes: "shoes_sneakers" } } 
-    },
-    { 
-        id: 3, name: "이대학 (홍대)", locationName: "홍대입구", 
-        location: { lat: 37.557527, lng: 126.924467 },
-        desc: "가성비와 힙한 곳을 찾는 대학생",
-        avatar: { equipped: { body: "body_basic", hair: "hair_02", top: "top_tshirt", bottom: "bottom_shorts", shoes: "shoes_sneakers" } } 
-    },
-    { 
-        id: 4, name: "박감성 (성수)", locationName: "성수역", 
-        location: { lat: 37.544581, lng: 127.056035 },
-        desc: "분위기 좋은 카페/전시 마니아",
-        avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_tshirt", bottom: "bottom_jeans", shoes: "shoes_sneakers" } } 
-    },
-    { 
-        id: 5, name: "최개발 (판교)", locationName: "판교역", 
-        location: { lat: 37.394761, lng: 127.111217 },
-        desc: "조용한 곳을 선호하는 개발자",
-        avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_shorts", shoes: "shoes_sneakers" } } 
-    },
+    { id: 2, name: "김직장 (강남)", locationName: "강남역", location: { lat: 37.498085, lng: 127.027621 }, desc: "퇴근 후 한잔을 좋아하는 직장인", avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_jeans", shoes: "shoes_sneakers" } } },
+    { id: 3, name: "이대학 (홍대)", locationName: "홍대입구", location: { lat: 37.557527, lng: 126.924467 }, desc: "가성비와 힙한 곳을 찾는 대학생", avatar: { equipped: { body: "body_basic", hair: "hair_02", top: "top_tshirt", bottom: "bottom_shorts", shoes: "shoes_sneakers" } } },
+    { id: 4, name: "박감성 (성수)", locationName: "성수역", location: { lat: 37.544581, lng: 127.056035 }, desc: "분위기 좋은 카페/전시 마니아", avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_tshirt", bottom: "bottom_jeans", shoes: "shoes_sneakers" } } },
+    { id: 5, name: "최개발 (판교)", locationName: "판교역", location: { lat: 37.394761, lng: 127.111217 }, desc: "조용한 곳을 선호하는 개발자", avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_shorts", shoes: "shoes_sneakers" } } },
 ];
 
 const PURPOSE_FILTERS: Record<string, any> = {
@@ -90,33 +70,45 @@ export function HomeTab() {
   const [isFavorite, setIsFavorite] = useState(false);
   
   const [myFriendList, setMyFriendList] = useState<any[]>([]);
-  const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false); // 취향 모달
+  const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
+
+  // 🌟 [추가됨] 방문 인증 관련 상태
+  const [nearbyPlace, setNearbyPlace] = useState<any>(null); // 내 근처에 있는 장소
+  const [checkingIn, setCheckingIn] = useState(false);
 
   const mapRef = useRef<any>(null)
   const markersRef = useRef<any[]>([])
   const myMarkerRef = useRef<any>(null)
   const friendMarkersRef = useRef<any[]>([])
 
-  // --- Data Fetching ---
+  // 🌟 [추가됨] 거리 계산 함수 (Haversine Formula)
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+      const R = 6371e3; // 지구 반지름 (미터)
+      const φ1 = lat1 * Math.PI/180;
+      const φ2 = lat2 * Math.PI/180;
+      const Δφ = (lat2-lat1) * Math.PI/180;
+      const Δλ = (lon2-lon1) * Math.PI/180;
+
+      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+      return R * c;
+  }
+
+  // 🌟 [수정됨] 위치 추적 로직 (거리 계산 추가)
   useEffect(() => {
     const fetchMyInfo = async () => {
         const token = localStorage.getItem("token");
-        if (!token) {
-             setMyProfile(null);
-             setMyLocationInput("비회원 (위치 설정 필요)");
-             return;
-        }
+        if (!token) { setMyProfile(null); setMyLocationInput("비회원"); return; }
         try {
             const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", { headers: { "Authorization": `Bearer ${token}` } });
             if (res.ok) {
                 const user: any = await res.json();
                 setMyProfile({ ...user, locationName: "현위치" });
                 setMyLocationInput("📍 현위치 (GPS)");
-
-                // 취향 정보 없으면 모달 띄우기
-                if (!user.preferences || !user.preferences.foods || user.preferences.foods.length === 0) {
-                    setIsPreferenceModalOpen(true);
-                }
+                if (!user.preferences || !user.preferences.foods || user.preferences.foods.length === 0) setIsPreferenceModalOpen(true);
             }
             const friendRes = await fetch("https://wemeet-backend-xqlo.onrender.com/api/friends", { headers: { "Authorization": `Bearer ${token}` } });
             if (friendRes.ok) { const data = await friendRes.json() as any; setMyFriendList(data.friends); }
@@ -125,15 +117,37 @@ export function HomeTab() {
     fetchMyInfo();
 
     if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
+        // 🌟 watchPosition으로 변경하여 실시간 추적
+        const watchId = navigator.geolocation.watchPosition(
             (pos) => {
                 const { latitude, longitude } = pos.coords;
-                setMyProfile((prev: any) => prev ? { ...prev, location: { lat: latitude, lng: longitude } } : { location: { lat: latitude, lng: longitude } });
+                const currentPos = { lat: latitude, lng: longitude };
+                
+                // 내 위치 상태 업데이트
+                setMyProfile((prev: any) => prev ? { ...prev, location: currentPos } : { location: currentPos });
+                
+                // 🌟 [핵심] 현재 추천된 장소들 중 가까운 곳 찾기
+                if (currentDisplayRegion?.places?.length > 0) {
+                    let found = null;
+                    for (const place of currentDisplayRegion.places) {
+                        // place.location = [lat, lng] 배열 형태임
+                        const dist = calculateDistance(latitude, longitude, place.location[0], place.location[1]);
+                        
+                        // 500m 이내면 방문 가능 (테스트용 500m, 실제 서비스 시 50~100m 권장)
+                        if (dist <= 500) {
+                            found = place;
+                            break; // 가장 가까운 하나만 잡음
+                        }
+                    }
+                    setNearbyPlace(found);
+                }
             },
-            () => setMyLocationInput("서울 시청 (기본)")
+            () => setMyLocationInput("서울 시청 (기본)"),
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
         );
+        return () => navigator.geolocation.clearWatch(watchId);
     }
-  }, []);
+  }, [currentDisplayRegion]); // 🌟 추천 목록이 바뀔 때도 다시 체크
 
   // --- Handlers ---
   const handleKakaoInvite = () => {
@@ -142,6 +156,37 @@ export function HomeTab() {
       alert("카카오톡 초대 링크가 복사되었습니다!");
   };
 
+  // 🌟 [추가됨] 방문 인증 API 호출
+  const handleCheckIn = async () => {
+      if (!nearbyPlace) return;
+      setCheckingIn(true);
+      try {
+          const res = await fetchWithAuth("/api/coins/check-in", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ 
+                  place_name: nearbyPlace.name,
+                  lat: nearbyPlace.location[0],
+                  lng: nearbyPlace.location[1]
+              })
+          });
+
+          if (res.ok) {
+              const data = await res.json();
+              alert(data.message); // "50코인을 획득했습니다!"
+              setNearbyPlace(null); // 버튼 숨기기 (오늘 완료)
+          } else {
+              const err = await res.json();
+              alert(err.detail); // "이미 방문했습니다" 등
+          }
+      } catch (e) {
+          alert("인증 실패");
+      } finally {
+          setCheckingIn(false);
+      }
+  };
+
+  // ... (이하 기존 지도/마커 로직 동일) ...
   useEffect(() => {
     const initMap = () => {
       if (typeof window.naver === 'undefined' || !window.naver.maps) { setTimeout(initMap, 100); return; }
@@ -153,19 +198,12 @@ export function HomeTab() {
           mapRef.current.morph(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng));
       }
 
-      // 아바타 마커 생성 로직 (생략 없이 포함)
       const createAvatarMarker = (user: any, isMe: boolean) => {
           const equipped = user.avatar?.equipped || {};
           const getUrl = (id: string) => id ? `/assets/avatar/${id}.png` : null;
-          // (이미지 URL 매핑 로직...)
           const body = getUrl(equipped.body || "body_basic");
-          const hair = getUrl(equipped.hair);
-          const top = getUrl(equipped.top);
-          const bottom = getUrl(equipped.bottom);
           
           const displayName = (user.name || "User").split('(')[0];
-
-          // 간단한 아바타 HTML (디자인 개선됨)
           const avatarHtml = `
             <div style="position: relative; width: 50px; height: 80px; display: flex; flex-col; align-items: center;">
                 <div style="width: 40px; height: 40px; border-radius: 50%; background: white; border: 2px solid ${isMe ? '#7C3AED' : '#14B8A6'}; overflow: hidden; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
@@ -174,7 +212,6 @@ export function HomeTab() {
                 <div style="margin-top: 4px; background: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: bold; border: 1px solid #eee; white-space: nowrap;">${displayName}</div>
             </div>
           `;
-
           return new window.naver.maps.Marker({
               position: new window.naver.maps.LatLng(user.location.lat, user.location.lng),
               map: mapRef.current,
@@ -240,6 +277,7 @@ export function HomeTab() {
     } catch (e) { console.error(e) }
   }
 
+  // ... (나머지 핸들러들 기존 동일) ...
   const fetchMyRooms = async () => {
       const token = localStorage.getItem("token");
       try {
@@ -323,7 +361,6 @@ export function HomeTab() {
   const currentFilters = PURPOSE_FILTERS[selectedPurpose];
 
 
-  // --- UI Rendering (디자인 업그레이드됨) ---
   return (
     <motion.div 
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} 
@@ -345,19 +382,12 @@ export function HomeTab() {
         
         {/* 필터 칩 */}
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
-            <Button 
-                variant="outline" 
-                size="sm" 
-                className="rounded-full border-[#7C3AED] text-[#7C3AED] bg-white hover:bg-purple-50 h-9 px-4 text-xs font-bold flex-shrink-0"
-                onClick={() => setIsFilterOpen(true)}
-            >
+            <Button variant="outline" size="sm" className="rounded-full border-[#7C3AED] text-[#7C3AED] bg-white hover:bg-purple-50 h-9 px-4 text-xs font-bold flex-shrink-0" onClick={() => setIsFilterOpen(true)}>
                 <Filter className="w-3 h-3 mr-1.5"/> 필터
             </Button>
-            
             <Badge className="h-9 px-4 rounded-full bg-gradient-to-r from-[#7C3AED] to-[#14B8A6] text-white border-0 text-xs font-medium shadow-sm flex items-center justify-center flex-shrink-0">
                 {currentFilters?.label || selectedPurpose}
             </Badge>
-
             {Object.entries(selectedFilters).flatMap(([k, v]) => v).map(tag => {
                 if (tag === selectedPurpose) return null;
                 let parentKey = ""; 
@@ -372,18 +402,38 @@ export function HomeTab() {
         </div>
       </div>
 
-      {/* 2. 지도 영역 (둥근 모서리 적용) */}
+      {/* 2. 지도 영역 */}
       <div className="px-5 mt-2">
           <div className="relative h-60 w-full rounded-3xl overflow-hidden shadow-md border border-white">
               <div id="map" className="w-full h-full bg-gray-200"></div>
-              {/* 내 위치 버튼 */}
               <Button size="icon" className="absolute bottom-4 right-4 rounded-full shadow-lg bg-white hover:bg-gray-50 text-gray-700 h-10 w-10 border-0" onClick={moveToMyLocation}>
                   <Locate className="w-5 h-5"/>
               </Button>
           </div>
       </div>
 
-      {/* 3. 출발지 설정 카드 */}
+      {/* 🌟 방문 인증 팝업 (내 위치가 추천 장소 500m 이내일 때) */}
+      <AnimatePresence>
+        {nearbyPlace && (
+            <motion.div 
+                initial={{ y: 50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 50, opacity: 0 }}
+                className="px-5 mt-4 z-30"
+            >
+                <Button 
+                    onClick={handleCheckIn} 
+                    disabled={checkingIn}
+                    className="w-full h-14 rounded-2xl bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white font-bold text-lg shadow-xl flex items-center justify-center gap-2 animate-bounce"
+                >
+                    {checkingIn ? <Loader2 className="animate-spin"/> : <Coins className="w-6 h-6 fill-yellow-100 text-white"/>}
+                    {nearbyPlace.title || nearbyPlace.name} 방문 인증 (+50C)
+                </Button>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 3. 출발지 설정 카드 (기존 기능) */}
       <div className="px-5 mt-6">
         <h2 className="text-xl font-bold mb-4 text-gray-800">어디서 모이나요?</h2>
         <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 space-y-3">
@@ -430,12 +480,11 @@ export function HomeTab() {
         </div>
       </div>
 
-      {/* 4. 추천 결과 (PlaceCard 적용) */}
+      {/* 4. 추천 결과 */}
       <AnimatePresence>
         {recommendedRegions.length > 0 && (
             <motion.div 
-                initial={{ opacity: 0, y: 50 }} 
-                animate={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }}
                 className="px-5 mt-8 pb-10"
             >
                 <div className="flex items-center justify-between mb-4">
@@ -443,40 +492,22 @@ export function HomeTab() {
                     <span className="text-xs text-gray-500">AI 맞춤 추천</span>
                 </div>
                 
-                {/* 지역 탭 */}
                 <div className="flex gap-2 mb-6 overflow-x-auto scrollbar-hide">
                     {recommendedRegions.map((region, idx) => (
-                        <button 
-                            key={idx} 
-                            onClick={() => handleTabChange(idx)} 
-                            className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap shadow-sm ${
-                                activeTabIdx === idx 
-                                ? "bg-[#7C3AED] text-white" 
-                                : "bg-white text-gray-500 hover:bg-gray-50"
-                            }`}
-                        >
+                        <button key={idx} onClick={() => handleTabChange(idx)} className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap shadow-sm ${activeTabIdx === idx ? "bg-[#7C3AED] text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
                             {region.region_name}
                         </button>
                     ))}
                 </div>
 
-                {/* 장소 카드 리스트 */}
                 <div className="space-y-4">
                     {(isExpanded ? currentDisplayRegion?.places : currentDisplayRegion?.places?.slice(0, 3))?.map((p: any) => (
-                        <PlaceCard 
-                            key={p.id} 
-                            place={p} 
-                            onClick={() => handlePlaceClick(p)} 
-                        />
+                        <PlaceCard key={p.id} place={p} onClick={() => handlePlaceClick(p)} />
                     ))}
                 </div>
 
                 {currentDisplayRegion?.places?.length > 3 && (
-                    <Button 
-                        variant="ghost" 
-                        className="w-full mt-4 text-gray-500 h-12 rounded-xl hover:bg-gray-100 font-medium" 
-                        onClick={() => setIsExpanded(!isExpanded)}
-                    >
+                    <Button variant="ghost" className="w-full mt-4 text-gray-500 h-12 rounded-xl hover:bg-gray-100 font-medium" onClick={() => setIsExpanded(!isExpanded)}>
                         {isExpanded ? <><ChevronUp className="w-4 h-4 mr-1"/> 접기</> : <><ChevronDown className="w-4 h-4 mr-1"/> 더 보기</>}
                     </Button>
                 )}
@@ -484,9 +515,7 @@ export function HomeTab() {
         )}
       </AnimatePresence>
       
-      {/* --- Modals (기존 로직 유지) --- */}
-      
-      {/* 1. 필터 모달 */}
+      {/* 모달들 (기존과 동일) */}
       <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
           <DialogContent className="sm:max-w-md h-[70vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
               <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b"><DialogTitle>상세 필터 설정</DialogTitle></DialogHeader>
@@ -499,90 +528,19 @@ export function HomeTab() {
           </DialogContent>
       </Dialog>
 
-      {/* 2. 친구 추가 모달 */}
       <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}>
-          <DialogContent>
-              <DialogHeader><DialogTitle>친구 추가</DialogTitle></DialogHeader>
-              <div className="py-2 space-y-4">
-                  <div className="space-y-2">
-                      <h4 className="text-xs font-bold text-gray-500">AI 페르소나 (테스트용)</h4>
-                      {AI_PERSONAS.map(f => (
-                          <div key={f.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer border" onClick={() => toggleFriend(f)}>
-                              <div className="flex items-center gap-3"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName} · {f.desc}</div></div></div>
-                              {selectedFriends.find(sf => sf.id === f.id) && <Check className="w-5 h-5 text-[#7C3AED]"/>}
-                          </div>
-                      ))}
-                  </div>
-                  <div className="pt-2 border-t">
-                      <h4 className="text-xs font-bold text-gray-500 mb-2">실제 친구 초대</h4>
-                      <Button className="w-full bg-[#FEE500] hover:bg-[#FEE500]/90 text-black font-bold gap-2" onClick={handleKakaoInvite}>
-                          <MessageSquare className="w-5 h-5"/> 카카오톡으로 초대하기
-                      </Button>
-                  </div>
-              </div>
-          </DialogContent>
+          <DialogContent><DialogHeader><DialogTitle>친구 추가</DialogTitle></DialogHeader><div className="py-2 space-y-4"><div className="space-y-2"><h4 className="text-xs font-bold text-gray-500">AI 페르소나 (테스트용)</h4>{AI_PERSONAS.map(f => (<div key={f.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer border" onClick={() => toggleFriend(f)}><div className="flex items-center gap-3"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName} · {f.desc}</div></div></div>{selectedFriends.find(sf => sf.id === f.id) && <Check className="w-5 h-5 text-[#7C3AED]"/>}</div>))}</div><div className="pt-2 border-t"><h4 className="text-xs font-bold text-gray-500 mb-2">실제 친구 초대</h4><Button className="w-full bg-[#FEE500] hover:bg-[#FEE500]/90 text-black font-bold gap-2" onClick={handleKakaoInvite}><MessageSquare className="w-5 h-5"/> 카카오톡으로 초대하기</Button></div></div></DialogContent>
       </Dialog>
 
-      {/* 3. 공유 모달 */}
       <Dialog open={isShareModalOpen} onOpenChange={setIsShareModalOpen}>
-          <DialogContent className="sm:max-w-sm">
-              <DialogHeader><DialogTitle>채팅방에 공유하기</DialogTitle></DialogHeader>
-              <div className="py-2 space-y-2">
-                  {myRooms.length > 0 ? myRooms.map(room => (
-                      <Button key={room.id} variant="outline" className="w-full justify-start p-4 h-auto" onClick={() => handleShare(room.id)}>
-                          <div className="flex flex-col items-start"><span className="font-bold text-base">💬 {room.name}</span><span className="text-xs text-gray-500">최근 대화: {room.lastMessage}</span></div>
-                      </Button>
-                  )) : <div className="text-center text-gray-500 text-sm py-6">참여 중인 채팅방이 없습니다.</div>}
-              </div>
-          </DialogContent>
+          <DialogContent className="sm:max-w-sm"><DialogHeader><DialogTitle>채팅방에 공유하기</DialogTitle></DialogHeader><div className="py-2 space-y-2">{myRooms.length > 0 ? myRooms.map(room => (<Button key={room.id} variant="outline" className="w-full justify-start p-4 h-auto" onClick={() => handleShare(room.id)}><div className="flex flex-col items-start"><span className="font-bold text-base">💬 {room.name}</span><span className="text-xs text-gray-500">최근 대화: {room.lastMessage}</span></div></Button>)) : <div className="text-center text-gray-500 text-sm py-6">참여 중인 채팅방이 없습니다.</div>}</div></DialogContent>
       </Dialog>
 
-      {/* 4. 장소 상세 모달 */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-          <DialogContent className="sm:max-w-md h-[80vh] flex flex-col">
-              <DialogHeader>
-                  <DialogTitle className="text-xl flex items-center gap-2">{selectedPlace?.name} <Badge variant="outline" className="text-xs font-normal">{selectedPlace?.category}</Badge></DialogTitle>
-                  <div className="text-xs text-gray-500">{selectedPlace?.tags?.join(" · ")}</div>
-              </DialogHeader>
-              <div className="flex-1 overflow-y-auto py-2 space-y-4">
-                  <div className="bg-purple-50 p-4 rounded-lg text-center"><div className="text-sm text-purple-800 font-bold mb-1">AI 추천 점수</div><div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score}</div></div>
-                  
-                  {isReviewing ? (
-                      <Card className="p-4 border-purple-200 bg-purple-50/50">
-                          <h3 className="font-bold text-sm mb-3">리뷰 작성</h3>
-                          <div className="space-y-3">
-                              <div className="space-y-2"><div className="flex justify-between text-xs"><span>맛</span><span>{reviewScores.taste}</span></div><Slider value={[reviewScores.taste]} max={5} step={1} onValueChange={(v)=>setReviewScores({...reviewScores, taste: v[0]})}/></div>
-                              {/* ... 나머지 슬라이더들 (생략 가능하나 동작 위해 유지) ... */}
-                              <Textarea placeholder="후기를 남겨주세요" value={reviewText} onChange={e=>setReviewText(e.target.value)} className="h-20 text-sm bg-white"/>
-                              <div className="flex gap-2"><Button size="sm" variant="outline" className="flex-1" onClick={()=>setIsReviewing(false)}>취소</Button><Button size="sm" className="flex-1 bg-[#7C3AED]" onClick={handleSubmitReview}>등록</Button></div>
-                          </div>
-                      </Card>
-                  ) : (<Button variant="outline" className="w-full" onClick={() => setIsReviewing(true)}>✍️ 리뷰 쓰고 AI 학습시키기</Button>)}
-                  
-                  <div className="space-y-3">
-                      <h3 className="font-bold text-sm flex items-center gap-2 border-b pb-2"><MessageSquare className="w-4 h-4"/> 방문자 리뷰 ({placeReviews.length})</h3>
-                      {placeReviews.length > 0 ? placeReviews.map((review, idx) => (
-                          <div key={idx} className="border p-3 rounded-lg bg-gray-50 space-y-2">
-                              <div className="flex justify-between items-start"><div className="font-bold text-sm">{review.user_name}</div><div className="text-yellow-500 font-bold text-xs">★ {review.rating.toFixed(1)}</div></div>
-                              <p className="text-sm text-gray-700">{review.comment}</p>
-                          </div>
-                      )) : <div className="text-center py-8 text-gray-400 text-sm">아직 리뷰가 없습니다.</div>}
-                  </div>
-              </div>
-              <div className="p-4 border-t bg-white flex gap-2">
-                  <Button variant="outline" size="icon" onClick={handleToggleFavorite}><Heart className={`w-5 h-5 ${isFavorite ? "fill-red-500 text-red-500" : "text-gray-400"}`}/></Button>
-                  <Button className="flex-1 bg-[#7C3AED] hover:bg-purple-700" onClick={() => { setIsDetailOpen(false); setPlaceToShare(selectedPlace); fetchMyRooms(); setIsShareModalOpen(true); }}>이 장소 공유하기</Button>
-              </div>
-          </DialogContent>
+          <DialogContent className="sm:max-w-md h-[80vh] flex flex-col"><DialogHeader><DialogTitle className="text-xl flex items-center gap-2">{selectedPlace?.name} <Badge variant="outline" className="text-xs font-normal">{selectedPlace?.category}</Badge></DialogTitle><div className="text-xs text-gray-500">{selectedPlace?.tags?.join(" · ")}</div></DialogHeader><div className="flex-1 overflow-y-auto py-2 space-y-4"><div className="bg-purple-50 p-4 rounded-lg text-center"><div className="text-sm text-purple-800 font-bold mb-1">AI 추천 점수</div><div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score}</div></div>{isReviewing ? (<Card className="p-4 border-purple-200 bg-purple-50/50"><h3 className="font-bold text-sm mb-3">리뷰 작성</h3><div className="space-y-3"><div className="space-y-2"><div className="flex justify-between text-xs"><span>맛</span><span>{reviewScores.taste}</span></div><Slider value={[reviewScores.taste]} max={5} step={1} onValueChange={(v)=>setReviewScores({...reviewScores, taste: v[0]})}/></div><Textarea placeholder="후기를 남겨주세요" value={reviewText} onChange={e=>setReviewText(e.target.value)} className="h-20 text-sm bg-white"/><div className="flex gap-2"><Button size="sm" variant="outline" className="flex-1" onClick={()=>setIsReviewing(false)}>취소</Button><Button size="sm" className="flex-1 bg-[#7C3AED]" onClick={handleSubmitReview}>등록</Button></div></div></Card>) : (<Button variant="outline" className="w-full" onClick={() => setIsReviewing(true)}>✍️ 리뷰 쓰고 AI 학습시키기</Button>)}<div className="space-y-3"><h3 className="font-bold text-sm flex items-center gap-2 border-b pb-2"><MessageSquare className="w-4 h-4"/> 방문자 리뷰 ({placeReviews.length})</h3>{placeReviews.length > 0 ? placeReviews.map((review, idx) => (<div key={idx} className="border p-3 rounded-lg bg-gray-50 space-y-2"><div className="flex justify-between items-start"><div className="font-bold text-sm">{review.user_name}</div><div className="text-yellow-500 font-bold text-xs">★ {review.rating.toFixed(1)}</div></div><p className="text-sm text-gray-700">{review.comment}</p></div>)) : <div className="text-center py-8 text-gray-400 text-sm">아직 리뷰가 없습니다.</div>}</div></div><div className="p-4 border-t bg-white flex gap-2"><Button variant="outline" size="icon" onClick={handleToggleFavorite}><Heart className={`w-5 h-5 ${isFavorite ? "fill-red-500 text-red-500" : "text-gray-400"}`}/></Button><Button className="flex-1 bg-[#7C3AED] hover:bg-purple-700" onClick={() => { setIsDetailOpen(false); setPlaceToShare(selectedPlace); fetchMyRooms(); setIsShareModalOpen(true); }}>이 장소 공유하기</Button></div></DialogContent>
       </Dialog>
       
-      {/* 5. 취향 조사 모달 */}
-      <PreferenceModal 
-          isOpen={isPreferenceModalOpen} 
-          onClose={() => setIsPreferenceModalOpen(false)} 
-          onComplete={() => setIsPreferenceModalOpen(false)} 
-      />
-
+      <PreferenceModal isOpen={isPreferenceModalOpen} onClose={() => setIsPreferenceModalOpen(false)} onComplete={() => setIsPreferenceModalOpen(false)} />
     </motion.div>
   )
 }

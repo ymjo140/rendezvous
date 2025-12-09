@@ -199,3 +199,21 @@ class Friendship(Base):
     receiver_id = Column(Integer, ForeignKey("users.id"))  # 받은 사람
     status = Column(String, default="pending") # pending(대기), accepted(수락)
     created_at = Column(DateTime, default=datetime.now)
+# 💰 코인 입출금 내역
+class CoinHistory(Base):
+    __tablename__ = "coin_history"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    amount = Column(Integer) # +50, -100 등
+    type = Column(String) # "check_in", "shop", "event"
+    description = Column(String) # "강남역 스타벅스 방문", "아바타 구매"
+    created_at = Column(DateTime, default=datetime.now)
+
+# 📍 방문 기록 (하루 1회 중복 방지용)
+class VisitLog(Base):
+    __tablename__ = "visit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    place_name = Column(String) # 장소 이름
+    # place_id = Column(String) # 나중에 네이버 ID 연동 시 사용
+    created_at = Column(DateTime, default=datetime.now)
