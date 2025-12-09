@@ -5,30 +5,27 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input" 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Trash2, Link as LinkIcon, RefreshCw, Calendar as CalendarIcon, ArrowLeft } from "lucide-react"
+import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Trash2, Link as LinkIcon, RefreshCw, Calendar as CalendarIcon, ArrowLeft, Loader2 } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 export function CalendarTab() {
-    // 뷰 모드 상태 ('month' | 'week')
     const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
-    
-    const [date, setDate] = useState<Date>(new Date()) // 현재 보고 있는 기준 날짜
+    const [date, setDate] = useState<Date>(new Date())
     const [events, setEvents] = useState<any[]>([])
-    const [selectedDate, setSelectedDate] = useState<Date>(new Date()) // 선택된 날짜
+    const [selectedDate, setSelectedDate] = useState<Date>(new Date())
     
-    // 모달 상태들
     const [isCreateOpen, setIsCreateOpen] = useState(false)
     const [isSyncOpen, setIsSyncOpen] = useState(false)
     const [syncLoading, setSyncLoading] = useState(false)
+    // 🌟 자동 동기화 로딩 상태 추가
+    const [isAutoSyncing, setIsAutoSyncing] = useState(false)
 
-    // 입력값들
     const [newEvent, setNewEvent] = useState({ title: "", location: "", time: "12:00", duration: "2" })
     const [syncUrl, setSyncUrl] = useState("") 
     const [syncSource, setSyncSource] = useState("에브리타임")
 
-    // 날짜 포맷 함수 (로컬 시간 기준 YYYY-MM-DD)
     const formatDateLocal = (d: Date) => {
         const year = d.getFullYear();
         const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -43,11 +40,45 @@ export function CalendarTab() {
         } catch(e) { console.error(e) }
     }
 
-    useEffect(() => { loadEvents() }, [])
+    // 🌟 [신규 기능] 컴포넌트 마운트 시 자동 동기화 실행
+    useEffect(() => {
+        loadEvents();
+        
+        // 1. 저장된 URL이 있는지 확인
+        const savedUrl = localStorage.getItem("calendar_sync_url");
+        const savedSource = localStorage.getItem("calendar_sync_source");
 
-    // 캘린더 연동 핸들러
+        if (savedUrl && savedSource) {
+            autoSync(savedUrl, savedSource);
+        }
+    }, [])
+
+    // 🌟 [신규 기능] 자동 동기화 함수 (알림 없이 조용히 업데이트)
+    const autoSync = async (url: string, source: string) => {
+        setIsAutoSyncing(true);
+        try {
+            console.log("🔄 최신 일정 자동 동기화 중...");
+            const res = await fetchWithAuth("/api/sync/ical", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: url, source_name: source })
+            });
+            
+            if (res.ok) {
+                console.log("✅ 자동 동기화 완료");
+                loadEvents(); // 목록 새로고침
+            }
+        } catch (e) {
+            console.error("자동 동기화 실패 (네트워크 오류 등)");
+        } finally {
+            setIsAutoSyncing(false);
+        }
+    };
+
+    // 캘린더 연동 핸들러 (수동)
     const handleSync = async () => {
         if (!syncUrl.includes("http")) { alert("올바른 URL을 입력해주세요."); return; }
+        
         setSyncLoading(true);
         try {
             const res = await fetchWithAuth("/api/sync/ical", {
@@ -55,13 +86,33 @@ export function CalendarTab() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ url: syncUrl, source_name: syncSource })
             });
+
             if (res.ok) {
                 const data = await res.json();
-                alert(data.message);
-                setIsSyncOpen(false); setSyncUrl(""); loadEvents();
-            } else { alert("연동 실패: URL을 다시 확인해주세요."); }
+                
+                // 🌟 성공 시 URL을 로컬 스토리지에 저장 (다음번 자동 실행을 위해)
+                localStorage.setItem("calendar_sync_url", syncUrl);
+                localStorage.setItem("calendar_sync_source", syncSource);
+
+                alert(`${data.message}\n(이제 앱을 켤 때마다 자동으로 최신화됩니다!)`);
+                setIsSyncOpen(false);
+                loadEvents();
+            } else {
+                alert("연동 실패: URL을 다시 확인해주세요.");
+            }
         } catch (e) { alert("서버 오류 발생"); }
         finally { setSyncLoading(false); }
+    }
+
+    // 🌟 연동 해제 (저장된 URL 삭제)
+    const handleUnlink = () => {
+        if(confirm("자동 동기화를 끄시겠습니까?")) {
+            localStorage.removeItem("calendar_sync_url");
+            localStorage.removeItem("calendar_sync_source");
+            setSyncUrl("");
+            alert("자동 동기화가 해제되었습니다.");
+            setIsSyncOpen(false);
+        }
     }
 
     const handleDeleteEvent = async (eventId: number) => {
@@ -99,7 +150,6 @@ export function CalendarTab() {
         } catch(e) { alert("등록 중 오류 발생"); }
     }
 
-    // --- 월간 뷰 로직 ---
     const getDaysInMonth = (year: number, month: number) => {
         const date = new Date(year, month, 1); const days = [];
         while (date.getMonth() === month) { days.push(new Date(date)); date.setDate(date.getDate() + 1); }
@@ -110,42 +160,37 @@ export function CalendarTab() {
     const padding = Array(days[0].getDay()).fill(null);
     const eventsOnDate = (d: Date) => { const dateStr = formatDateLocal(d); return events.filter(e => e.date === dateStr); }
     
-    // 날짜 클릭 시 주간 뷰로 전환
-    const handleDateClick = (d: Date) => {
-        setSelectedDate(d);
-        setDate(d); // 기준 날짜도 이동
-        setViewMode('week'); // 🌟 주간 뷰로 자동 전환
-    };
+    const handleDateClick = (d: Date) => { setSelectedDate(d); setDate(d); setViewMode('week'); };
 
-    // --- 주간 뷰 로직 ---
     const getWeekDates = (baseDate: Date) => {
         const current = new Date(baseDate);
-        const day = current.getDay(); // 0(일) ~ 6(토)
-        const diff = current.getDate() - day + (day === 0 ? -6 : 1); // 월요일 기준
+        const day = current.getDay(); 
+        const diff = current.getDate() - day + (day === 0 ? -6 : 1); 
         const monday = new Date(current.setDate(diff));
-        
         const weekDates = [];
         for (let i = 0; i < 7; i++) {
-            const nextDay = new Date(monday);
-            nextDay.setDate(monday.getDate() + i);
-            weekDates.push(nextDay);
+            const nextDay = new Date(monday); nextDay.setDate(monday.getDate() + i); weekDates.push(nextDay);
         }
         return weekDates;
     };
     const weekDates = getWeekDates(date);
-    const HOURS = Array.from({ length: 17 }, (_, i) => i + 8); // 8시 ~ 24시
+    const HOURS = Array.from({ length: 17 }, (_, i) => i + 8); 
 
     return (
         <div className="flex flex-col h-full bg-[#F3F4F6] font-['Pretendard']">
-            {/* 상단 헤더 */}
             <div className="p-5 pb-2 bg-white sticky top-0 z-10 shadow-sm flex justify-between items-center">
                 <div className="flex items-center gap-2">
                     {viewMode === 'week' && (
-                        <Button variant="ghost" size="icon" onClick={() => setViewMode('month')} className="-ml-2">
-                            <ArrowLeft className="w-5 h-5"/>
-                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => setViewMode('month')} className="-ml-2"><ArrowLeft className="w-5 h-5"/></Button>
                     )}
-                    <h1 className="text-xl font-bold">{viewMode === 'month' ? '내 일정' : '이번 주 일정'}</h1>
+                    <h1 className="text-xl font-bold">{viewMode === 'month' ? '내 일정' : '이번 주'}</h1>
+                    
+                    {/* 🌟 자동 동기화 중일 때 로딩 표시 */}
+                    {isAutoSyncing && (
+                        <span className="text-[10px] text-[#7C3AED] bg-purple-50 px-2 py-1 rounded-full animate-pulse flex items-center gap-1">
+                            <Loader2 className="w-3 h-3 animate-spin"/> 동기화 중...
+                        </span>
+                    )}
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setIsSyncOpen(true)} className="h-8 text-xs gap-1 border-purple-200 text-purple-600 bg-purple-50">
                     <RefreshCw className="w-3 h-3"/> 외부 일정
@@ -153,10 +198,8 @@ export function CalendarTab() {
             </div>
 
             <ScrollArea className="flex-1 px-5 pb-4">
-                {/* 🌟 [월간 뷰] 🌟 */}
                 {viewMode === 'month' && (
                     <div className="space-y-6 pb-24 mt-4">
-                        {/* 달력 위젯 */}
                         <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
                             <div className="flex justify-between items-center mb-6">
                                 <div className="flex items-center gap-2">
@@ -165,7 +208,6 @@ export function CalendarTab() {
                                     <Button variant="ghost" size="icon" onClick={() => setDate(new Date(currentYear, currentMonth + 1, 1))}><ChevronRight className="w-5 h-5"/></Button>
                                 </div>
                             </div>
-
                             <div className="grid grid-cols-7 text-center text-xs font-bold text-gray-400 mb-2">
                                 {['일','월','화','수','목','금','토'].map(d => <div key={d}>{d}</div>)}
                             </div>
@@ -183,12 +225,8 @@ export function CalendarTab() {
                                 })}
                             </div>
                         </div>
-
-                        {/* 선택된 날짜 일정 목록 */}
                         <div>
-                            <h3 className="font-bold text-gray-800 text-sm mb-3">
-                                {selectedDate.getMonth()+1}월 {selectedDate.getDate()}일의 일정
-                            </h3>
+                            <h3 className="font-bold text-gray-800 text-sm mb-3">{selectedDate.getMonth()+1}월 {selectedDate.getDate()}일의 일정</h3>
                             <div className="space-y-3">
                                 {eventsOnDate(selectedDate).length > 0 ? eventsOnDate(selectedDate).map((ev: any) => (
                                     <div key={ev.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 relative group flex justify-between items-center">
@@ -199,34 +237,22 @@ export function CalendarTab() {
                                                 <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/> {ev.location_name || "미정"}</span>
                                             </div>
                                         </div>
-                                        <button onClick={() => handleDeleteEvent(ev.id)} className="text-gray-300 hover:text-red-500 p-2">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        <button onClick={() => handleDeleteEvent(ev.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 className="w-4 h-4" /></button>
                                     </div>
-                                )) : (
-                                    <div className="text-center text-gray-400 text-xs py-6 bg-white rounded-2xl border border-dashed">
-                                        일정이 없습니다.
-                                    </div>
-                                )}
+                                )) : <div className="text-center text-gray-400 text-xs py-6 bg-white rounded-2xl border border-dashed">일정이 없습니다.</div>}
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* 🌟 [주간 뷰 - 시간표] 🌟 */}
                 {viewMode === 'week' && (
                     <div className="mt-4 pb-24 relative overflow-x-auto">
                         <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-2xl shadow-sm">
                             <Button variant="ghost" size="icon" onClick={() => setDate(new Date(date.setDate(date.getDate() - 7)))}><ChevronLeft className="w-5 h-5"/></Button>
-                            <div className="text-sm font-bold text-center">
-                                {weekDates[0].getMonth()+1}.{weekDates[0].getDate()} - {weekDates[6].getMonth()+1}.{weekDates[6].getDate()}
-                            </div>
+                            <div className="text-sm font-bold text-center">{weekDates[0].getMonth()+1}.{weekDates[0].getDate()} - {weekDates[6].getMonth()+1}.{weekDates[6].getDate()}</div>
                             <Button variant="ghost" size="icon" onClick={() => setDate(new Date(date.setDate(date.getDate() + 7)))}><ChevronRight className="w-5 h-5"/></Button>
                         </div>
-
-                        {/* 시간표 그리드 */}
                         <div className="relative bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden" style={{ minWidth: "100%" }}>
-                            {/* 요일 헤더 */}
                             <div className="grid grid-cols-8 border-b border-gray-100 bg-gray-50">
                                 <div className="p-2 text-[10px] text-gray-400 text-center border-r border-gray-100">Time</div>
                                 {weekDates.map((d, i) => (
@@ -236,8 +262,6 @@ export function CalendarTab() {
                                     </div>
                                 ))}
                             </div>
-
-                            {/* 시간 슬롯 */}
                             <div className="relative">
                                 {HOURS.map(hour => (
                                     <div key={hour} className="grid grid-cols-8 h-12 border-b border-gray-50">
@@ -245,33 +269,16 @@ export function CalendarTab() {
                                         {[...Array(7)].map((_, i) => <div key={i} className="border-r border-gray-50"></div>)}
                                     </div>
                                 ))}
-
-                                {/* 일정 블록 렌더링 */}
                                 {weekDates.map((dayDate, dayIdx) => {
                                     const dayEvents = eventsOnDate(dayDate);
                                     return dayEvents.map((ev: any) => {
                                         const [h, m] = ev.time.split(":").map(Number);
-                                        if (h < 8) return null; // 8시 이전은 생략
-                                        const top = (h - 8) * 48 + (m / 60) * 48; // 1시간 = 48px
+                                        if (h < 8) return null;
+                                        const top = (h - 8) * 48 + (m / 60) * 48;
                                         const height = (ev.duration_hours || ev.duration || 1) * 48;
-                                        
-                                        // 색상 결정 (수업 vs 개인)
                                         const bgColor = ev.title.includes("[수업]") ? "bg-orange-100 border-orange-200 text-orange-800" : "bg-purple-100 border-purple-200 text-purple-800";
-
                                         return (
-                                            <div 
-                                                key={ev.id}
-                                                className={`absolute rounded-md border p-1 text-[9px] font-bold leading-tight overflow-hidden ${bgColor} shadow-sm z-10`}
-                                                style={{
-                                                    top: `${top}px`,
-                                                    left: `${(dayIdx + 1) * 12.5}%`, // 100% / 8칸 = 12.5%
-                                                    width: "12%",
-                                                    height: `${height}px`
-                                                }}
-                                                onClick={() => { if(confirm("삭제하시겠습니까?")) handleDeleteEvent(ev.id); }}
-                                            >
-                                                {ev.title}
-                                            </div>
+                                            <div key={ev.id} className={`absolute rounded-md border p-1 text-[9px] font-bold leading-tight overflow-hidden ${bgColor} shadow-sm z-10`} style={{top: `${top}px`, left: `${(dayIdx + 1) * 12.5}%`, width: "12%", height: `${height}px`}} onClick={() => { if(confirm("삭제하시겠습니까?")) handleDeleteEvent(ev.id); }}>{ev.title}</div>
                                         )
                                     });
                                 })}
@@ -281,47 +288,27 @@ export function CalendarTab() {
                 )}
             </ScrollArea>
 
-            {/* 플로팅 생성 버튼 */}
-            <div className="absolute bottom-24 right-5">
-                <Button className="rounded-full h-14 w-14 bg-[#14B8A6] hover:bg-[#0D9488] text-white shadow-lg flex items-center justify-center p-0" onClick={() => setIsCreateOpen(true)}>
-                    <Plus className="w-7 h-7" />
-                </Button>
-            </div>
+            <div className="absolute bottom-24 right-5"><Button className="rounded-full h-14 w-14 bg-[#14B8A6] hover:bg-[#0D9488] text-white shadow-lg flex items-center justify-center p-0" onClick={() => setIsCreateOpen(true)}><Plus className="w-7 h-7" /></Button></div>
 
-            {/* 일정 생성 모달 (기존 동일) */}
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-                <DialogContent className="sm:max-w-sm">
-                    <DialogHeader><DialogTitle>새 일정 추가</DialogTitle></DialogHeader>
-                    <div className="space-y-3 py-2">
-                        <Input placeholder="일정 제목" value={newEvent.title} onChange={e=>setNewEvent({...newEvent, title: e.target.value})} />
-                        <div className="flex gap-2">
-                            <Input type="time" className="flex-1" value={newEvent.time} onChange={e=>setNewEvent({...newEvent, time: e.target.value})} />
-                            <Input type="number" className="flex-1" placeholder="시간" value={newEvent.duration} onChange={e=>setNewEvent({...newEvent, duration: e.target.value})} />
-                        </div>
-                        <Input placeholder="장소" value={newEvent.location} onChange={e=>setNewEvent({...newEvent, location: e.target.value})} />
-                    </div>
-                    <DialogFooter><Button onClick={handleCreateEvent} className="w-full bg-[#14B8A6]">등록하기</Button></DialogFooter>
-                </DialogContent>
+                <DialogContent className="sm:max-w-sm"><DialogHeader><DialogTitle>새 일정 추가</DialogTitle></DialogHeader><div className="space-y-3 py-2"><Input placeholder="일정 제목" value={newEvent.title} onChange={e=>setNewEvent({...newEvent, title: e.target.value})} /><div className="flex gap-2"><Input type="time" className="flex-1" value={newEvent.time} onChange={e=>setNewEvent({...newEvent, time: e.target.value})} /><Input type="number" className="flex-1" placeholder="시간" value={newEvent.duration} onChange={e=>setNewEvent({...newEvent, duration: e.target.value})} /></div><Input placeholder="장소" value={newEvent.location} onChange={e=>setNewEvent({...newEvent, location: e.target.value})} /></div><DialogFooter><Button onClick={handleCreateEvent} className="w-full bg-[#14B8A6]">등록하기</Button></DialogFooter></DialogContent>
             </Dialog>
 
-            {/* 연동 모달 (기존 동일) */}
             <Dialog open={isSyncOpen} onOpenChange={setIsSyncOpen}>
                 <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>외부 캘린더 가져오기</DialogTitle>
-                        <DialogDescription className="text-xs text-gray-500">에브리타임, 구글 캘린더 URL 입력</DialogDescription>
-                    </DialogHeader>
-                    <div className="flex gap-2 mb-2">
-                        {["에브리타임", "구글"].map(src => (
-                            <Button key={src} size="sm" variant={syncSource === src ? "default" : "outline"} onClick={() => setSyncSource(src)} className={`flex-1 text-xs ${syncSource === src ? "bg-[#7C3AED]" : ""}`}>{src}</Button>
-                        ))}
-                    </div>
+                    <DialogHeader><DialogTitle>외부 캘린더 가져오기</DialogTitle><DialogDescription className="text-xs text-gray-500">에브리타임, 구글 캘린더 URL 입력</DialogDescription></DialogHeader>
+                    <div className="flex gap-2 mb-2">{["에브리타임", "구글"].map(src => (<Button key={src} size="sm" variant={syncSource === src ? "default" : "outline"} onClick={() => setSyncSource(src)} className={`flex-1 text-xs ${syncSource === src ? "bg-[#7C3AED]" : ""}`}>{src}</Button>))}</div>
+                    
+                    {/* URL이 이미 저장되어 있으면 표시 */}
+                    {localStorage.getItem("calendar_sync_url") && (
+                        <div className="mb-2 p-2 bg-green-50 text-green-700 text-xs rounded-lg flex justify-between items-center">
+                            <span>✅ 자동 동기화 켜짐</span>
+                            <button onClick={handleUnlink} className="text-red-500 underline">해제</button>
+                        </div>
+                    )}
+
                     <Input placeholder="https://..." value={syncUrl} onChange={e=>setSyncUrl(e.target.value)} className="text-sm h-10" />
-                    <DialogFooter>
-                        <Button onClick={handleSync} disabled={syncLoading} className="w-full bg-[#7C3AED] hover:bg-[#6D28D9]">
-                            {syncLoading ? <RefreshCw className="w-4 h-4 animate-spin"/> : "불러오기"}
-                        </Button>
-                    </DialogFooter>
+                    <DialogFooter><Button onClick={handleSync} disabled={syncLoading} className="w-full bg-[#7C3AED] hover:bg-[#6D28D9]">{syncLoading ? <RefreshCw className="w-4 h-4 animate-spin"/> : "불러오기"}</Button></DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>
