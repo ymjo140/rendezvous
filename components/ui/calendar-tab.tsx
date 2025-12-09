@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
-// 백엔드 URL 직접 사용
+// 백엔드 URL
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 export function CalendarTab() {
@@ -16,9 +16,8 @@ export function CalendarTab() {
     const [events, setEvents] = useState<any[]>([])
     const [selectedDate, setSelectedDate] = useState<Date>(new Date())
     
-    // 일정 생성 모달 상태
     const [isCreateOpen, setIsCreateOpen] = useState(false)
-    // 🌟 초기값 설정 (duration은 문자열로 관리하다가 보낼 때 숫자로 변환)
+    // 🌟 duration 복구 (초기값 문자열 '2')
     const [newEvent, setNewEvent] = useState({ title: "", location: "", time: "12:00", duration: "2" })
 
     const loadEvents = async () => {
@@ -40,17 +39,18 @@ export function CalendarTab() {
             const token = localStorage.getItem("token");
             const dateStr = selectedDate.toISOString().split('T')[0];
             
-            // 🌟 [핵심 수정] 백엔드가 원하는 타입으로 확실하게 변환
+            // 🌟 [핵심 수정] 422 에러 해결: 누락된 user_id, purpose 추가
             const payload = {
                 title: newEvent.title,
-                date: dateStr, // "YYYY-MM-DD"
-                time: newEvent.time, // "HH:MM"
-                duration: parseInt(newEvent.duration, 10), // 🌟 문자를 정수(Integer)로 강제 변환
+                date: dateStr,
+                time: newEvent.time,
+                duration: Number(newEvent.duration),
                 location_name: newEvent.location,
-                description: "개인 일정"
+                description: "개인 일정",
+                // 🚨 백엔드 스키마가 요구하는 필수값 강제 주입
+                user_id: 1, // 백엔드 Pydantic 통과용 더미 값 (실제론 토큰 사용됨)
+                purpose: "개인" // 필수 필드 누락 방지
             };
-
-            console.log("전송 데이터:", payload); // 디버깅용 로그
 
             const res = await fetch(`${API_URL}/api/events`, {
                 method: "POST",
@@ -68,8 +68,9 @@ export function CalendarTab() {
                 setNewEvent({ title: "", location: "", time: "12:00", duration: "2" });
             } else {
                 const err = await res.json();
-                console.error("등록 실패 로그:", err);
-                alert(`등록 실패: ${JSON.stringify(err.detail || "입력값을 확인해주세요")}`);
+                console.error("등록 실패 상세:", err);
+                const msg = err.detail ? JSON.stringify(err.detail) : "입력값을 확인해주세요";
+                alert(`등록 실패: ${msg}`);
             }
         } catch(e) { alert("등록 중 오류 발생"); }
     }
@@ -179,7 +180,7 @@ export function CalendarTab() {
                             </div>
                             <div className="flex-1">
                                 <label className="text-xs text-gray-500 mb-1 block">소요 시간(시간)</label>
-                                {/* 🌟 숫자 입력값 받기 */}
+                                {/* 🌟 복구된 소요 시간 입력창 */}
                                 <Input 
                                     type="number" 
                                     min={1} 

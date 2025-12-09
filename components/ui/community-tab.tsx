@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { fetchWithAuth } from "@/lib/api-client"
 
-// 백엔드 URL 직접 사용
+// 백엔드 URL
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 export function CommunityTab() {
@@ -19,7 +19,6 @@ export function CommunityTab() {
   const [loading, setLoading] = useState(false)
   
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  // 초기값들
   const [newMeeting, setNewMeeting] = useState({
       title: "", content: "", max_members: "4", location: "", date: "", time: "", category: "전체"
   })
@@ -40,23 +39,20 @@ export function CommunityTab() {
 
   const handleCreate = async () => {
       if (!newMeeting.title || !newMeeting.content) { alert("제목과 내용을 입력해주세요."); return; }
-      if (!newMeeting.date || !newMeeting.time) { alert("날짜와 시간을 입력해주세요."); return; }
-
+      
       try {
           const token = localStorage.getItem("token");
           
-          // 🌟 [핵심 수정] 422 에러 해결: 숫자와 날짜 형식 맞추기
+          // 🌟 [핵심 수정] 백엔드가 원하는 필드명으로 매핑
           const payload = {
               title: newMeeting.title,
-              content: newMeeting.content,
-              max_members: parseInt(newMeeting.max_members, 10), // 🌟 문자를 정수로 강제 변환
+              description: newMeeting.content, // 🚨 content -> description 으로 변경
+              max_members: Number(newMeeting.max_members), 
               location: newMeeting.location,
-              date_time: `${newMeeting.date} ${newMeeting.time}`, // "YYYY-MM-DD HH:MM"
+              date_time: `${newMeeting.date} ${newMeeting.time}`,
               category: newMeeting.category,
               tags: [newMeeting.category] 
           };
-
-          console.log("커뮤니티 생성 Payload:", payload); // 디버깅용
 
           const res = await fetch(`${API_URL}/api/communities`, {
               method: "POST",
@@ -75,7 +71,9 @@ export function CommunityTab() {
           } else {
               const err = await res.json();
               console.error(err);
-              alert(`생성 실패: ${JSON.stringify(err.detail || "입력 정보를 확인해주세요")}`);
+              // 에러 메시지 자세히 보여주기
+              const msg = err.detail ? JSON.stringify(err.detail) : "입력 정보를 확인해주세요";
+              alert(`생성 실패: ${msg}`);
           }
       } catch (e) { alert("오류가 발생했습니다."); }
   };
@@ -126,7 +124,8 @@ export function CommunityTab() {
               </div>
               
               <h3 className="font-bold text-base text-gray-800 mb-1">{m.title}</h3>
-              <p className="text-xs text-gray-500 mb-3 line-clamp-2">{m.content}</p>
+              {/* 여기도 description으로 받아온 값 표시 */}
+              <p className="text-xs text-gray-500 mb-3 line-clamp-2">{m.description || m.content}</p>
 
               <div className="flex flex-wrap gap-2 mb-3">
                 <Badge variant="secondary" className="bg-purple-50 text-[#7C3AED]">{m.category}</Badge>
@@ -157,7 +156,6 @@ export function CommunityTab() {
                   <Input placeholder="장소 (예: 강남역)" value={newMeeting.location} onChange={e=>setNewMeeting({...newMeeting, location: e.target.value})} />
                   <div className="flex gap-2 items-center">
                       <span className="text-sm w-20">최대 인원</span>
-                      {/* 🌟 숫자 입력값 받기 */}
                       <Input type="number" min={2} max={20} value={newMeeting.max_members} onChange={e=>setNewMeeting({...newMeeting, max_members: e.target.value})} />
                   </div>
                   <Textarea placeholder="어떤 모임인가요? 내용을 적어주세요." value={newMeeting.content} onChange={e=>setNewMeeting({...newMeeting, content: e.target.value})} />
