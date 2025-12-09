@@ -9,6 +9,7 @@ import { Search, Heart, MapPin, Calendar, User, Plus, Loader2, Check, Trash2, Lo
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { fetchWithAuth } from "@/lib/api-client"
 
 // 백엔드 URL
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
@@ -20,30 +21,23 @@ export function CommunityTab() {
   const [loading, setLoading] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("전체");
   
-  // 🌟 내 ID 상태 추가 (내가 쓴 글인지, 참여한 글인지 판별용)
   const [myId, setMyId] = useState<number | null>(null);
-
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   
   const [newMeeting, setNewMeeting] = useState({
       title: "", description: "", max_members: "4", location: "", date: "", time: "", category: "맛집"
   })
 
-  // 🌟 내 정보 가져오기 (ID 확인용)
+  // 내 정보 가져오기
   useEffect(() => {
       const fetchMyInfo = async () => {
-          const token = localStorage.getItem("token");
-          if(token) {
-              try {
-                  const res = await fetch(`${API_URL}/api/users/me`, {
-                      headers: { "Authorization": `Bearer ${token}` }
-                  });
-                  if (res.ok) {
-                      const data = await res.json();
-                      setMyId(data.id);
-                  }
-              } catch (e) { console.error(e); }
-          }
+          try {
+              const res = await fetchWithAuth("/api/users/me");
+              if (res.ok) {
+                  const data = await res.json();
+                  setMyId(data.id);
+              }
+          } catch (e) { console.error(e); }
       }
       fetchMyInfo();
   }, []);
@@ -51,10 +45,7 @@ export function CommunityTab() {
   const fetchCommunities = async () => {
     setLoading(true)
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/api/communities`, {
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
-      })
+      const res = await fetchWithAuth("/api/communities")
       if (res.ok) setMeetings(await res.json())
     } catch (e) { console.error(e) } 
     finally { setLoading(false) }
@@ -65,7 +56,6 @@ export function CommunityTab() {
   // 캘린더 자동 추가
   const addToCalendar = async (title: string, date: string, time: string, location: string) => {
       try {
-          const token = localStorage.getItem("token");
           const payload = {
               title: `[모임] ${title}`,
               date: date,
@@ -76,12 +66,9 @@ export function CommunityTab() {
               user_id: 1, 
               purpose: "모임" 
           };
-          await fetch(`${API_URL}/api/events`, {
+          await fetchWithAuth("/api/events", {
               method: "POST",
-              headers: { 
-                  "Content-Type": "application/json",
-                  ...(token && { "Authorization": `Bearer ${token}` })
-              },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload)
           });
       } catch (e) { console.error("캘린더 등록 실패:", e); }
@@ -92,7 +79,6 @@ export function CommunityTab() {
       if (!newMeeting.date || !newMeeting.time) { alert("날짜와 시간을 입력해주세요."); return; }
       
       try {
-          const token = localStorage.getItem("token");
           const payload = {
               title: newMeeting.title,
               description: newMeeting.description,
@@ -103,12 +89,9 @@ export function CommunityTab() {
               tags: [newMeeting.category] 
           };
 
-          const res = await fetch(`${API_URL}/api/communities`, {
+          const res = await fetchWithAuth("/api/communities", {
               method: "POST",
-              headers: { 
-                  "Content-Type": "application/json",
-                  ...(token && { "Authorization": `Bearer ${token}` })
-              },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload)
           });
 
@@ -128,11 +111,7 @@ export function CommunityTab() {
   const handleJoin = async (m: any) => {
     if (!confirm(`'${m.title}' 모임에 참여하시겠습니까?`)) return;
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/api/communities/${m.id}/join`, { 
-          method: "POST",
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
-      })
+      const res = await fetchWithAuth(`/api/communities/${m.id}/join`, { method: "POST" })
       
       if (res.ok) { 
           const [datePart, timePart] = m.date_time.split(" ");
@@ -145,35 +124,25 @@ export function CommunityTab() {
     } catch (e) { alert("오류 발생"); }
   }
 
-  // 🌟 [추가됨] 모임 삭제 (작성자용)
+  // 모임 삭제 (작성자)
   const handleDelete = async (id: number) => {
       if(!confirm("정말 이 모임을 삭제하시겠습니까?")) return;
       try {
-          const token = localStorage.getItem("token");
-          const res = await fetch(`${API_URL}/api/communities/${id}`, {
-              method: "DELETE",
-              headers: token ? { "Authorization": `Bearer ${token}` } : {}
-          });
+          const res = await fetchWithAuth(`/api/communities/${id}`, { method: "DELETE" });
           if(res.ok) { alert("삭제되었습니다."); fetchCommunities(); }
           else { alert("삭제 실패"); }
       } catch(e) { alert("오류 발생"); }
   }
 
-  // 🌟 [추가됨] 모임 나가기 (참여자용)
+  // 🌟 [수정됨] 모임 나가기 (참여자) -> 채팅에서도 사라짐
   const handleLeave = async (id: number) => {
       if(!confirm("모임에서 나가시겠습니까?")) return;
       try {
-          const token = localStorage.getItem("token");
-          // 백엔드에 '나가기' 엔드포인트가 있다고 가정 (없으면 DELETE join 요청 등 필요)
-          // 여기서는 /join과 같은 방식이지만 leave 엔드포인트를 호출한다고 가정
-          const res = await fetch(`${API_URL}/api/communities/${id}/leave`, {
-              method: "POST",
-              headers: token ? { "Authorization": `Bearer ${token}` } : {}
-          });
+          // 백엔드의 /leave 엔드포인트 호출
+          const res = await fetchWithAuth(`/api/communities/${id}/leave`, { method: "POST" });
           
-          if(res.ok) { alert("나갔습니다."); fetchCommunities(); }
-          // 만약 leave 엔드포인트가 없다면 작성자에게 문의 필요 (일단은 실패 메시지)
-          else { alert("나가기 실패 (서버 미지원)"); }
+          if(res.ok) { alert("모임에서 나갔습니다. (채팅방 목록에서도 제거됩니다)"); fetchCommunities(); }
+          else { alert("나가기 실패: 잠시 후 다시 시도해주세요."); }
       } catch(e) { alert("오류 발생"); }
   }
 
@@ -211,9 +180,8 @@ export function CommunityTab() {
         <div className="space-y-4 pb-20 mt-2">
           {loading ? <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-[#7C3AED]"/></div> : 
            filteredMeetings.length > 0 ? filteredMeetings.map((m) => {
-            // 🌟 상태 확인 로직
-            const isAuthor = m.author_id === myId; // 내가 만든 모임인가?
-            const isMember = m.current_members?.includes(myId); // 내가 참여 중인가? (백엔드가 ID 리스트를 준다고 가정)
+            const isAuthor = m.author_id === myId;
+            const isMember = m.current_members?.includes(myId);
 
             return (
                 <div key={m.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 relative transition-all hover:shadow-md">
@@ -239,7 +207,7 @@ export function CommunityTab() {
                         <div className="flex items-center gap-1"><MapPin className="w-3 h-3 text-gray-400"/> {m.location}</div>
                     </div>
                     
-                    {/* 🌟 조건부 버튼 렌더링 */}
+                    {/* 🌟 상태에 따른 버튼 (삭제/나가기/참여) */}
                     {isAuthor ? (
                         <Button size="sm" variant="destructive" className="h-8 text-xs font-bold px-3 rounded-lg shadow-sm" onClick={() => handleDelete(m.id)}>
                             <Trash2 className="w-3 h-3 mr-1"/> 삭제
