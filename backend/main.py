@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import engine, SessionLocal
 import models
-from routers import auth, users, meetings, community
+from routers import auth, users, meetings, community, sync
 from dependencies import get_password_hash
 
 # DB 테이블 생성
@@ -84,6 +84,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(meetings.router)
 app.include_router(community.router)
+app.include_router(sync.router)
 
 @app.get("/")
 def read_root():
