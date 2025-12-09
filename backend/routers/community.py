@@ -262,3 +262,23 @@ def leave_chat_room(
         return {"message": "Successfully left the chat room", "status": "left"}
     
     raise HTTPException(status_code=400, detail="User is not in the room")
+@router.delete("/api/communities/{community_id}")
+def delete_community(
+    community_id: str, 
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    # 1. 모임 찾기
+    comm = db.query(models.Community).filter(models.Community.id == community_id).first()
+    if not comm:
+        raise HTTPException(status_code=404, detail="Community not found")
+
+    # 2. 권한 확인 (작성자 본인인지?)
+    if comm.host_id != current_user.id:
+        raise HTTPException(status_code=403, detail="삭제 권한이 없습니다. (작성자만 삭제 가능)")
+
+    # 3. 삭제 수행
+    db.delete(comm)
+    db.commit()
+    
+    return {"message": "Successfully deleted"}
