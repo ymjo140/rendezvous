@@ -39,7 +39,17 @@ export default function Page() {
           <span className="text-[10px] font-bold">홈</span>
         </button>
 
-        {/* 2. 커뮤니티 */}
+        {/* 2. 채팅 */}
+        <button 
+            onClick={() => setActiveTab("chat")} 
+            className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
+                activeTab === "chat" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+            }`}
+        >
+          <MessageCircle className={`w-6 h-6 ${activeTab === "chat" ? "fill-[#7C3AED]/10" : ""}`} />
+          <span className="text-[10px] font-medium">채팅</span>
+        </button>
+        {/* 3. 커뮤니티 */}
         <button 
             onClick={() => setActiveTab("community")} 
             className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
@@ -50,16 +60,7 @@ export default function Page() {
           <span className="text-[10px] font-medium">커뮤니티</span>
         </button>
 
-        {/* 3. 채팅 */}
-        <button 
-            onClick={() => setActiveTab("chat")} 
-            className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
-                activeTab === "chat" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
-            }`}
-        >
-          <MessageCircle className={`w-6 h-6 ${activeTab === "chat" ? "fill-[#7C3AED]/10" : ""}`} />
-          <span className="text-[10px] font-medium">채팅</span>
-        </button>
+        
 
         {/* 4. 일정 */}
         <button 
