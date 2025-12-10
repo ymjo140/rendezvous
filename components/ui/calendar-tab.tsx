@@ -1,16 +1,20 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input" 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Trash2, Link as LinkIcon, RefreshCw, Calendar as CalendarIcon, ArrowLeft, Loader2 } from "lucide-react"
+import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Trash2, Link as LinkIcon, RefreshCw, ArrowLeft, Loader2 } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 export function CalendarTab() {
+    const router = useRouter();
+    const [isGuest, setIsGuest] = useState(false);
+
     const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
     const [date, setDate] = useState<Date>(new Date())
     const [events, setEvents] = useState<any[]>([])
@@ -19,7 +23,6 @@ export function CalendarTab() {
     const [isCreateOpen, setIsCreateOpen] = useState(false)
     const [isSyncOpen, setIsSyncOpen] = useState(false)
     const [syncLoading, setSyncLoading] = useState(false)
-    // 🌟 자동 동기화 로딩 상태 추가
     const [isAutoSyncing, setIsAutoSyncing] = useState(false)
 
     const [newEvent, setNewEvent] = useState({ title: "", location: "", time: "12:00", duration: "2" })
@@ -35,50 +38,43 @@ export function CalendarTab() {
 
     const loadEvents = async () => {
         try {
+            const token = localStorage.getItem("token");
+            if (!token) { setIsGuest(true); return; }
+
             const res = await fetchWithAuth("/api/events")
             if (res.ok) setEvents(await res.json())
+            else if (res.status === 401) setIsGuest(true);
         } catch(e) { console.error(e) }
     }
 
-    // 🌟 [신규 기능] 컴포넌트 마운트 시 자동 동기화 실행
-    useEffect(() => {
-        loadEvents();
-        
-        // 1. 저장된 URL이 있는지 확인
-        const savedUrl = localStorage.getItem("calendar_sync_url");
-        const savedSource = localStorage.getItem("calendar_sync_source");
-
-        if (savedUrl && savedSource) {
-            autoSync(savedUrl, savedSource);
-        }
-    }, [])
-
-    // 🌟 [신규 기능] 자동 동기화 함수 (알림 없이 조용히 업데이트)
+    // 🌟 자동 동기화 로직
     const autoSync = async (url: string, source: string) => {
         setIsAutoSyncing(true);
         try {
-            console.log("🔄 최신 일정 자동 동기화 중...");
             const res = await fetchWithAuth("/api/sync/ical", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ url: url, source_name: source })
             });
-            
-            if (res.ok) {
-                console.log("✅ 자동 동기화 완료");
-                loadEvents(); // 목록 새로고침
-            }
-        } catch (e) {
-            console.error("자동 동기화 실패 (네트워크 오류 등)");
-        } finally {
-            setIsAutoSyncing(false);
-        }
+            if (res.ok) loadEvents();
+        } catch (e) { console.error(e); } 
+        finally { setIsAutoSyncing(false); }
     };
 
-    // 캘린더 연동 핸들러 (수동)
+    useEffect(() => {
+        const token = localStorage.getItem("token");
+        if(token) {
+            loadEvents();
+            const savedUrl = localStorage.getItem("calendar_sync_url");
+            const savedSource = localStorage.getItem("calendar_sync_source");
+            if (savedUrl && savedSource) autoSync(savedUrl, savedSource);
+        } else {
+            setIsGuest(true);
+        }
+    }, [])
+
     const handleSync = async () => {
         if (!syncUrl.includes("http")) { alert("올바른 URL을 입력해주세요."); return; }
-        
         setSyncLoading(true);
         try {
             const res = await fetchWithAuth("/api/sync/ical", {
@@ -86,31 +82,23 @@ export function CalendarTab() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ url: syncUrl, source_name: syncSource })
             });
-
             if (res.ok) {
                 const data = await res.json();
-                
-                // 🌟 성공 시 URL을 로컬 스토리지에 저장 (다음번 자동 실행을 위해)
                 localStorage.setItem("calendar_sync_url", syncUrl);
                 localStorage.setItem("calendar_sync_source", syncSource);
-
-                alert(`${data.message}\n(이제 앱을 켤 때마다 자동으로 최신화됩니다!)`);
-                setIsSyncOpen(false);
-                loadEvents();
-            } else {
-                alert("연동 실패: URL을 다시 확인해주세요.");
-            }
-        } catch (e) { alert("서버 오류 발생"); }
+                alert(`${data.message}\n(자동 동기화가 활성화되었습니다)`);
+                setIsSyncOpen(false); setSyncUrl(""); loadEvents();
+            } else { alert("연동 실패: URL을 확인해주세요."); }
+        } catch (e) { alert("오류 발생"); }
         finally { setSyncLoading(false); }
     }
 
-    // 🌟 연동 해제 (저장된 URL 삭제)
     const handleUnlink = () => {
-        if(confirm("자동 동기화를 끄시겠습니까?")) {
+        if(confirm("자동 동기화를 해제하시겠습니까?")) {
             localStorage.removeItem("calendar_sync_url");
             localStorage.removeItem("calendar_sync_source");
             setSyncUrl("");
-            alert("자동 동기화가 해제되었습니다.");
+            alert("해제되었습니다.");
             setIsSyncOpen(false);
         }
     }
@@ -121,7 +109,7 @@ export function CalendarTab() {
             const res = await fetchWithAuth(`/api/events/${eventId}`, { method: "DELETE" });
             if (res.ok) setEvents(prev => prev.filter(e => e.id !== eventId));
             else alert("삭제 실패");
-        } catch (e) { alert("삭제 중 오류 발생"); }
+        } catch (e) { alert("오류 발생"); }
     };
 
     const handleCreateEvent = async () => {
@@ -147,9 +135,10 @@ export function CalendarTab() {
                 setIsCreateOpen(false); loadEvents();
                 setNewEvent({ title: "", location: "", time: "12:00", duration: "2" });
             } else { alert("등록 실패"); }
-        } catch(e) { alert("등록 중 오류 발생"); }
+        } catch(e) { alert("오류 발생"); }
     }
 
+    // --- 달력 계산 ---
     const getDaysInMonth = (year: number, month: number) => {
         const date = new Date(year, month, 1); const days = [];
         while (date.getMonth() === month) { days.push(new Date(date)); date.setDate(date.getDate() + 1); }
@@ -159,7 +148,6 @@ export function CalendarTab() {
     const days = getDaysInMonth(currentYear, currentMonth);
     const padding = Array(days[0].getDay()).fill(null);
     const eventsOnDate = (d: Date) => { const dateStr = formatDateLocal(d); return events.filter(e => e.date === dateStr); }
-    
     const handleDateClick = (d: Date) => { setSelectedDate(d); setDate(d); setViewMode('week'); };
 
     const getWeekDates = (baseDate: Date) => {
@@ -176,6 +164,22 @@ export function CalendarTab() {
     const weekDates = getWeekDates(date);
     const HOURS = Array.from({ length: 17 }, (_, i) => i + 8); 
 
+    // 비회원 차단
+    if (isGuest) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full p-6 space-y-6 bg-[#F3F4F6] font-['Pretendard']">
+                <div className="text-center space-y-3">
+                    <div className="text-6xl mb-4">🔒</div>
+                    <h2 className="text-2xl font-bold text-gray-800">로그인이 필요해요</h2>
+                    <p className="text-gray-500 leading-relaxed">나만의 일정을 관리하고<br/>친구들과 약속을 잡아보세요.</p>
+                </div>
+                <Button className="w-full max-w-xs h-12 rounded-xl bg-[#FEE500] hover:bg-[#FEE500]/90 text-black font-bold text-base shadow-sm" onClick={() => router.push("/login")}>
+                    카카오로 3초만에 시작하기
+                </Button>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col h-full bg-[#F3F4F6] font-['Pretendard']">
             <div className="p-5 pb-2 bg-white sticky top-0 z-10 shadow-sm flex justify-between items-center">
@@ -184,17 +188,9 @@ export function CalendarTab() {
                         <Button variant="ghost" size="icon" onClick={() => setViewMode('month')} className="-ml-2"><ArrowLeft className="w-5 h-5"/></Button>
                     )}
                     <h1 className="text-xl font-bold">{viewMode === 'month' ? '내 일정' : '이번 주'}</h1>
-                    
-                    {/* 🌟 자동 동기화 중일 때 로딩 표시 */}
-                    {isAutoSyncing && (
-                        <span className="text-[10px] text-[#7C3AED] bg-purple-50 px-2 py-1 rounded-full animate-pulse flex items-center gap-1">
-                            <Loader2 className="w-3 h-3 animate-spin"/> 동기화 중...
-                        </span>
-                    )}
+                    {isAutoSyncing && (<span className="text-[10px] text-[#7C3AED] bg-purple-50 px-2 py-1 rounded-full animate-pulse flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> 동기화 중...</span>)}
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setIsSyncOpen(true)} className="h-8 text-xs gap-1 border-purple-200 text-purple-600 bg-purple-50">
-                    <RefreshCw className="w-3 h-3"/> 외부 일정
-                </Button>
+                <Button variant="outline" size="sm" onClick={() => setIsSyncOpen(true)} className="h-8 text-xs gap-1 border-purple-200 text-purple-600 bg-purple-50"><RefreshCw className="w-3 h-3"/> 외부 일정</Button>
             </div>
 
             <ScrollArea className="flex-1 px-5 pb-4">
@@ -298,15 +294,7 @@ export function CalendarTab() {
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader><DialogTitle>외부 캘린더 가져오기</DialogTitle><DialogDescription className="text-xs text-gray-500">에브리타임, 구글 캘린더 URL 입력</DialogDescription></DialogHeader>
                     <div className="flex gap-2 mb-2">{["에브리타임", "구글"].map(src => (<Button key={src} size="sm" variant={syncSource === src ? "default" : "outline"} onClick={() => setSyncSource(src)} className={`flex-1 text-xs ${syncSource === src ? "bg-[#7C3AED]" : ""}`}>{src}</Button>))}</div>
-                    
-                    {/* URL이 이미 저장되어 있으면 표시 */}
-                    {localStorage.getItem("calendar_sync_url") && (
-                        <div className="mb-2 p-2 bg-green-50 text-green-700 text-xs rounded-lg flex justify-between items-center">
-                            <span>✅ 자동 동기화 켜짐</span>
-                            <button onClick={handleUnlink} className="text-red-500 underline">해제</button>
-                        </div>
-                    )}
-
+                    {localStorage.getItem("calendar_sync_url") && (<div className="mb-2 p-2 bg-green-50 text-green-700 text-xs rounded-lg flex justify-between items-center"><span>✅ 자동 동기화 켜짐</span><button onClick={handleUnlink} className="text-red-500 underline">해제</button></div>)}
                     <Input placeholder="https://..." value={syncUrl} onChange={e=>setSyncUrl(e.target.value)} className="text-sm h-10" />
                     <DialogFooter><Button onClick={handleSync} disabled={syncLoading} className="w-full bg-[#7C3AED] hover:bg-[#6D28D9]">{syncLoading ? <RefreshCw className="w-4 h-4 animate-spin"/> : "불러오기"}</Button></DialogFooter>
                 </DialogContent>

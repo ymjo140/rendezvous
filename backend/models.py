@@ -199,21 +199,37 @@ class Friendship(Base):
     receiver_id = Column(Integer, ForeignKey("users.id"))  # 받은 사람
     status = Column(String, default="pending") # pending(대기), accepted(수락)
     created_at = Column(DateTime, default=datetime.now)
-# 💰 코인 입출금 내역
+# 1. 💰 코인 내역 (입출금 장부)
+# - 유저가 코인을 얻거나 쓸 때마다 기록됨
 class CoinHistory(Base):
     __tablename__ = "coin_history"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    amount = Column(Integer) # +50, -100 등
-    type = Column(String) # "check_in", "shop", "event"
-    description = Column(String) # "강남역 스타벅스 방문", "아바타 구매"
+    amount = Column(Integer) # +50 (획득), -100 (사용)
+    type = Column(String) # "check_in"(방문), "campaign"(체험단), "shop"(상점), "game"(보물찾기)
+    description = Column(String) # "강남역 스타벅스 방문", "아바타 옷 구매"
     created_at = Column(DateTime, default=datetime.now)
 
-# 📍 방문 기록 (하루 1회 중복 방지용)
+# 2. 📍 방문 기록 (중복 방지용)
+# - 하루에 같은 장소에서 계속 코인을 받는 걸 방지함
 class VisitLog(Base):
     __tablename__ = "visit_logs"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    place_name = Column(String) # 장소 이름
-    # place_id = Column(String) # 나중에 네이버 ID 연동 시 사용
+    place_name = Column(String) # 장소 이름 (예: "스타벅스 강남점")
+    # place_id = Column(String) # (선택) 네이버 플레이스 ID 등 고유값
+    created_at = Column(DateTime, default=datetime.now)
+
+# 3. 🎁 체험단/이벤트 (사장님 광고) - [아직 미구현된 부분]
+# - 사장님이 "우리 가게 오면 5000코인 드려요!" 하고 올리는 공고
+class Campaign(Base):
+    __tablename__ = "campaigns"
+    id = Column(Integer, primary_key=True, index=True)
+    host_id = Column(Integer, ForeignKey("users.id")) # 광고주(사장님) ID
+    title = Column(String) # "홍대 파스타 무료 시식권 + 5000코인"
+    content = Column(String) # 상세 내용 (미션: 사진 3장 필수 등)
+    reward_coin = Column(Integer) # 보상 코인 (예: 5000)
+    location = Column(String) # 가게 위치 (좌표 or 주소)
+    max_applicants = Column(Integer) # 선착순 인원
+    status = Column(String, default="open") # open(모집중), closed(마감)
     created_at = Column(DateTime, default=datetime.now)

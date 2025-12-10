@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -11,39 +12,43 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { fetchWithAuth } from "@/lib/api-client"
 
-// 백엔드 URL
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
-
 const CATEGORIES = ["전체", "맛집", "운동", "스터디", "취미", "여행"];
 
 export function CommunityTab() {
+  const router = useRouter();
+  const [isGuest, setIsGuest] = useState(false);
   const [meetings, setMeetings] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("전체");
   
-  // 🌟 내 ID (권한 확인용)
   const [myId, setMyId] = useState<number | null>(null);
-
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  
   const [newMeeting, setNewMeeting] = useState({
       title: "", description: "", max_members: "4", location: "", date: "", time: "", category: "맛집"
   })
 
-  // 1. 내 정보 가져오기 (접속한 사람이 누군지 확인)
+  // 1. 내 정보 및 로그인 체크
   useEffect(() => {
-      const fetchMyInfo = async () => {
+      const init = async () => {
+          const token = localStorage.getItem("token");
+          if (!token) { setIsGuest(true); return; }
+
           try {
               const res = await fetchWithAuth("/api/users/me");
               if (res.ok) {
                   const data = await res.json();
-                  setMyId(data.id); // 내 ID 저장
+                  setMyId(data.id);
+              } else if (res.status === 401) {
+                  setIsGuest(true);
               }
           } catch (e) { console.error(e); }
       }
-      fetchMyInfo();
+      init();
   }, []);
 
-  // 2. 모임 리스트 가져오기
+  // 2. 모임 목록 불러오기
   const fetchCommunities = async () => {
     setLoading(true)
     try {
@@ -53,9 +58,11 @@ export function CommunityTab() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchCommunities() }, [])
+  useEffect(() => { 
+      if(!isGuest) fetchCommunities() 
+  }, [isGuest])
 
-  // 캘린더 자동 등록 (헬퍼 함수)
+  // 헬퍼: 캘린더 자동 등록
   const addToCalendar = async (title: string, date: string, time: string, location: string) => {
       try {
           const payload = {
@@ -126,20 +133,17 @@ export function CommunityTab() {
     } catch (e) { alert("오류 발생"); }
   }
 
-  // 5. 🌟 [삭제 기능] 작성자만 가능
+  // 5. 삭제 (작성자)
   const handleDelete = async (id: string) => {
       if(!confirm("정말 이 모임을 삭제하시겠습니까? (복구 불가)")) return;
       try {
           const res = await fetchWithAuth(`/api/communities/${id}`, { method: "DELETE" });
-          if(res.ok) { 
-              alert("삭제되었습니다."); 
-              fetchCommunities(); // 목록 새로고침
-          }
-          else { alert("삭제 실패: 권한이 없거나 오류가 발생했습니다."); }
+          if(res.ok) { alert("삭제되었습니다."); fetchCommunities(); }
+          else { alert("삭제 실패"); }
       } catch(e) { alert("오류 발생"); }
   }
 
-  // 6. 나가기 기능
+  // 6. 나가기 (참여자)
   const handleLeave = async (id: string) => {
       if(!confirm("모임에서 나가시겠습니까?")) return;
       try {
@@ -147,6 +151,21 @@ export function CommunityTab() {
           if(res.ok) { alert("나갔습니다."); fetchCommunities(); }
           else { alert("나가기 실패"); }
       } catch(e) { alert("오류 발생"); }
+  }
+
+  if (isGuest) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full p-6 space-y-6 bg-[#F3F4F6] font-['Pretendard']">
+                <div className="text-center space-y-3">
+                    <div className="text-6xl mb-4">👥</div>
+                    <h2 className="text-2xl font-bold text-gray-800">커뮤니티 입장</h2>
+                    <p className="text-gray-500 leading-relaxed">로그인하고 취향이 맞는<br/>새로운 친구들을 만나보세요!</p>
+                </div>
+                <Button className="w-full max-w-xs h-12 rounded-xl bg-[#FEE500] hover:bg-[#FEE500]/90 text-black font-bold text-base shadow-sm" onClick={() => router.push("/login")}>
+                    로그인 하러가기
+                </Button>
+            </div>
+        );
   }
 
   const filteredMeetings = selectedCategory === "전체" 
@@ -183,9 +202,7 @@ export function CommunityTab() {
         <div className="space-y-4 pb-20 mt-2">
           {loading ? <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-[#7C3AED]"/></div> : 
            filteredMeetings.length > 0 ? filteredMeetings.map((m) => {
-            // 🌟 권한 체크 (host_id와 내 ID 비교)
             const isAuthor = m.host_id === myId;
-            // 참여 여부 확인 (current_members 배열 안에 내 ID가 있는지)
             const isMember = m.current_members?.some((member: any) => member.id === myId);
 
             return (
@@ -212,7 +229,6 @@ export function CommunityTab() {
                         <div className="flex items-center gap-1"><MapPin className="w-3 h-3 text-gray-400"/> {m.location}</div>
                     </div>
                     
-                    {/* 🌟 버튼 분기 처리 */}
                     {isAuthor ? (
                         <Button size="sm" variant="destructive" className="h-8 text-xs font-bold px-3 rounded-lg shadow-sm bg-red-500 hover:bg-red-600 text-white" onClick={() => handleDelete(m.id)}>
                             <Trash2 className="w-3 h-3 mr-1"/> 삭제
