@@ -27,7 +27,7 @@ data_provider = RealDataProvider(NAVER_SEARCH_ID, NAVER_SEARCH_SECRET, NAVER_MAP
 
 router = APIRouter()
 
-# 🌟 [1] 백업 좌표 리스트 (데이터 유지)
+# 🌟 [1] 백업 좌표 리스트 (전체 유지)
 FALLBACK_COORDINATES = {
     # 1호선
     "서울역": (37.5559, 126.9723), "시청": (37.5657, 126.9769), "종각": (37.5702, 126.9831),
@@ -90,7 +90,7 @@ FALLBACK_COORDINATES = {
     "청구": (37.5602, 127.0138), "왕십리": (37.5612, 127.0371), "마장": (37.5661, 127.0429),
     "답십리": (37.5667, 127.0527), "장한평": (37.5614, 127.0646), "군자": (37.5571, 127.0794),
     "아차산": (37.5516, 127.0897), "광나루": (37.5453, 127.1035), "천호": (37.5386, 127.1236),
-    "강동": (37.5358, 127.1324), "길동": (37.5378, 127.1400), "올림픽공원": (37.5162, 127.1309),
+    "강동": (37.5358, 127.1324), "올림픽공원": (37.5162, 127.1309),
 
     # 6호선
     "합정": (37.5489, 126.9166), "망원": (37.5559, 126.9099), "상수": (37.5477, 126.9229),
@@ -137,107 +137,89 @@ def find_nearest_hotspot_local(lat: float, lng: float):
             best_place = name
     return best_place
 
-# 🌟 [수정됨] 디버깅 로그 추가 및 ODsay 호출 검증
+# 🌟 [수정됨] ODsay 호출 함수 (헤더 포함)
 def get_transit_time(sx, sy, ex, ey):
-    if not ODSAY_API_KEY:
-        print("🚫 [ODsay] API Key is missing in constants.py")
-        return None
-
+    if not ODSAY_API_KEY: return 9999
     try:
         url = "https://api.odsay.com/v1/api/searchPubTransPathT"
-        params = {
-            "SX": sx, "SY": sy, "EX": ex, "EY": ey,
-            "apiKey": ODSAY_API_KEY
-        }
+        params = { "SX": sx, "SY": sy, "EX": ex, "EY": ey, "apiKey": ODSAY_API_KEY }
+        # 🌟 헤더 추가 (CORS 우회)
+        headers = { "Referer": "http://127.0.0.1" }
         
-        # print(f"🚀 [ODsay] Requesting: {sx},{sy} -> {ex},{ey}") # (너무 많으면 주석 처리)
-        res = requests.get(url, params=params, timeout=3)
-        
+        res = requests.get(url, params=params, headers=headers, timeout=3)
         if res.status_code == 200:
             data = res.json()
             if "result" in data and "path" in data["result"]:
-                time_cost = data["result"]["path"][0]["info"]["totalTime"]
-                # print(f"✅ [ODsay] Success: {time_cost} min")
-                return time_cost
-            else:
-                # print(f"⚠️ [ODsay] No path found: {data}")
-                return None
-        else:
-            print(f"🔥 [ODsay] HTTP Error: {res.status_code} - {res.text}")
-            return None
-    except Exception as e:
-        print(f"🔥 [ODsay] Exception: {e}")
-        return None
+                return data["result"]["path"][0]["info"]["totalTime"]
+    except: pass
+    return 9999
 
-# 🌟 [수정됨] 참여자가 1명이든 2명이든 무조건 3개 추천 시도
+# 🌟 [핵심 수정] 무조건 3개를 리턴하도록 안전장치 강화
 def find_top_3_midpoints_odsay(participants, default_lat, default_lng):
-    # 참여자가 아예 없으면 내 위치 리턴
+    # 참여자가 아예 없거나 1명 미만인 경우 (예외처리)
     if not participants:
         return [("내 주변", default_lat, default_lng)]
-
-    print(f"👥 [Midpoint] Participants count: {len(participants)}")
 
     avg_lat = sum(p['lat'] for p in participants) / len(participants)
     avg_lng = sum(p['lng'] for p in participants) / len(participants)
 
-    # 1. 1차 후보군 (직선거리 가까운 10개)
+    # 1. 후보군 추출 (직선거리 가까운 7개)
     candidates = []
     for name, coords in FALLBACK_COORDINATES.items():
         dist = (coords[0] - avg_lat)**2 + (coords[1] - avg_lng)**2
         candidates.append((dist, name, coords))
-    
     candidates.sort(key=lambda x: x[0])
-    top_candidates = candidates[:10]
-    
-    print(f"📍 [Midpoint] Top candidates (by distance): {[c[1] for c in top_candidates[:3]]}")
+    top_candidates = candidates[:7]
 
-    # 2. 시간 계산 (ODsay)
+    # 2. 시간 계산
     scored_candidates = []
     for _, name, coords in top_candidates:
-        max_time = 0
-        valid_path_count = 0
+        max_time_for_this_station = 0
+        try:
+            for p in participants:
+                time_mins = get_transit_time(p['lng'], p['lat'], coords[1], coords[0])
+                if time_mins == 9999: # API 실패 시 직선거리 가중치 사용
+                    dist_penalty = ((p['lat']-coords[0])**2 + (p['lng']-coords[1])**2) * 10000
+                    time_mins = 20 + int(dist_penalty) 
+                if time_mins > max_time_for_this_station:
+                    max_time_for_this_station = time_mins
+        except:
+            max_time_for_this_station = 9999
         
-        for p in participants:
-            time_mins = get_transit_time(p['lng'], p['lat'], coords[1], coords[0])
-            
-            if time_mins is not None:
-                if time_mins > max_time: max_time = time_mins
-                valid_path_count += 1
-            else:
-                # API 실패 시: 직선 거리 페널티
-                dist = ((p['lat']-coords[0])**2 + (p['lng']-coords[1])**2)**0.5
-                estimated_time = 30 + (dist * 1500) 
-                if estimated_time > max_time: max_time = estimated_time
+        scored_candidates.append((max_time_for_this_station, name, coords))
 
-        # 성공 횟수가 많을수록 우선순위 높음 (API 성공한 곳 우선)
-        final_score = max_time - (valid_path_count * 10)
-        scored_candidates.append((final_score, name, coords))
-
-    # 3. 정렬 (점수 낮은 순 = 시간 짧은 순)
+    # 3. 정렬 및 Top 3 선정
     scored_candidates.sort(key=lambda x: x[0])
-    print(f"🏆 [Midpoint] Final ranking: {[(c[1], round(c[0],1)) for c in scored_candidates[:3]]}")
-
-    # 4. 결과 추출
+    
     final_regions = []
-    # 1등, 2등
+    # 1, 2순위 추가
     for i in range(min(2, len(scored_candidates))):
         c = scored_candidates[i]
         final_regions.append((c[1], c[2][0], c[2][1]))
 
-    # 3등 (지리적 중심 보정)
-    geo_name = top_candidates[0][1] # 직선거리 1등
-    existing_names = [r[0] for r in final_regions]
+    # 3순위 (지리적 중간 or 3등)
+    geo_name = find_nearest_hotspot_local(avg_lat, avg_lng)
     
+    # 중복 방지 로직
+    existing_names = [r[0] for r in final_regions]
     if geo_name not in existing_names:
-        coords = FALLBACK_COORDINATES.get(geo_name)
+        coords = FALLBACK_COORDINATES.get(geo_name, (avg_lat, avg_lng))
         final_regions.append((geo_name, coords[0], coords[1]))
     elif len(scored_candidates) > 2:
         c = scored_candidates[2]
         final_regions.append((c[1], c[2][0], c[2][1]))
+    
+    # 만약 그래도 3개가 안되면 리스트에 있는 거 채워넣음
+    idx = 2
+    while len(final_regions) < 3 and idx < len(scored_candidates):
+        c = scored_candidates[idx]
+        if c[1] not in [r[0] for r in final_regions]:
+            final_regions.append((c[1], c[2][0], c[2][1]))
+        idx += 1
 
     return final_regions
 
-# ... (Request Models 기존 동일) ...
+# --- Request Models ---
 class RecommendRequest(BaseModel):
     users: List[Any] = []; purpose: str = "식사"; location_name: str = ""
     friend_location_manual: Optional[str] = None; manual_locations: List[str] = [] 
@@ -249,7 +231,7 @@ class MeetingFlowRequest(BaseModel): room_id: Optional[str] = None; participants
 class EventSchema(BaseModel): id: Optional[str] = None; user_id: int; title: str; date: str; time: str; duration_hours: float = 1.5; location_name: Optional[str] = None; purpose: str; model_config = ConfigDict(from_attributes=True)
 class AvailabilityRequest(BaseModel): user_ids: List[int]; days_to_check: int = 7
 
-# --- Helper Functions (기존 동일) ---
+# --- Helper Functions ---
 def save_place_to_db(db: Session, poi_list: List[Any]):
     for p in poi_list:
         existing = db.query(models.Place).filter(models.Place.name == p.name).first()
@@ -265,6 +247,7 @@ def search_places_in_db(db: Session, region_name: str, keywords: List[str], allo
     if lat == 0.0: lat, lng = get_fuzzy_coordinate(region_name)
     if lat == 0.0: return []
 
+    # 🌟 [수정] 거리 제한 (약 2km)
     lat_min, lat_max = lat - 0.02, lat + 0.02
     lng_min, lng_max = lng - 0.02, lng + 0.02
 
@@ -290,6 +273,7 @@ def expand_tags_to_keywords(purpose: str, user_tags: List[str], region_name: str
             base_keywords.append(tag)
     else: base_keywords = PURPOSE_CONFIG.get(purpose, {}).get("keywords", ["맛집"])
     
+    # 🌟 지역명 + 키워드 조합 (정확도 향상)
     if region_name and region_name not in ["내 주변", "중간지점", "지리적 중간"]:
         clean_region = region_name.split('(')[0].strip()
         keywords = [f"{clean_region} {kw}" for kw in base_keywords]
@@ -362,7 +346,6 @@ def run_group_recommendation(req: RecommendRequest, db: Session):
         if lat != 0.0: participants.append({"id": 9999, "name": req.friend_location_manual, "lat": lat, "lng": lng, "preferences": {}})
 
     regions = []
-    
     # 🌟 [수정] 참여자 수에 관계없이 항상 Top 3 추천 로직 실행
     if len(participants) > 0:
         try:
@@ -398,6 +381,7 @@ def run_group_recommendation(req: RecommendRequest, db: Session):
                 for p in api_pois:
                     if p.name not in existing_names: pois.append(p)
 
+            # 🌟 [수정] 결과 필터링 (거리 제한 2km)
             valid_pois = []
             for p in pois:
                 dist = ((p.location[0] - region['lat'])**2 + (p.location[1] - region['lng'])**2)**0.5
@@ -413,7 +397,7 @@ def run_group_recommendation(req: RecommendRequest, db: Session):
 
     return final_response
 
-# ... (나머지 클래스, 엔드포인트 기존과 동일) ...
+# ... (MeetingFlowEngine, Endpoints 등 나머지 코드는 기존과 동일하게 유지) ...
 class MeetingFlowEngine:
     def __init__(self, provider: RealDataProvider): self.provider = provider
     def _rank_time_slots(self, slots: List[str], purpose: str) -> List[str]:
@@ -451,9 +435,10 @@ class MeetingFlowEngine:
         regions = []
         if len(part_dicts) > 1:
             try:
+                # 🌟 AI 플래너도 동일하게 Top 3 사용 (위치 정보 필요)
+                # (MeetingFlowRequest에는 current_lat이 없으므로 평균값 사용)
                 avg_lat = sum(p['lat'] for p in part_dicts) / len(part_dicts)
                 avg_lng = sum(p['lng'] for p in part_dicts) / len(part_dicts)
-                # 🌟 AI 플래너도 동일하게 Top 3 사용
                 top_regions = find_top_3_midpoints_odsay(part_dicts, avg_lat, avg_lng)
                 for name, lat, lng in top_regions:
                     regions.append({"region_name": name, "lat": lat, "lng": lng})
@@ -478,6 +463,7 @@ class MeetingFlowEngine:
                 for p in api_pois:
                     if p.name not in existing_names: pois.append(p)
 
+            # 🌟 [수정] AI 플래너 결과도 거리 제한 적용
             valid_pois = []
             for p in pois:
                 dist = ((p.location[0] - region['lat'])**2 + (p.location[1] - region['lng'])**2)**0.5
