@@ -25,7 +25,7 @@ ODSAY_URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
 
 # --- 기존 설정 유지 ---
 PURPOSE_CONFIG = {
-    "식사": { "allowed": ["restaurant"], "keywords": ["맛집", "한식", "중식", "양식", "일식", "아시안 음식", "밥집", "다이닝", "웨이팅맛집"] },
+    "식사": { "allowed": ["restaurant"], "keywords": ["한식", "중식", "양식", "일식", "아시안 음식", "밥집", "다이닝", "웨이팅맛집"] },
     "술/회식": { "allowed": ["pub", "restaurant"], "keywords": ["이자카야", "요리주점", "회식", "고기집", "곱창"] },
     "카페": { "allowed": ["cafe"], "keywords": ["카페", "디저트", "베이커리", "대형카페", "로스터리"] },
     "데이트/기념일": { "allowed": ["restaurant", "cafe", "pub", "culture", "activity"], "keywords": ["분위기좋은", "파스타", "와인", "데이트코스", "뷰맛집"] },
