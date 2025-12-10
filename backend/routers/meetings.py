@@ -308,9 +308,9 @@ def save_place_to_db(db: Session, poi_list: List[Any], center_lat: float, center
             p_lng = float(p.location[1])
         except: continue
 
-        # 🌟 거리 검증: 중심점으로부터 3km 이상 떨어진 곳은 저장 안 함
+        # 🌟 거리 검증: 중심점으로부터 1km 이상 떨어진 곳은 저장 안 함
         dist = ((p_lat - center_lat)**2 + (p_lng - center_lng)**2)**0.5
-        if dist > 0.03: continue
+        if dist > 0.01: continue
 
         existing = db.query(models.Place).filter(models.Place.name == p.name).first()
         is_duplicate = False
@@ -331,9 +331,9 @@ def search_places_in_db(db: Session, region_name: str, keywords: List[str], allo
     if lat == 0.0: lat, lng = get_fuzzy_coordinate(region_name)
     if lat == 0.0: return []
 
-    # 🌟 [수정] 거리 제한 (약 2km)
-    lat_min, lat_max = lat - 0.02, lat + 0.02
-    lng_min, lng_max = lng - 0.02, lng + 0.02
+    # 🌟 [수정] 거리 제한 (약 1km)
+    lat_min, lat_max = lat - 0.01, lat + 0.01
+    lng_min, lng_max = lng - 0.01, lng + 0.01
 
     places_in_range = db.query(models.Place).filter(models.Place.lat.between(lat_min, lat_max), models.Place.lng.between(lng_min, lng_max)).all()
     candidates = []
@@ -563,7 +563,7 @@ def run_group_recommendation(req: RecommendRequest, db: Session):
                     if p.name not in existing_names and dist < 0.03: 
                         pois.append(p)
 
-            # 🌟 최종 추천 시 한번 더 거리 필터링 (2km)
+            # 🌟 최종 추천 시 한번 더 거리 필터링 (1km)
             valid_pois = []
             for p in pois:
                 dist = ((p.location[0] - region['lat'])**2 + (p.location[1] - region['lng'])**2)**0.5
