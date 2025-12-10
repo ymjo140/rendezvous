@@ -391,13 +391,13 @@ export function HomeTab() {
                 {includeMe && <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><span className="text-xl">👤</span><span className="flex-1 text-sm">{myLocationInput}</span><button onClick={()=>setIncludeMe(false)}><Trash2 className="w-4 h-4 text-gray-400"/></button></div>}
                 {selectedFriends.map(f => <div key={f.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><Avatar className="w-8 h-8"><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><span className="flex-1 text-sm">{f.name}</span><button onClick={()=>toggleFriend(f)}><X className="w-4 h-4 text-gray-400"/></button></div>)}
                 {manualInputs.map((val, i) => (
-                    <div key={i} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl relative z-50">
-                        <MapPin className="w-5 h-5 text-gray-400"/>
+                    <div key={i} className="flex items-start gap-3 p-2 bg-gray-50 rounded-xl relative z-50">
+                        <MapPin className="w-5 h-5 text-gray-400 mt-1.5"/>
                         <div className="flex-1">
                             {/* 🌟 z-index 수정으로 자동완성 가려짐 해결 */}
                             <PlaceAutocomplete value={val} onChange={(v: string)=>handleManualInputChange(i, v)} placeholder="장소 입력 (예: 강남역)"/>
                         </div>
-                        <button onClick={()=>removeManualInput(i)}><Trash2 className="w-4 h-4 text-gray-400"/></button>
+                        <button onClick={()=>removeManualInput(i)}className="mt-1"><Trash2 className="w-4 h-4 text-gray-400"/></button>
                     </div>
                 ))}
             </div>
@@ -506,7 +506,7 @@ function PlaceAutocomplete({ value, onChange, placeholder }: any) {
         <div className="relative w-full">
             <Input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className="h-8 text-sm bg-transparent border-none p-0 focus-visible:ring-0"/>
             {list.length > 0 && (
-                <div className="absolute top-full left-0 right-0 z-[9999] bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-y-auto">
+                <div className="relative left-0 right-0 z-[9999] bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-y-auto">
                     {list.map((item, i) => (
                         <div key={i} onClick={()=>{onChange(item.title); setList([])}} className="p-3 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0 border-gray-100 transition-colors">
                             <div className="font-bold text-gray-800">{item.title}</div>
