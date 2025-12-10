@@ -27,7 +27,7 @@ data_provider = RealDataProvider(NAVER_SEARCH_ID, NAVER_SEARCH_SECRET, NAVER_MAP
 
 router = APIRouter()
 
-# 🌟 [1] 백업 좌표 리스트 (1~9호선 및 주요 거점 완비)
+# 🌟 [1] 백업 좌표 리스트
 FALLBACK_COORDINATES = {
     # 1호선
     "서울역": (37.5559, 126.9723), "시청": (37.5657, 126.9769), "종각": (37.5702, 126.9831),
@@ -157,7 +157,7 @@ FALLBACK_COORDINATES = {
     "삼전": (37.5048, 127.0877), "석촌고분": (37.5023, 127.0963), "송파나루": (37.5101, 127.1131),
     "한성백제": (37.5168, 127.1182), "둔촌오륜": (37.5196, 127.1387), "중앙보훈병원": (37.5296, 127.1427),
 
-    # 분당선, 신분당선, 경의중앙 등 주요 거점
+    # 분당선 등
     "판교": (37.3947, 127.1112), "정자": (37.3670, 127.1081), "서현": (37.3837, 127.1222),
     "이매": (37.3957, 127.1283), "야탑": (37.4111, 127.1286), "서울숲": (37.5436, 127.0446),
     "압구정로데오": (37.5273, 127.0405), "한티": (37.4962, 127.0528), "도곡": (37.4902, 127.0551),
@@ -331,6 +331,7 @@ def search_places_in_db(db: Session, region_name: str, keywords: List[str], allo
     if lat == 0.0: lat, lng = get_fuzzy_coordinate(region_name)
     if lat == 0.0: return []
 
+    # 🌟 [수정] 거리 제한 (약 2km)
     lat_min, lat_max = lat - 0.02, lat + 0.02
     lng_min, lng_max = lng - 0.02, lng + 0.02
 
@@ -391,6 +392,105 @@ def compute_availability_slots(user_ids: List[int], days_to_check: int, db: Sess
         curr_date += timedelta(days=1)
     return avail
 
+# 🌟 MeetingFlowEngine 클래스 정의 (반드시 Endpoint 앞에 위치)
+class MeetingFlowEngine:
+    def __init__(self, provider: RealDataProvider): self.provider = provider
+    def _rank_time_slots(self, slots: List[str], purpose: str) -> List[str]:
+        if not slots: return []
+        def get_score(slot_str):
+            dt = datetime.strptime(slot_str, "%Y-%m-%d %H:%M"); h = dt.hour; score = 0
+            days_diff = (dt.date() - datetime.now().date()).days; score -= days_diff * 2
+            if "식사" in purpose: 
+                if 11 <= h <= 13: score += 50
+                elif 18 <= h <= 19: score += 60 
+            return score
+        return sorted(slots, key=get_score, reverse=True)
+
+    def plan_meeting(self, req: MeetingFlowRequest, db: Session) -> Dict[str, Any]:
+        part_dicts = []
+        if req.room_id:
+             try:
+                 room = db.query(models.Community).filter(models.Community.id == str(req.room_id)).first()
+                 if room and room.member_ids:
+                     users = db.query(models.User).filter(models.User.id.in_(room.member_ids)).all()
+                     for u in users: part_dicts.append({ "id": u.id, "name": u.name, "lat": u.lat, "lng": u.lng, "preferences": u.preferences or {} })
+             except: pass
+
+        if req.participants:
+            for p in req.participants: 
+                db_user = db.query(models.User).filter(models.User.id == p.id).first()
+                part_dicts.append({"id": p.id, "name": p.name, "lat": p.lat, "lng": p.lng, "preferences": db_user.preferences if db_user else {}})
+            
+        if req.manual_locations:
+            for idx, loc_name in enumerate(req.manual_locations):
+                if loc_name.strip():
+                    lat, lng = data_provider.get_coordinates(loc_name)
+                    if lat != 0.0: part_dicts.append({"id": 9000+idx, "name": loc_name, "lat": lat, "lng": lng, "preferences": {}})
+
+        regions = []
+        if len(part_dicts) > 1:
+            try:
+                # 🌟 AI 플래너도 동일하게 Top 3 사용 (위치 정보 필요)
+                # (MeetingFlowRequest에는 current_lat이 없으므로 평균값 사용)
+                avg_lat = sum(p['lat'] for p in part_dicts) / len(part_dicts)
+                avg_lng = sum(p['lng'] for p in part_dicts) / len(part_dicts)
+                # 🌟 AI 플래너도 동일하게 Top 3 사용
+                top_regions = find_top_3_midpoints_odsay(part_dicts, avg_lat, avg_lng)
+                for name, lat, lng in top_regions:
+                    regions.append({"region_name": name, "lat": lat, "lng": lng})
+            except: pass
+        else:
+             regions = [{"region_name": "서울 시청", "lat": 37.5665, "lng": 126.9780}]
+        
+        recommendations = []
+        config = PURPOSE_CONFIG.get(req.purpose, PURPOSE_CONFIG["식사"])
+        allowed_types = config.get("allowed", ["restaurant"])
+        if "비즈니스" in req.purpose and any(x in str(req.user_tags) for x in ["회의", "워크샵", "스터디"]): allowed_types = ["workspace"]
+
+        for region in regions:
+            r_name = region.get('region_name', '중간지점').split('(')[0].strip()
+            final_keywords = expand_tags_to_keywords(req.purpose, req.user_tags, r_name)
+            
+            pois = search_places_in_db(db, r_name, final_keywords, allowed_types)
+            if len(pois) < 5:
+                api_pois = self.provider.search_places_all_queries(final_keywords, r_name, region.get("lat"), region.get("lng"), allowed_types=allowed_types)
+                save_place_to_db(db, api_pois, region.get("lat"), region.get("lng"))
+                existing_names = {p.name for p in pois}
+                for p in api_pois:
+                    if p.name not in existing_names: pois.append(p)
+
+            # 🌟 [수정] AI 플래너 결과도 거리 제한 적용
+            valid_pois = []
+            for p in pois:
+                dist = ((p.location[0] - region['lat'])**2 + (p.location[1] - region['lng'])**2)**0.5
+                if dist < 0.02: valid_pois.append(p)
+
+            algo_users = [agora_algo.UserProfile(id=p.get('id',0), preferences=p.get('preferences', {}), history=[]) for p in part_dicts]
+            try:
+                engine = agora_algo.AdvancedRecommender(algo_users, valid_pois)
+                results = engine.recommend(req.purpose, np.array([region.get("lat"), region.get("lng")]), req.user_tags)
+                recs = [{"id": p.id, "name": p.name, "category": p.category, "score": float(s), "tags": p.tags, "location": [p.location[0], p.location[1]]} for p, s in results[:10]]
+            except: recs = []
+            recommendations.append({**region, "name": r_name, "recommendations": recs})
+        
+        user_ids = [p.get('id') for p in part_dicts if p.get('id')]
+        target_duration = PURPOSE_DURATIONS.get(req.purpose, 1.5)
+        raw_availability = compute_availability_slots(user_ids, req.days_to_check, db, required_duration=target_duration)
+        ranked_availability = self._rank_time_slots(raw_availability, req.purpose)
+        final_top3 = ranked_availability[:3]
+        if not final_top3: final_top3 = [(datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")]
+        
+        cards = []
+        for i, time_slot in enumerate(final_top3):
+            place = {"name": "장소 미정", "tags": []}; region_name = "중간지점"
+            if recommendations:
+                rec_idx = i % len(recommendations)
+                target_region = recommendations[rec_idx]
+                region_name = target_region.get("name", target_region.get("region_name", "추천 지역"))
+                if target_region.get("recommendations"): place = target_region["recommendations"][0]
+            cards.append({"time": time_slot, "region": region_name, "place": place})
+        return {"cards": cards, "all_available_slots": sorted(raw_availability)}
+
 # --- Main Logic ---
 def run_group_recommendation(req: RecommendRequest, db: Session):
     print("🚀 [Recommendation] Starting...")
@@ -428,6 +528,7 @@ def run_group_recommendation(req: RecommendRequest, db: Session):
     regions = []
     if len(participants) > 0:
         try:
+            print("🚀 Finding 3 Midpoints...")
             top_regions = find_top_3_midpoints_odsay(participants, req.current_lat, req.current_lng)
             for name, lat, lng in top_regions:
                 regions.append({"region_name": name, "lat": lat, "lng": lng})
@@ -437,6 +538,7 @@ def run_group_recommendation(req: RecommendRequest, db: Session):
             avg_lng = sum(p['lng'] for p in participants) / len(participants)
             regions = [{"region_name": "중간지점", "lat": avg_lat, "lng": avg_lng}]
     else:
+        # 참여자 0명 -> 내 위치
         regions = [{"region_name": "내 주변", "lat": req.current_lat, "lng": req.current_lng}]
 
     # 5. 장소 추천
