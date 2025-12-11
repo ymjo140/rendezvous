@@ -14,7 +14,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
 import { motion, AnimatePresence } from "framer-motion" 
 
-// 의존성 컴포넌트 (파일 없을 경우 대비)
+// --- 의존성 컴포넌트 및 유틸리티 ---
+
 const PlaceCard = ({ place, onClick }: { place: any, onClick: () => void }) => (
     <div className="bg-white p-4 rounded-xl shadow-sm border flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors" onClick={onClick}>
         <div className="flex-1">
@@ -56,7 +57,6 @@ const AI_PERSONAS = [
     { id: 4, name: "박감성 (성수)", locationName: "성수역", location: { lat: 37.544581, lng: 127.056035 }, desc: "분위기 카페", avatar: { equipped: { body: "body_basic" } } },
 ];
 
-// 🌟 [UI 개선] 세부 필터 옵션 복구
 const PURPOSE_FILTERS: Record<string, any> = {
     "식사": { 
         label: "🍚 식사", 
@@ -90,6 +90,8 @@ const PURPOSE_FILTERS: Record<string, any> = {
 
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
+// --- 메인 컴포넌트 ---
+
 export function HomeTab() {
   const router = useRouter();
   
@@ -121,7 +123,6 @@ export function HomeTab() {
   const [selectedPlace, setSelectedPlace] = useState<any>(null);
   const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   // Filter State
   const [selectedPurpose, setSelectedPurpose] = useState("식사")
@@ -135,8 +136,10 @@ export function HomeTab() {
   const lootMarkersRef = useRef<any[]>([])
   const friendMarkersRef = useRef<any[]>([])
   const myMarkerRef = useRef<any>(null)
+  // 🆕 경로 그리기용 Ref 추가
+  const polylinesRef = useRef<any[]>([])
 
-  // ... (calculateDistance, fetchLoots, useEffect 등 기존 로직 동일 - 생략 없이 유지) ...
+  // 거리 계산 헬퍼
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
       const R = 6371e3; 
       const φ1 = lat1 * Math.PI/180;
@@ -148,6 +151,7 @@ export function HomeTab() {
       return R * c;
   }
 
+  // 초기 데이터 로드
   useEffect(() => {
       const fetchMyInfo = async () => {
           const token = localStorage.getItem("token");
@@ -178,6 +182,7 @@ export function HomeTab() {
       } catch (e) {}
   }
 
+  // GPS 추적
   useEffect(() => {
     if (!navigator.geolocation) return;
     const watchId = navigator.geolocation.watchPosition(
@@ -210,6 +215,7 @@ export function HomeTab() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [currentDisplayRegion, loots]);
 
+  // 지도 초기화 및 마커 렌더링
   useEffect(() => {
     const initMap = () => {
       if (typeof window.naver === 'undefined' || !window.naver.maps) { setTimeout(initMap, 100); return; }
@@ -269,6 +275,41 @@ export function HomeTab() {
     initMap();
   }, [myLocation, currentDisplayRegion, loots, selectedFriends, includeMe]);
 
+  // 🆕 경로선 그리기 함수 추가
+  const drawPathsToPlace = (destination: any) => {
+    polylinesRef.current.forEach(p => p.setMap(null));
+    polylinesRef.current = [];
+
+    if (!mapRef.current || !destination) return;
+
+    const origins = [];
+    if (includeMe && myProfile?.location) {
+        origins.push({ lat: myProfile.location.lat, lng: myProfile.location.lng, color: '#7C3AED' });
+    }
+    selectedFriends.forEach(f => {
+        if(f.location) origins.push({ lat: f.location.lat, lng: f.location.lng, color: '#F59E0B' });
+    });
+
+    const destLatLng = new window.naver.maps.LatLng(destination.location[0], destination.location[1]);
+
+    origins.forEach(origin => {
+        const polyline = new window.naver.maps.Polyline({
+            map: mapRef.current,
+            path: [
+                new window.naver.maps.LatLng(origin.lat, origin.lng),
+                destLatLng
+            ],
+            strokeColor: origin.color,
+            strokeWeight: 4,
+            strokeStyle: 'shortdash',
+            strokeOpacity: 0.8,
+            endIcon: window.naver.maps.PointingIcon.OPEN_ARROW
+        });
+        polylinesRef.current.push(polyline);
+    });
+  }
+
+  // 추천 요청
   const fetchRecommendations = async (participants: any[], manualLocs: string[]) => {
     setLoading(true);
     try {
@@ -300,6 +341,7 @@ export function HomeTab() {
     finally { setLoading(false) }
   }
 
+  // 핸들러들
   const handleMidpointSearch = () => {
       let participants = [...selectedFriends];
       if (includeMe && myProfile) participants = [myProfile, ...selectedFriends];
@@ -341,11 +383,15 @@ export function HomeTab() {
       } catch(e) { alert("오류"); } finally { setInteractionLoading(false); }
   }
   
-  const handlePlaceClick = (p: any) => { setSelectedPlace(p); setIsDetailOpen(true); };
-  const handleTopSearch = () => { if(searchQuery) fetchRecommendations([myProfile], [searchQuery]); }
-  const handleTabChange = (idx: number) => { setActiveTabIdx(idx); setCurrentDisplayRegion(recommendations[idx]); setIsExpanded(false); };
-  const moveToMyLocation = () => { if (myProfile?.location && mapRef.current) mapRef.current.morph(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng)); }
+  // 🔄 장소 클릭 수정: 경로 그리기 추가
+  const handlePlaceClick = (p: any) => { 
+      setSelectedPlace(p); 
+      setIsDetailOpen(true);
+      drawPathsToPlace(p);
+  };
 
+  const handleTopSearch = () => { if(searchQuery) fetchRecommendations([myProfile], [searchQuery]); }
+  
   const currentFilters = PURPOSE_FILTERS[selectedPurpose];
 
   return (
@@ -383,21 +429,22 @@ export function HomeTab() {
         ) : null}
       </AnimatePresence>
 
-      {/* 출발지 설정 카드 (기본 표시) */}
+      {/* 출발지 설정 카드 (기본 표시) - 🔄 max-h-[50vh] 수정 완료 */}
       {!recommendations.length && (
           <div className="absolute bottom-4 left-4 right-4 bg-white rounded-3xl p-5 shadow-lg border border-gray-100 z-20">
             <h2 className="text-lg font-bold mb-3">어디서 모이나요?</h2>
             <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                {/* 🔄 오타 's' 제거됨 */}
                 {includeMe && <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><span className="text-xl">👤</span><span className="flex-1 text-sm">{myLocationInput}</span><button onClick={()=>setIncludeMe(false)}><Trash2 className="w-4 h-4 text-gray-400"/></button></div>}
                 {selectedFriends.map(f => <div key={f.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><Avatar className="w-8 h-8"><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><span className="flex-1 text-sm">{f.name}</span><button onClick={()=>toggleFriend(f)}><X className="w-4 h-4 text-gray-400"/></button></div>)}
                 {manualInputs.map((val, i) => (
                     <div key={i} className="flex items-start gap-3 p-2 bg-gray-50 rounded-xl relative z-50">
                         <MapPin className="w-5 h-5 text-gray-400 mt-1.5"/>
                         <div className="flex-1">
-                            {/* 🌟 z-index 수정으로 자동완성 가려짐 해결 */}
+                            {/* 🔄 z-index 및 스타일 개선 */}
                             <PlaceAutocomplete value={val} onChange={(v: string)=>handleManualInputChange(i, v)} placeholder="장소 입력 (예: 강남역)"/>
                         </div>
-                        <button onClick={()=>removeManualInput(i)}className="mt-1"><Trash2 className="w-4 h-4 text-gray-400"/></button>
+                        <button onClick={()=>removeManualInput(i)} className="mt-1"><Trash2 className="w-4 h-4 text-gray-400"/></button>
                     </div>
                 ))}
             </div>
@@ -426,12 +473,10 @@ export function HomeTab() {
       {loading && <div className="absolute inset-0 bg-white/60 z-50 flex items-center justify-center"><Loader2 className="w-10 h-10 text-[#7C3AED] animate-spin"/></div>}
       {gpsError && <div className="absolute top-24 left-4 right-4 bg-red-100 text-red-600 p-2 rounded-lg text-xs z-50">{gpsError}</div>}
 
-      {/* 🌟 필터 모달 (세부 옵션 복구) */}
+      {/* 필터 모달 */}
       <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
           <DialogContent className="sm:max-w-md h-[70vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
               <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b"><DialogTitle>상세 필터 설정</DialogTitle></DialogHeader>
-              
-              {/* 상단: 대분류 선택 */}
               <div className="px-4 py-3 bg-gray-50 border-b">
                 <div className="text-xs font-bold text-gray-500 mb-2">모임의 목적</div>
                 <div className="flex gap-2 overflow-x-auto scrollbar-hide">
@@ -442,8 +487,6 @@ export function HomeTab() {
                     ))}
                 </div>
               </div>
-
-              {/* 하단: 세부 탭 및 옵션 */}
               <div className="flex-1 flex flex-col bg-white overflow-hidden">
                 {currentFilters && (
                     <Tabs defaultValue={Object.keys(currentFilters.tabs)[0]} className="flex-1 flex flex-col">
@@ -477,14 +520,66 @@ export function HomeTab() {
       <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}><DialogContent><DialogHeader><DialogTitle>친구 추가</DialogTitle></DialogHeader><div className="space-y-2">{AI_PERSONAS.map(f=><div key={f.id} onClick={()=>toggleFriend(f)} className="flex items-center gap-3 p-2 hover:bg-gray-50 cursor-pointer border rounded-lg"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName}</div></div>{selectedFriends.find(sf=>sf.id===f.id)&&<Check className="ml-auto w-4 h-4 text-purple-600"/>}</div>)}</div></DialogContent></Dialog>
       <PreferenceModal isOpen={isPreferenceModalOpen} onClose={()=>setIsPreferenceModalOpen(false)} onComplete={()=>setIsPreferenceModalOpen(false)}/>
       
-      {/* 상세 모달 */}
-      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-          <DialogContent className="sm:max-w-md h-[80vh] flex flex-col">
-              <DialogHeader><DialogTitle className="text-xl flex items-center gap-2">{selectedPlace?.name} <Badge variant="outline" className="text-xs font-normal">{selectedPlace?.category}</Badge></DialogTitle></DialogHeader>
+      {/* 🔄 상세 모달 (경로/시간 표시 추가됨) */}
+      <Dialog open={isDetailOpen} onOpenChange={(open) => {
+          setIsDetailOpen(open);
+          if (!open) {
+              polylinesRef.current.forEach(p => p.setMap(null));
+              polylinesRef.current = [];
+          }
+      }}>
+          <DialogContent className="sm:max-w-md h-[80vh] flex flex-col font-['Pretendard']">
+              <DialogHeader>
+                  <DialogTitle className="text-xl flex items-center gap-2">
+                      {selectedPlace?.name} 
+                      <Badge variant="outline" className="text-xs font-normal">{selectedPlace?.category}</Badge>
+                  </DialogTitle>
+              </DialogHeader>
+              
               <div className="flex-1 overflow-y-auto py-2 space-y-4">
-                  <div className="bg-purple-50 p-4 rounded-lg text-center"><div className="text-sm text-purple-800 font-bold mb-1">AI 추천 점수</div><div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score}</div></div>
-                  {/* 리뷰 관련 UI */}
-                  <Button variant="outline" className="w-full">✍️ 리뷰 쓰고 AI 학습시키기 (준비중)</Button>
+                  {/* 1. 점수 카드 */}
+                  <div className="bg-purple-50 p-4 rounded-lg text-center">
+                      <div className="text-sm text-purple-800 font-bold mb-1">AI 추천 점수</div>
+                      <div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score}</div>
+                  </div>
+
+                  {/* 🆕 2. 오시는 길 (소요 시간) */}
+                  <div className="space-y-3">
+                      <h4 className="font-bold text-sm text-gray-700 flex items-center gap-2">
+                          🏃‍♂️ 각자 얼마나 걸릴까요?
+                      </h4>
+                      <div className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-100">
+                          {currentDisplayRegion?.transit_info?.details?.map((info: any, i: number) => (
+                              <div key={i} className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                      <Avatar className="w-8 h-8 border bg-white">
+                                          <AvatarFallback className="text-xs">{info.name?.[0]}</AvatarFallback>
+                                      </Avatar>
+                                      <span className="text-sm font-medium">{info.name}</span>
+                                  </div>
+                                  
+                                  <div className="flex-1 mx-3 border-t-2 border-dotted border-gray-300 h-0" />
+                                  
+                                  <div className="flex items-center gap-1 text-sm font-bold text-[#7C3AED]">
+                                      <span>약 {info.time}분</span>
+                                  </div>
+                              </div>
+                          ))}
+                          {!currentDisplayRegion?.transit_info && (
+                              <div className="text-xs text-gray-400 text-center">이동 시간 정보가 없습니다.</div>
+                          )}
+                      </div>
+                  </div>
+
+                  {/* 3. 태그 정보 */}
+                  <div className="flex flex-wrap gap-2">
+                      {selectedPlace?.tags?.map((t: string, i: number) => (
+                          <Badge key={i} variant="secondary" className="bg-white border border-gray-200 text-gray-500">#{t}</Badge>
+                      ))}
+                  </div>
+
+                  {/* 4. 리뷰 버튼 */}
+                  <Button variant="outline" className="w-full">✍️ 리뷰 쓰고 AI 학습시키기</Button>
               </div>
           </DialogContent>
       </Dialog>
@@ -492,7 +587,7 @@ export function HomeTab() {
   )
 }
 
-// 🌟 [UI 개선] 자동완성 리스트가 잘 보이도록 z-index 및 스타일 수정
+// 🔄 자동완성 컴포넌트 (relative 수정 적용)
 function PlaceAutocomplete({ value, onChange, placeholder }: any) {
     const [list, setList] = useState<any[]>([]);
     useEffect(() => {
@@ -506,7 +601,7 @@ function PlaceAutocomplete({ value, onChange, placeholder }: any) {
         <div className="relative w-full">
             <Input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className="h-8 text-sm bg-transparent border-none p-0 focus-visible:ring-0"/>
             {list.length > 0 && (
-                <div className="relative left-0 right-0 z-[9999] bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-y-auto">
+                <div className="relative z-[9999] bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-y-auto">
                     {list.map((item, i) => (
                         <div key={i} onClick={()=>{onChange(item.title); setList([])}} className="p-3 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0 border-gray-100 transition-colors">
                             <div className="font-bold text-gray-800">{item.title}</div>
