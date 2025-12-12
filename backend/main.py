@@ -16,7 +16,8 @@ from sqlalchemy import text
 from database import engine, SessionLocal
 import models
 from routers import auth, users, meetings, community, sync, coins
-from dependencies import get_password_hash
+# 👇 [필수] get_current_user 추가
+from dependencies import get_password_hash, get_current_user
 from analytics import DemandIntelligenceEngine
 
 # DB 테이블 생성 (없으면 생성)
@@ -34,18 +35,17 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         # 🌟 [긴급 패치] DB 구조 자동 업데이트 (Migration)
-        # 배포 서버의 DB에 gender, age_group 컬럼이 없으면 강제로 추가합니다.
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN gender VARCHAR DEFAULT 'unknown'"))
             print("✅ DB 업데이트: gender 컬럼 추가됨")
         except Exception:
-            db.rollback() # 이미 있으면 무시
+            db.rollback() 
 
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN age_group VARCHAR DEFAULT '20s'"))
             print("✅ DB 업데이트: age_group 컬럼 추가됨")
         except Exception:
-            db.rollback() # 이미 있으면 무시
+            db.rollback() 
         
         db.commit()
 
@@ -118,7 +118,94 @@ app.include_router(coins.router)
 def read_root():
     return {"status": "WeMeet API Running 🚀"}
 
-# 🌟 [신규] B2B 데이터 판매용 API
+# 🌟 [신규] 채팅방 참여 API (참여 기록 남기기)
+@app.post("/api/communities/{room_id}/join")
+def join_community(room_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # 1. 이미 참여 중인지 확인
+    existing = db.query(models.ChatRoomMember).filter(
+        models.ChatRoomMember.room_id == room_id,
+        models.ChatRoomMember.user_id == current_user.id
+    ).first()
+    
+    if existing:
+        return {"message": "Already joined"}
+        
+    # 2. 참여 기록 생성
+    new_member = models.ChatRoomMember(room_id=room_id, user_id=current_user.id)
+    db.add(new_member)
+    db.commit()
+    return {"message": "Joined successfully"}
+
+# 🌟 [신규] "진짜" 채팅방 멤버 일정 조회 API
+@app.get("/api/chat/rooms/{room_id}/available-dates")
+def get_available_dates_for_room(room_id: int, db: Session = Depends(get_db)):
+    """
+    채팅방(room_id)의 실제 멤버들을 조회하고, 
+    그 멤버들의 캘린더 일정을 분석하여 겹치지 않는 시간을 추천합니다.
+    """
+    # 1. 채팅방 멤버 진짜 조회
+    room_members = db.query(models.ChatRoomMember).filter(
+        models.ChatRoomMember.room_id == room_id
+    ).all()
+    
+    if not room_members:
+        return []
+
+    # 멤버 ID 추출
+    member_ids = [m.user_id for m in room_members]
+
+    # 2. 분석 시작
+    today = datetime.now().date()
+    analysis_period = [today + timedelta(days=i) for i in range(14)]
+    
+    recommended_slots = []
+
+    for date_obj in analysis_period:
+        date_str = date_obj.strftime("%Y-%m-%d")
+        day_of_week = date_obj.weekday()
+        
+        base_score = 90 if day_of_week >= 5 else 70 
+        
+        # 3. 멤버들의 해당 날짜 약속 조회
+        conflicting_events = db.query(models.Event).filter(
+            models.Event.user_id.in_(member_ids),
+            models.Event.date == date_str
+        ).all()
+
+        # 4. 시간대 충돌 분석 (저녁 18~21시 기준)
+        conflict_count = 0
+        for event in conflicting_events:
+            try:
+                event_hour = int(event.time.split(":")[0])
+                if 18 <= event_hour <= 21:
+                    conflict_count += 1
+            except:
+                pass
+
+        # 5. 점수 계산
+        if conflict_count == 0:
+            final_score = base_score + 10
+            label = "🔥 모두 가능 (황금 시간대)"
+        else:
+            final_score = base_score - (conflict_count * 30)
+            label = f"{conflict_count}명 일정 있음"
+
+        if final_score > 40:
+            if day_of_week >= 5 and conflict_count == 0:
+                label = "✨ 주말/휴일 (완벽)"
+            
+            recommended_slots.append({
+                "fullDate": date_str,
+                "displayDate": f"{date_obj.month}/{date_obj.day} ({['월','화','수','목','금','토','일'][day_of_week]})",
+                "time": "19:00",
+                "label": label,
+                "score": final_score
+            })
+
+    recommended_slots.sort(key=lambda x: x['score'], reverse=True)
+    return recommended_slots
+
+# 🌟 [기존] B2B 데이터 판매용 API
 @app.get("/api/b2b/demand-forecast")
 def get_b2b_forecast(
     region: str = "강남", 

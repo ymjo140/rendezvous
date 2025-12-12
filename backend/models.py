@@ -19,24 +19,24 @@ class ItemCategory(str, enum.Enum):
     PET = "pet"
     FOOTPRINT = "footprint"
 
-# 🌟 [완전 개편] 장소 데이터 자산화 모델
+# 🌟 [Revamped] Place Data Assetization Model
 class Place(Base):
     __tablename__ = "places"
     
     id = Column(Integer, primary_key=True, index=True)
     
-    # 1. 기본 정보
+    # 1. Basic Info
     name = Column(String, index=True, nullable=False)
     category = Column(String) # restaurant, cafe, workspace
     
-    # 2. 📍 위치 정보 (중복 방지의 핵심)
-    address = Column(String, nullable=True) # 도로명 주소
-    lat = Column(Float, nullable=False)     # 위도
-    lng = Column(Float, nullable=False)     # 경도
+    # 2. 📍 Location Info (Key to preventing duplicates)
+    address = Column(String, nullable=True) # Road name address
+    lat = Column(Float, nullable=False)     # Latitude
+    lng = Column(Float, nullable=False)     # Longitude
     
-    # 3. 메타 데이터
+    # 3. Meta Data
     tags = Column(JSON, default=[]) 
-    wemeet_rating = Column(Float, default=0.0) # 자체 평점
+    wemeet_rating = Column(Float, default=0.0) # Internal rating
     review_count = Column(Integer, default=0)
     
     external_link = Column(String, nullable=True)
@@ -48,7 +48,7 @@ class MeetingLog(Base):
     community_id = Column(String, nullable=True)
     host_id = Column(Integer, ForeignKey("users.id"))
     
-    # Place 테이블과 연결
+    # Link with Place table
     place_id = Column(Integer, ForeignKey("places.id"), nullable=True)
     place_name = Column(String) 
     
@@ -67,7 +67,7 @@ class User(Base):
     hashed_password = Column(String)
     name = Column(String, index=True)
     
-    # 🌟 [신규] 데이터 분석용 세분화 필드
+    # 🌟 [New] Segmentation fields for data analysis
     gender = Column(String, default="unknown") # male, female, unknown
     age_group = Column(String, default="20s")  # 10s, 20s, 30s, 40s, 50+
     
@@ -116,17 +116,35 @@ class UserStepLog(Base):
     steps_count = Column(Integer, default=0)
     reward_claimed = Column(Boolean, default=False)
 
+# 🌟 [Modified] Chat Room Model (Added relationship)
 class ChatRoom(Base):
     __tablename__ = "chat_rooms"
+    
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String)
+    title = Column(String) # Room name
     is_group = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
+    
+    # Relationship to retrieve members
+    members = relationship("ChatRoomMember", back_populates="room")
+
+# 🌟 [New] Chat Room Member Link Table (User <-> ChatRoom)
+class ChatRoomMember(Base):
+    __tablename__ = "chat_room_members"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("chat_rooms.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    joined_at = Column(DateTime, default=datetime.now)
+    
+    # Relationship settings
+    room = relationship("ChatRoom", back_populates="members")
+    user = relationship("User") 
 
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(String, index=True) 
+    room_id = Column(String, index=True) # Note: Currently managed as String in logic, might need migration to Integer ForeignKey later if strictly relational
     user_id = Column(Integer, ForeignKey("users.id"))
     content = Column(String)
     timestamp = Column(DateTime, default=datetime.now)
@@ -153,7 +171,6 @@ class Event(Base):
     duration_hours = Column(Float, default=1.5)
     location_name = Column(String, nullable=True)
     purpose = Column(String)
-    # 공개/비공개 설정
     is_private = Column(Boolean, default=False)
 
 class Community(Base):
@@ -176,7 +193,6 @@ class Review(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     
-    # 🌟 [수정] 장소 테이블과 연동
     place_id = Column(Integer, ForeignKey("places.id"), nullable=True)
     place_name = Column(String) 
     
@@ -195,74 +211,59 @@ class Review(Base):
     user = relationship("User")
     place = relationship("Place")
 
-# 🌟 [신규] 친구 관계 테이블
 class Friendship(Base):
     __tablename__ = "friendships"
     id = Column(Integer, primary_key=True, index=True)
-    requester_id = Column(Integer, ForeignKey("users.id")) # 요청한 사람
-    receiver_id = Column(Integer, ForeignKey("users.id"))  # 받은 사람
-    status = Column(String, default="pending") # pending(대기), accepted(수락)
+    requester_id = Column(Integer, ForeignKey("users.id")) 
+    receiver_id = Column(Integer, ForeignKey("users.id"))  
+    status = Column(String, default="pending") 
     created_at = Column(DateTime, default=datetime.now)
 
-# 1. 💰 코인 내역 (입출금 장부)
 class CoinHistory(Base):
     __tablename__ = "coin_history"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    amount = Column(Integer) # +50 (획득), -100 (사용)
-    type = Column(String) # "check_in"(방문), "campaign"(체험단), "shop"(상점), "game"(보물찾기)
-    description = Column(String) # "강남역 스타벅스 방문", "아바타 옷 구매"
+    amount = Column(Integer) 
+    type = Column(String) 
+    description = Column(String) 
     created_at = Column(DateTime, default=datetime.now)
 
-# 2. 📍 방문 기록 (중복 방지용)
 class VisitLog(Base):
     __tablename__ = "visit_logs"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    place_name = Column(String) # 장소 이름 (예: "스타벅스 강남점")
+    place_name = Column(String) 
     created_at = Column(DateTime, default=datetime.now)
 
-# 3. 🎁 체험단/이벤트 (사장님 광고)
 class Campaign(Base):
     __tablename__ = "campaigns"
     id = Column(Integer, primary_key=True, index=True)
-    host_id = Column(Integer, ForeignKey("users.id")) # 광고주(사장님) ID
-    title = Column(String) # "홍대 파스타 무료 시식권 + 5000코인"
-    content = Column(String) # 상세 내용 (미션: 사진 3장 필수 등)
-    reward_coin = Column(Integer) # 보상 코인 (예: 5000)
-    location = Column(String) # 가게 위치 (좌표 or 주소)
-    max_applicants = Column(Integer) # 선착순 인원
-    status = Column(String, default="open") # open(모집중), closed(마감)
+    host_id = Column(Integer, ForeignKey("users.id")) 
+    title = Column(String) 
+    content = Column(String) 
+    reward_coin = Column(Integer) 
+    location = Column(String) 
+    max_applicants = Column(Integer) 
+    status = Column(String, default="open") 
     created_at = Column(DateTime, default=datetime.now)
 
-# 🌟 [신규] 주요 지점 간 이동 시간 캐시 (OD Matrix)
 class TravelTimeCache(Base):
     __tablename__ = "travel_time_cache"
-    
-    # 복합 키 (출발지_도착지)
-    id = Column(String, primary_key=True) # 예: "강남_홍대입구"
+    id = Column(String, primary_key=True) 
     start_name = Column(String, index=True)
     end_name = Column(String, index=True)
-    total_time = Column(Integer) # 소요 시간(분)
+    total_time = Column(Integer) 
     created_at = Column(DateTime, default=datetime.now)
 
-# 🌟 [신규] 완료된 모임의 데이터 (AI 학습/추천용)
 class MeetingHistory(Base):
     __tablename__ = "meeting_histories"
 
     id = Column(Integer, primary_key=True, index=True)
-    
-    # 모임 특성 (Clustering Feature)
-    purpose = Column(String, index=True)  # 예: "식사", "회식"
-    tags = Column(String)     # 예: "조용한,가성비" (JSON string or Comma-separated)
-    participant_count = Column(Integer) # 인원수 (비슷한 규모끼리 묶기 위해)
-    region_name = Column(String) # 예: "강남"
-    
-    # 선택 결과 (Label)
-    place_name = Column(String) # 예: "땀땀 강남점"
-    place_category = Column(String) # 예: "음식점"
-    
-    # 피드백 (가중치용)
-    satisfaction_score = Column(Float, default=4.0) # 1~5점 (기본 4.0)
-    
+    purpose = Column(String, index=True)  
+    tags = Column(String)     
+    participant_count = Column(Integer) 
+    region_name = Column(String) 
+    place_name = Column(String) 
+    place_category = Column(String) 
+    satisfaction_score = Column(Float, default=4.0) 
     created_at = Column(DateTime, default=datetime.now)
