@@ -328,6 +328,34 @@ def find_best_place_for_group(participants):
     candidates.sort(key=lambda x: x["score"])
     return candidates[:3]
 
+# 🌟 [신규] 황금 시간대 찾기 헬퍼 함수
+def find_best_time_slot(db: Session, member_ids: List[int], days_to_check: int = 7):
+    today = datetime.now().date()
+    # 향후 N일 조회
+    for i in range(days_to_check):
+        target_date = today + timedelta(days=i)
+        date_str = target_date.strftime("%Y-%m-%d")
+        
+        # 멤버들의 해당 날짜 저녁 약속(18~21시) 조회
+        conflicts = 0
+        events = db.query(models.Event).filter(
+            models.Event.user_id.in_(member_ids),
+            models.Event.date == date_str
+        ).all()
+        
+        for e in events:
+            try:
+                h = int(e.time.split(":")[0])
+                if 18 <= h <= 21: conflicts += 1
+            except: pass
+        
+        # 충돌이 0명이면 바로 이 날짜 리턴! (가장 빠른 황금 시간대)
+        if conflicts == 0:
+            return f"{date_str} 19:00"
+            
+    # 다 찼으면 그냥 내일 저녁 리턴
+    return f"{(today + timedelta(days=1)).strftime('%Y-%m-%d')} 19:00"
+
 # --- Request Models ---
 class RecommendRequest(BaseModel):
     users: List[Any] = []
@@ -452,9 +480,10 @@ class MeetingFlowEngine:
         part_dicts = []
         if req.room_id:
              try:
-                 room = db.query(models.Community).filter(models.Community.id == str(req.room_id)).first()
-                 if room and room.member_ids:
-                     users = db.query(models.User).filter(models.User.id.in_(room.member_ids)).all()
+                 room_members = db.query(models.ChatRoomMember).filter(models.ChatRoomMember.room_id == req.room_id).all()
+                 if room_members:
+                     member_ids = [m.user_id for m in room_members]
+                     users = db.query(models.User).filter(models.User.id.in_(member_ids)).all()
                      for u in users: part_dicts.append({ "id": u.id, "name": u.name, "lat": u.lat, "lng": u.lng, "preferences": u.preferences or {} })
              except: pass
 
@@ -525,15 +554,43 @@ class MeetingFlowEngine:
         final_top3 = ranked_availability[:3]
         if not final_top3: final_top3 = [(datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")]
         
+        # 🌟 [New] Find Best Time (황금 시간대)
+        best_time_str = find_best_time_slot(db, user_ids, req.days_to_check)
+
         cards = []
+        best_place = {"name": "장소 미정", "category": "식사", "tags": []}
+
         for i, time_slot in enumerate(final_top3):
             place = {"name": "장소 미정", "tags": []}; region_name = "중간지점"
             if recommendations:
                 rec_idx = i % len(recommendations)
                 target_region = recommendations[rec_idx]
                 region_name = target_region.get("name", target_region.get("region_name", "추천 지역"))
-                if target_region.get("recommendations"): place = target_region["recommendations"][0]
+                if target_region.get("recommendations"): 
+                    place = target_region["recommendations"][0]
+                    if i == 0: best_place = place # 첫 번째 추천을 베스트로 선정
+
             cards.append({"time": time_slot, "region": region_name, "place": place})
+
+        # 🌟 [New] Send Vote Card if room_id exists
+        if req.room_id:
+            content_json = f"""{{
+                "type": "vote_card",
+                "place": {{
+                    "name": "{best_place['name']}",
+                    "category": "{best_place.get('category', '식사')}",
+                    "tags": {str(best_place.get('tags', [])).replace("'", '"')}
+                }},
+                "recommendation_reason": "👥 멤버들의 중간 지점에서 가깝고,\\n📅 {best_time_str}에 모두 시간이 됩니다!",
+                "vote_count": 0
+            }}"""
+            
+            bot_msg = models.Message(
+                room_id=str(req.room_id), user_id=1, content=content_json, timestamp=datetime.now()
+            )
+            db.add(bot_msg)
+            db.commit()
+
         return {"cards": cards, "all_available_slots": sorted(raw_availability)}
 
 # --- Main Logic ---
