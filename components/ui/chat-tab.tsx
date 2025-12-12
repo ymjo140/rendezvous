@@ -42,8 +42,7 @@ const formatDate = (dateStr: string) => {
     return `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
 };
 
-// 🌟 AI 모임 매니저 컴포넌트 (장소 추천 + 일정 등록 통합)
-// 수정됨: onRefresh prop 추가 (부모 컴포넌트의 메시지 새로고침 함수)
+// 🌟 AI 모임 매니저 컴포넌트
 const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, myId: number | null, onClose: () => void, onRefresh: () => void }) => {
     const [activeTab, setActiveTab] = useState("recommend") // recommend | schedule
     
@@ -127,11 +126,10 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
             })
 
             if(res.ok) {
-                // 🌟 [수정] alert 제거 -> 즉시 새로고침 -> 닫기
+                // 🌟 [수정됨] alert 제거하고 즉시 새로고침
                 onRefresh(); 
                 onClose();
             } else {
-                // 에러 상황에서는 alert 유지 (사용자 알림용)
                 alert("추천 실패. 다시 시도해주세요.");
             }
         } catch (e) { console.error(e); alert("오류 발생"); } 
@@ -179,14 +177,14 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
             });
 
             if(res.ok) {
-                // 채팅방에도 알림 메시지 보내기
+                // 채팅방 알림 전송
                 await fetch(`${API_URL}/api/chat/message`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", ...(token && { "Authorization": `Bearer ${token}` }) },
                     body: JSON.stringify({ room_id: Number(roomId), content: `📅 [일정 등록됨] ${parsedSchedule.title} (${parsedSchedule.date} ${parsedSchedule.time})`, type: "text" })
                 });
                 
-                // 🌟 [수정] alert 제거 -> 즉시 새로고침 -> 닫기
+                // 🌟 [수정됨] alert 제거하고 즉시 새로고침
                 onRefresh();
                 onClose();
             }
@@ -216,7 +214,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                 {/* --- 탭 1: 장소 추천 --- */}
                 <TabsContent value="recommend" className="space-y-5">
                     
-                    {/* 날짜 추천 섹션 */}
+                    {/* 🌟 [수정됨] 날짜 추천 섹션 (캘린더 분석 결과 표시) */}
                     <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
                         <div className="flex justify-between items-center mb-2">
                             <label className="text-xs font-bold text-indigo-800 flex items-center gap-1">
@@ -226,18 +224,26 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                                 {showAllDates ? "접기" : "더보기"} {showAllDates ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>}
                             </button>
                         </div>
-                        <div className="grid grid-cols-3 gap-2">
-                            {visibleDates.map((slot, i) => (
-                                <div 
-                                    key={i} 
-                                    onClick={() => setSelectedDateSlot(slot)}
-                                    className={`cursor-pointer rounded-lg p-2 text-center border transition-all ${selectedDateSlot === slot ? "bg-indigo-600 text-white border-indigo-600 shadow-md" : "bg-white border-gray-200 hover:border-indigo-300"}`}
-                                >
-                                    <div className="text-[10px] opacity-80">{slot.displayDate}</div>
-                                    <div className="text-xs font-bold">{slot.time}</div>
-                                </div>
-                            ))}
-                        </div>
+                        
+                        {visibleDates.length > 0 ? (
+                            <div className="grid grid-cols-3 gap-2">
+                                {visibleDates.map((slot, i) => (
+                                    <div 
+                                        key={i} 
+                                        onClick={() => setSelectedDateSlot(slot)}
+                                        className={`cursor-pointer rounded-lg p-2 text-center border transition-all ${selectedDateSlot === slot ? "bg-indigo-600 text-white border-indigo-600 shadow-md" : "bg-white border-gray-200 hover:border-indigo-300"}`}
+                                    >
+                                        <div className="text-[10px] opacity-80">{slot.displayDate}</div>
+                                        <div className="text-xs font-bold">{slot.time}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center text-xs text-gray-400 py-2">
+                                분석된 일정이 없습니다.
+                            </div>
+                        )}
+
                         {selectedDateSlot && (
                             <div className="mt-2 text-center text-[10px] text-indigo-600 font-medium animate-pulse">
                                 ✅ "{selectedDateSlot.displayDate} {selectedDateSlot.time}" 기준으로 장소를 추천합니다.
@@ -413,7 +419,7 @@ export function ChatTab() {
         } catch(e) {}
     }
 
-    // 🌟 메시지 로드 함수 (컴포넌트 스코프로 이동하여 전달 가능하게 함)
+    // 🌟 메시지 로드 함수
     const fetchMessages = async () => {
         if (!activeRoom) return;
         const token = localStorage.getItem("token");
