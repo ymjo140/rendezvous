@@ -5,14 +5,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
-import { ArrowLeft, Send, Loader2, X, LogOut } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Card } from "@/components/ui/card"
 
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
-// --- (AI 모임 매니저 등 기존 컴포넌트 코드는 동일) ---
+// --- AI 장소 추천용 필터 데이터 ---
 const AI_FILTER_OPTIONS: Record<string, any> = {
     "식사": { 
         label: "🍚 식사", 
@@ -32,28 +34,36 @@ const AI_FILTER_OPTIONS: Record<string, any> = {
     }
 };
 
-const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => void }) => {
-    const [loading, setLoading] = useState(false)
+// 🌟 [핵심] AI 모임 매니저 컴포넌트 (장소 추천 + 일정 등록 통합)
+const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: number | null, onClose: () => void }) => {
+    const [activeTab, setActiveTab] = useState("recommend") // recommend | schedule
+    
+    // -- 장소 추천 State --
+    const [recLoading, setRecLoading] = useState(false)
     const [participants, setParticipants] = useState(2)
     const [budget, setBudget] = useState([3, 10]) 
-    
     const [selectedPurpose, setSelectedPurpose] = useState("식사");
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+    // -- 일정 등록 State --
+    const [scheduleInput, setScheduleInput] = useState("");
+    const [scheduleLoading, setScheduleLoading] = useState(false);
+    const [parsedSchedule, setParsedSchedule] = useState<any>(null);
 
     const toggleTag = (tag: string) => {
         if (selectedTags.includes(tag)) setSelectedTags(prev => prev.filter(t => t !== tag));
         else setSelectedTags(prev => [...prev, tag]);
     };
 
+    // 1. 장소 추천 요청
     const handlePlan = async () => {
-        setLoading(true)
+        setRecLoading(true)
         try {
             const token = localStorage.getItem("token");
             const detailedPrompt = `
                 1. 기본 조건: ${selectedPurpose} 목적, ${budget[0]}~${budget[1]}만원 예산.
                 2. 선호 키워드: ${selectedTags.join(", ")}.
                 3. ★중요★: 'room_id' ${roomId}번에 속한 모든 참여자들의 DB상 '선호 음식/취향' 데이터를 반드시 조회해서 반영할 것. 
-                참여자들의 공통된 취향을 찾거나, 의견이 갈린다면 절충안을 제시해줘.
             `.trim();
 
             const payload = {
@@ -79,13 +89,66 @@ const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => vo
             })
 
             if(res.ok) {
-                alert("AI가 제안을 생성했습니다! 채팅창을 확인해주세요.")
-                onClose()
+                alert("AI가 추천 장소를 채팅방에 전송했습니다!");
+                onClose();
             } else {
-                alert("요청 실패. 잠시 후 다시 시도해주세요.")
+                alert("추천 실패. 다시 시도해주세요.");
             }
         } catch (e) { console.error(e); alert("오류 발생"); } 
-        finally { setLoading(false) }
+        finally { setRecLoading(false) }
+    }
+
+    // 2. 자연어 일정 분석 요청
+    const handleAnalyzeSchedule = async () => {
+        if(!scheduleInput.trim()) return;
+        setScheduleLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/api/ai/parse-schedule`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: scheduleInput })
+            });
+            if(res.ok) {
+                const data = await res.json();
+                setParsedSchedule(data);
+            }
+        } catch(e) { console.error(e); alert("분석 실패"); }
+        finally { setScheduleLoading(false); }
+    }
+
+    // 3. 분석된 일정 등록 (캘린더 저장)
+    const handleRegisterEvent = async () => {
+        if(!parsedSchedule || !myId) return;
+        try {
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${API_URL}/api/events`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    ...(token && { "Authorization": `Bearer ${token}` })
+                },
+                body: JSON.stringify({
+                    user_id: myId, // 현재 로그인한 유저 ID
+                    title: parsedSchedule.title || "새 약속",
+                    date: parsedSchedule.date,
+                    time: parsedSchedule.time,
+                    location_name: parsedSchedule.location_name,
+                    purpose: parsedSchedule.purpose || "기타",
+                    duration_hours: 2.0
+                })
+            });
+
+            if(res.ok) {
+                alert("📅 일정이 캘린더에 등록되었습니다!");
+                // 채팅방에도 알림 메시지 보내기 (선택사항)
+                await fetch(`${API_URL}/api/chat/message`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", ...(token && { "Authorization": `Bearer ${token}` }) },
+                    body: JSON.stringify({ room_id: Number(roomId), content: `📅 [일정 등록됨] ${parsedSchedule.title} (${parsedSchedule.date} ${parsedSchedule.time})`, type: "text" })
+                });
+                onClose();
+            }
+        } catch(e) { console.error(e); alert("등록 실패"); }
     }
 
     const currentOptions = AI_FILTER_OPTIONS[selectedPurpose];
@@ -93,79 +156,130 @@ const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => vo
     return (
         <div className="w-full bg-white border-2 border-[#7C3AED]/20 rounded-3xl p-5 shadow-lg relative overflow-hidden mb-4 animate-in slide-in-from-top-2">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#7C3AED] to-[#14B8A6]"></div>
-            <div className="flex justify-between items-center mb-3">
+            
+            <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-sm text-[#7C3AED] flex items-center gap-1">
-                    🤖 WeMeet AI 매니저
+                    🤖 AI 모임 매니저
                 </h3>
                 <button onClick={onClose}><X className="w-4 h-4 text-gray-400"/></button>
             </div>
-            
-            <div className="space-y-5">
-                <div className="flex gap-4">
-                    <div className="flex-1 space-y-1">
-                        <label className="text-xs font-bold text-gray-500">인원</label>
-                        <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-2 h-9 border border-gray-100">
-                            <Input className="w-full h-full border-none bg-transparent text-center p-0 text-sm font-bold" type="number" min={1} value={participants} onChange={(e) => setParticipants(Number(e.target.value))} />
-                            <span className="text-xs text-gray-400 whitespace-nowrap">명</span>
+
+            {/* 🌟 탭 분리: 장소 추천 vs 일정 등록 */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-2 mb-4">
+                    <TabsTrigger value="recommend">📍 장소 추천</TabsTrigger>
+                    <TabsTrigger value="schedule">📅 일정 등록</TabsTrigger>
+                </TabsList>
+
+                {/* --- 탭 1: 장소 추천 --- */}
+                <TabsContent value="recommend" className="space-y-5">
+                    <div className="flex gap-4">
+                        <div className="flex-1 space-y-1">
+                            <label className="text-xs font-bold text-gray-500">인원</label>
+                            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-2 h-9 border border-gray-100">
+                                <Input className="w-full h-full border-none bg-transparent text-center p-0 text-sm font-bold" type="number" min={1} value={participants} onChange={(e) => setParticipants(Number(e.target.value))} />
+                                <span className="text-xs text-gray-400 whitespace-nowrap">명</span>
+                            </div>
+                        </div>
+                        <div className="flex-[2] space-y-1">
+                            <div className="flex justify-between">
+                                <label className="text-xs font-bold text-gray-500">인당 예산</label>
+                                <span className="text-xs font-bold text-[#14B8A6]">{budget[0]}~{budget[1]}만원</span>
+                            </div>
+                            <Slider defaultValue={[3, 10]} max={30} step={1} className="py-2" onValueChange={setBudget} />
                         </div>
                     </div>
-                    <div className="flex-[2] space-y-1">
-                        <div className="flex justify-between">
-                            <label className="text-xs font-bold text-gray-500">인당 예산</label>
-                            <span className="text-xs font-bold text-[#14B8A6]">{budget[0]}~{budget[1]}만원</span>
-                        </div>
-                        <Slider defaultValue={[3, 10]} max={30} step={1} className="py-2" onValueChange={setBudget} />
-                    </div>
-                </div>
 
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-500">오늘 모임의 목적은?</label>
-                    <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-                        {Object.keys(AI_FILTER_OPTIONS).map(key => (
-                            <Button 
-                                key={key} 
-                                variant={selectedPurpose === key ? "default" : "outline"} 
-                                onClick={() => { setSelectedPurpose(key); setSelectedTags([]); }} 
-                                className={`h-8 rounded-full text-xs font-bold flex-shrink-0 px-4 ${selectedPurpose === key ? 'bg-[#7C3AED] hover:bg-[#6D28D9] border-none' : 'text-gray-500 border-gray-200 bg-white'}`}
-                            >
-                                {AI_FILTER_OPTIONS[key].label}
-                            </Button>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                    <Tabs defaultValue={Object.keys(currentOptions.tabs)[0]} className="w-full">
-                        <TabsList className="w-full h-8 bg-white mb-3 rounded-lg p-0.5 border border-gray-200">
-                            {Object.keys(currentOptions.tabs).map(subKey => (
-                                <TabsTrigger key={subKey} value={subKey} className="flex-1 h-full rounded-md text-[10px] font-bold data-[state=active]:bg-[#7C3AED]/10 data-[state=active]:text-[#7C3AED]">{subKey}</TabsTrigger>
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-500">목적</label>
+                        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+                            {Object.keys(AI_FILTER_OPTIONS).map(key => (
+                                <Button 
+                                    key={key} 
+                                    variant={selectedPurpose === key ? "default" : "outline"} 
+                                    onClick={() => { setSelectedPurpose(key); setSelectedTags([]); }} 
+                                    className={`h-8 rounded-full text-xs font-bold flex-shrink-0 px-4 ${selectedPurpose === key ? 'bg-[#7C3AED] hover:bg-[#6D28D9] border-none' : 'text-gray-500 border-gray-200 bg-white'}`}
+                                >
+                                    {AI_FILTER_OPTIONS[key].label}
+                                </Button>
                             ))}
-                        </TabsList>
-                        {Object.entries(currentOptions.tabs).map(([subKey, tags]: any) => (
-                            <TabsContent key={subKey} value={subKey} className="mt-0">
-                                <div className="flex flex-wrap gap-2">
-                                    {tags.map((tag: string) => (
-                                        <Badge 
-                                            key={tag}
-                                            variant="outline"
-                                            onClick={() => toggleTag(tag)}
-                                            className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs transition-all ${selectedTags.includes(tag) ? "bg-white border-[#7C3AED] text-[#7C3AED] shadow-sm font-bold" : "bg-white border-gray-200 text-gray-500 font-medium hover:bg-gray-100"}`}
-                                        >
-                                            {tag}
-                                        </Badge>
-                                    ))}
-                                </div>
-                            </TabsContent>
-                        ))}
-                    </Tabs>
-                </div>
-                
-                <div className="pt-2">
-                    <Button className="w-full bg-gradient-to-r from-[#7C3AED] to-[#14B8A6] hover:opacity-90 text-white font-bold h-11 rounded-xl shadow-md transition-transform active:scale-95" onClick={handlePlan} disabled={loading}>
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : "✨ 멤버 취향 반영하여 추천받기"}
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                        <Tabs defaultValue={Object.keys(currentOptions.tabs)[0]} className="w-full">
+                            <TabsList className="w-full h-8 bg-white mb-3 rounded-lg p-0.5 border border-gray-200">
+                                {Object.keys(currentOptions.tabs).map(subKey => (
+                                    <TabsTrigger key={subKey} value={subKey} className="flex-1 h-full rounded-md text-[10px] font-bold">{subKey}</TabsTrigger>
+                                ))}
+                            </TabsList>
+                            {Object.entries(currentOptions.tabs).map(([subKey, tags]: any) => (
+                                <TabsContent key={subKey} value={subKey} className="mt-0">
+                                    <div className="flex flex-wrap gap-2">
+                                        {tags.map((tag: string) => (
+                                            <Badge key={tag} variant="outline" onClick={() => toggleTag(tag)} className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs transition-all ${selectedTags.includes(tag) ? "bg-white border-[#7C3AED] text-[#7C3AED] shadow-sm font-bold" : "bg-white border-gray-200 text-gray-500 font-medium hover:bg-gray-100"}`}>
+                                                {tag}
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                </TabsContent>
+                            ))}
+                        </Tabs>
+                    </div>
+                    
+                    <Button className="w-full bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold h-11 rounded-xl shadow-md" onClick={handlePlan} disabled={recLoading}>
+                        {recLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : "✨ 장소 추천받기"}
                     </Button>
-                </div>
-            </div>
+                </TabsContent>
+
+                {/* --- 탭 2: 일정 등록 (자연어) --- */}
+                <TabsContent value="schedule" className="space-y-4">
+                    {!parsedSchedule ? (
+                        <>
+                            <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
+                                "다음주 금요일 저녁 7시에 강남역에서 회식 잡아줘" 처럼 말해보세요. AI가 자동으로 일정을 등록해줍니다.
+                            </div>
+                            <Textarea 
+                                placeholder="약속 내용을 자유롭게 입력하세요..." 
+                                className="resize-none h-24 text-sm"
+                                value={scheduleInput}
+                                onChange={(e) => setScheduleInput(e.target.value)}
+                            />
+                            <Button className="w-full bg-[#14B8A6] hover:bg-[#0D9488] text-white font-bold h-11 rounded-xl" onClick={handleAnalyzeSchedule} disabled={scheduleLoading}>
+                                {scheduleLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : "🤖 AI 분석 및 등록"}
+                            </Button>
+                        </>
+                    ) : (
+                        <div className="animate-in fade-in zoom-in duration-300">
+                            <Card className="p-4 border-[#14B8A6] bg-teal-50/50 mb-3">
+                                <h4 className="font-bold text-teal-800 mb-2 flex items-center"><Check className="w-4 h-4 mr-1"/> 분석 결과</h4>
+                                <div className="space-y-2 text-sm text-gray-700">
+                                    <div className="flex justify-between border-b border-teal-100 pb-1">
+                                        <span className="text-gray-500">제목</span>
+                                        <span className="font-bold">{parsedSchedule.title}</span>
+                                    </div>
+                                    <div className="flex justify-between border-b border-teal-100 pb-1">
+                                        <span className="text-gray-500 flex items-center"><Calendar className="w-3 h-3 mr-1"/> 날짜</span>
+                                        <span className="font-bold">{parsedSchedule.date} {parsedSchedule.time}</span>
+                                    </div>
+                                    <div className="flex justify-between border-b border-teal-100 pb-1">
+                                        <span className="text-gray-500 flex items-center"><MapPin className="w-3 h-3 mr-1"/> 장소</span>
+                                        <span className="font-bold">{parsedSchedule.location_name || "미정"}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-500">목적</span>
+                                        <Badge variant="outline" className="bg-white">{parsedSchedule.purpose}</Badge>
+                                    </div>
+                                </div>
+                            </Card>
+                            <div className="flex gap-2">
+                                <Button variant="outline" className="flex-1" onClick={() => setParsedSchedule(null)}>다시 입력</Button>
+                                <Button className="flex-[2] bg-teal-600 hover:bg-teal-700 text-white" onClick={handleRegisterEvent}>캘린더에 등록하기</Button>
+                            </div>
+                        </div>
+                    )}
+                </TabsContent>
+            </Tabs>
         </div>
     )
 }
@@ -242,23 +356,21 @@ export function ChatTab() {
         } catch(e) {}
     }
 
-    // 🌟 [추가됨] 채팅방 나가기 핸들러
     const handleLeaveRoom = async () => {
         if (!activeRoom) return;
         if (!confirm("채팅방을 나가시겠습니까? 관련 모임 목록에서도 사라집니다.")) return;
 
         try {
             const token = localStorage.getItem("token");
-            // 백엔드 엔드포인트: /api/chat/rooms/{room_id}/leave
             const res = await fetch(`${API_URL}/api/chat/rooms/${activeRoom.id}/leave`, {
-                method: "POST", // 또는 DELETE (백엔드 구현에 따라 다름)
+                method: "POST",
                 headers: token ? { "Authorization": `Bearer ${token}` } : {}
             });
 
             if (res.ok) {
                 alert("채팅방을 나갔습니다.");
-                setView('list'); // 목록으로 돌아가기
-                fetchRooms(); // 목록 새로고침 (나간 방 사라짐)
+                setView('list'); 
+                fetchRooms(); 
             } else {
                 alert("나가기 실패: 잠시 후 다시 시도해주세요.");
             }
@@ -317,7 +429,6 @@ export function ChatTab() {
                 </div>
                 
                 <div className="flex items-center gap-2">
-                    {/* 🌟 AI 버튼 */}
                     <Button 
                         size="sm"
                         onClick={() => setShowPlanner(!showPlanner)} 
@@ -326,7 +437,6 @@ export function ChatTab() {
                         AI 🤖
                     </Button>
                     
-                    {/* 🌟 [추가됨] 나가기 버튼 */}
                     <Button 
                         size="icon" 
                         variant="ghost" 
@@ -343,8 +453,9 @@ export function ChatTab() {
                 <div className="flex flex-col gap-3 pb-4">
                     <div className="flex justify-center my-4"><span className="bg-gray-200/60 text-gray-500 text-[10px] px-3 py-1 rounded-full">대화가 시작되었습니다.</span></div>
 
+                    {/* 🌟 AI 매니저 모달 (myId prop 전달 추가됨) */}
                     {showPlanner && (
-                        <MeetingPlanner roomId={activeRoom?.id} onClose={() => setShowPlanner(false)} />
+                        <MeetingPlanner roomId={activeRoom?.id} myId={myId} onClose={() => setShowPlanner(false)} />
                     )}
 
                     {messages.map((msg, i) => {
