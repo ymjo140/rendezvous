@@ -42,7 +42,7 @@ const formatDate = (dateStr: string) => {
     return `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
 };
 
-// 🌟 [핵심 수정] 투표 및 확정 카드 컴포넌트 (API 연동 추가됨)
+// 🌟 [핵심] 투표 및 확정 카드 컴포넌트
 const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId: number, roomId: string, onRefresh: () => void }) => {
     const [votes, setVotes] = useState(data.vote_count || 0);
     const [voted, setVoted] = useState(false);
@@ -60,7 +60,7 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
                     ...(token && { "Authorization": `Bearer ${token}` })
                 },
                 body: JSON.stringify({
-                    room_id: String(roomId),
+                    room_id: String(roomId), // 문자열 변환 보장
                     message_id: messageId 
                 })
             });
@@ -86,7 +86,7 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
                     ...(token && { "Authorization": `Bearer ${token}` })
                 },
                 body: JSON.stringify({
-                    room_id: String(roomId),
+                    room_id: String(roomId), // 문자열 변환 보장
                     place_name: data.place.name,
                     date: data.date || "2023-12-25", 
                     time: data.time || "19:00",     
@@ -172,7 +172,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     // 컴포넌트 로드 시 '가능한 날짜' 분석 시작
     useEffect(() => {
         analyzeAvailableDates();
-    }, []);
+    }, [roomId]);
 
     const analyzeAvailableDates = async () => {
         try {
@@ -184,6 +184,8 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
             if (res.ok) {
                 const candidates = await res.json();
                 setRecommendedDates(candidates);
+                // 기본값으로 첫 번째 날짜 선택
+                if(candidates.length > 0) setSelectedDateSlot(candidates[0]);
             }
         } catch (e) { console.error(e); }
     };
@@ -232,7 +234,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
             })
 
             if(res.ok) {
-                // 🌟 [수정됨] alert 제거하고 즉시 새로고침
+                // 🌟 alert 제거하고 즉시 새로고침
                 onRefresh(); 
                 onClose();
             } else {
@@ -297,6 +299,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     }
 
     const currentOptions = AI_FILTER_OPTIONS[selectedPurpose];
+    // 최대 3개만 보여주고 더보기 버튼으로 확장
     const visibleDates = showAllDates ? recommendedDates : recommendedDates.slice(0, 3);
 
     return (
@@ -336,7 +339,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                                     <div 
                                         key={i} 
                                         onClick={() => setSelectedDateSlot(slot)}
-                                        className={`cursor-pointer rounded-lg p-2 text-center border transition-all ${selectedDateSlot === slot ? "bg-indigo-600 text-white border-indigo-600 shadow-md" : "bg-white border-gray-200 hover:border-indigo-300"}`}
+                                        className={`cursor-pointer rounded-lg p-2 text-center border transition-all ${selectedDateSlot?.fullDate === slot.fullDate ? "bg-indigo-600 text-white border-indigo-600 shadow-md" : "bg-white border-gray-200 hover:border-indigo-300"}`}
                                     >
                                         <div className="text-[10px] opacity-80">{slot.displayDate}</div>
                                         <div className="text-xs font-bold">{slot.time}</div>
@@ -345,7 +348,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                             </div>
                         ) : (
                             <div className="text-center text-xs text-gray-400 py-2">
-                                분석된 일정이 없습니다.
+                                분석 중...
                             </div>
                         )}
 
@@ -667,7 +670,7 @@ export function ChatTab() {
                         return (
                             <div key={i} className={`flex gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                 {!isMe && <Avatar className="w-8 h-8 border border-white shadow-sm"><AvatarFallback className="text-[10px] bg-gray-100">{msg.name?.[0]}</AvatarFallback></Avatar>}
-                                <div className="max-w-[85%] flex flex-col items-start">
+                                <div className="max-w-[75%] flex flex-col items-start">
                                     {!isMe && <div className="text-[10px] text-gray-500 mb-1 ml-1">{msg.name}</div>}
                                     {content}
                                     <div className={`text-[9px] text-gray-300 mt-1 ${isMe ? 'text-right mr-1' : 'ml-1'}`}>{msg.timestamp}</div>

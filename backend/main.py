@@ -35,15 +35,14 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         # 🌟 [긴급 DB 패치] room_id 컬럼 타입을 Integer -> String으로 강제 변경
-        # (이 코드가 없으면 500 에러가 계속 뜹니다)
         try:
-            db.execute(text("ALTER TABLE chat_room_members ALTER COLUMN room_id TYPE VARCHAR"))
+            db.execute(text("ALTER TABLE chat_room_members ALTER COLUMN room_id TYPE VARCHAR USING room_id::varchar"))
             print("✅ DB Fix: chat_room_members.room_id converted to VARCHAR")
         except Exception:
-            db.rollback() # 이미 변경되었거나 에러 시 무시
+            db.rollback() 
             
         try:
-            db.execute(text("ALTER TABLE messages ALTER COLUMN room_id TYPE VARCHAR"))
+            db.execute(text("ALTER TABLE messages ALTER COLUMN room_id TYPE VARCHAR USING room_id::varchar"))
             print("✅ DB Fix: messages.room_id converted to VARCHAR")
         except Exception:
             db.rollback()
@@ -51,13 +50,11 @@ async def lifespan(app: FastAPI):
         # 기존 마이그레이션
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN gender VARCHAR DEFAULT 'unknown'"))
-            print("✅ DB 업데이트: gender 컬럼 추가됨")
         except Exception:
             db.rollback() 
 
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN age_group VARCHAR DEFAULT '20s'"))
-            print("✅ DB 업데이트: age_group 컬럼 추가됨")
         except Exception:
             db.rollback() 
         
@@ -135,7 +132,6 @@ def read_root():
 # 🌟 [수정됨] room_id: str (UUID 호환)
 @app.post("/api/communities/{room_id}/join")
 def join_community(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    # 1. 이미 참여 중인지 확인
     existing = db.query(models.ChatRoomMember).filter(
         models.ChatRoomMember.room_id == room_id,
         models.ChatRoomMember.user_id == current_user.id
@@ -144,36 +140,23 @@ def join_community(room_id: str, db: Session = Depends(get_db), current_user: mo
     if existing:
         return {"message": "Already joined"}
         
-    # 2. 참여 기록 생성
     new_member = models.ChatRoomMember(room_id=room_id, user_id=current_user.id)
     db.add(new_member)
     db.commit()
     return {"message": "Joined successfully"}
 
-# 🌟 [수정됨] room_id: str (UUID 호환) 및 일정 로직 보완
+# 🌟 [수정됨] 일정 조회 API (14일치 무조건 반환)
 @app.get("/api/chat/rooms/{room_id}/available-dates")
 def get_available_dates_for_room(room_id: str, db: Session = Depends(get_db)):
     """
     채팅방(room_id)의 실제 멤버들을 조회하고, 
     그 멤버들의 캘린더 일정을 분석하여 겹치지 않는 시간을 추천합니다.
     """
-    # 1. 채팅방 멤버 진짜 조회
     room_members = db.query(models.ChatRoomMember).filter(
         models.ChatRoomMember.room_id == room_id
     ).all()
     
-    # 멤버가 없으면 기본값 반환 (빈 배열 X)
-    if not room_members:
-        today = datetime.now().date()
-        return [{
-            "fullDate": str(today),
-            "displayDate": f"{today.month}/{today.day}",
-            "time": "19:00",
-            "label": "멤버 없음(테스트)",
-            "score": 100
-        }]
-
-    # 멤버 ID 추출
+    # 멤버가 없으면 빈 리스트(member_ids=[])로 처리하여 "모두 가능"으로 유도
     member_ids = [m.user_id for m in room_members]
 
     # 2. 분석 시작
@@ -189,10 +172,12 @@ def get_available_dates_for_room(room_id: str, db: Session = Depends(get_db)):
         base_score = 90 if day_of_week >= 5 else 70 
         
         # 3. 멤버들의 해당 날짜 약속 조회
-        conflicting_events = db.query(models.Event).filter(
-            models.Event.user_id.in_(member_ids),
-            models.Event.date == date_str
-        ).all()
+        conflicting_events = []
+        if member_ids:
+            conflicting_events = db.query(models.Event).filter(
+                models.Event.user_id.in_(member_ids),
+                models.Event.date == date_str
+            ).all()
 
         # 4. 시간대 충돌 분석 (저녁 18~21시 기준)
         conflict_count = 0
@@ -212,28 +197,24 @@ def get_available_dates_for_room(room_id: str, db: Session = Depends(get_db)):
             final_score = base_score - (conflict_count * 30)
             label = f"{conflict_count}명 일정 있음"
 
-        if final_score > 30:
-            recommended_slots.append({
-                "fullDate": date_str,
-                "displayDate": f"{date_obj.month}/{date_obj.day} ({['월','화','수','목','금','토','일'][day_of_week]})",
-                "time": "19:00",
-                "label": label,
-                "score": final_score
-            })
+        # 점수가 낮아도 표시를 위해 리스트에 추가 (단, 0점 이하는 제외 가능)
+        recommended_slots.append({
+            "fullDate": date_str,
+            "displayDate": f"{date_obj.month}/{date_obj.day} ({['월','화','수','목','금','토','일'][day_of_week]})",
+            "time": "19:00",
+            "label": label,
+            "score": final_score
+        })
 
     recommended_slots.sort(key=lambda x: x['score'], reverse=True)
     return recommended_slots
 
-# 🌟 [기존] B2B 데이터 판매용 API
 @app.get("/api/b2b/demand-forecast")
 def get_b2b_forecast(
     region: str = "강남", 
     days: int = 7, 
     db: Session = Depends(get_db)
 ):
-    """
-    🏢 B2B 고객용 미래 수요 예측 데이터 조회 (실제 DB 데이터 기반)
-    """
     engine = DemandIntelligenceEngine(db)
     result = engine.get_future_demand(region, days)
     return result
