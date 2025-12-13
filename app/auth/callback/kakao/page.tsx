@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import React, { useEffect, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
 
-export default function KakaoCallback() {
+// 1. 실제 로직이 담긴 컴포넌트 (useSearchParams 사용)
+function KakaoCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const code = searchParams.get("code")
@@ -52,5 +53,19 @@ export default function KakaoCallback() {
       <Loader2 className="w-10 h-10 animate-spin text-[#7C3AED]" />
       <p className="text-gray-500 font-bold">{status}</p>
     </div>
+  )
+}
+
+// 2. 메인 페이지 컴포넌트 (Suspense로 감싸기)
+export default function KakaoCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center bg-white flex-col gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-[#7C3AED]" />
+        <p className="text-gray-500 font-bold">로딩 중...</p>
+      </div>
+    }>
+      <KakaoCallbackContent />
+    </Suspense>
   )
 }
