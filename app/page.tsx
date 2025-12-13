@@ -1,162 +1,148 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { HomeTab } from "@/components/ui/home-tab"
+import { CommunityTab } from "@/components/ui/community-tab" 
+import { ChatTab } from "@/components/ui/chat-tab" 
+import { CalendarTab } from "@/components/ui/calendar-tab" 
+import { MyPageTab } from "@/components/ui/mypage-tab"
+import { Map, MessageCircle, Calendar, User, Users, Lock, LogIn } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Loader2, MapPin, CheckCircle2 } from "lucide-react"
 
-export default function SignupPage() {
+export default function Page() {
   const router = useRouter()
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-    name: "",
-    lat: 0,
-    lng: 0
-  })
-  const [loading, setLoading] = useState(false)
-  const [locLoading, setLocLoading] = useState(false)
-  const [locationStatus, setLocationStatus] = useState("위치 미설정 (가입 후 설정 가능)")
+  const [activeTab, setActiveTab] = useState("home")
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [showLoginModal, setShowLoginModal] = useState(false)
 
-  // 🌟 [GPS] 현재 위치 가져오기
-  const handleGetLocation = () => {
-    if (!navigator.geolocation) {
-      alert("브라우저가 위치 정보를 지원하지 않습니다.");
-      return;
-    }
-    setLocLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setFormData(prev => ({
-          ...prev,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude
-        }));
-        setLocationStatus("📍 위치 확인 완료! (가입 시 주소 자동 변환)");
-        setLocLoading(false);
-      },
-      (err) => {
-        console.error(err);
-        alert("위치를 가져올 수 없습니다. 설정에서 위치 권한을 허용해주세요.");
-        setLocLoading(false);
-      }
-    );
-  };
+  // 초기 로그인 상태 확인
+  useEffect(() => {
+    const token = localStorage.getItem("token")
+    setIsLoggedIn(!!token)
+  }, [])
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!formData.email || !formData.password || !formData.name) {
-      alert("모든 필수 정보를 입력해주세요.");
-      return;
+  // 🌟 탭 변경 핸들러 (접근 제어 로직)
+  const handleTabChange = (tab: string) => {
+    // 1. 홈 탭은 무조건 접근 허용
+    if (tab === "home") {
+        setActiveTab("home")
+        return
     }
 
-    setLoading(true)
-    try {
-      // 🌟 좌표 정보도 함께 전송
-      const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            email: formData.email,
-            password: formData.password,
-            name: formData.name,
-            lat: formData.lat || null, 
-            lng: formData.lng || null
-        })
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        localStorage.setItem("token", data.access_token)
-        alert("가입을 환영합니다! 🎉")
-        router.push("/")
-      } else {
-        const err = await res.json()
-        alert(`가입 실패: ${err.detail}`)
-      }
-    } catch (err) {
-      alert("오류가 발생했습니다.")
-    } finally {
-      setLoading(false)
+    // 2. 다른 탭은 로그인 필요
+    const token = localStorage.getItem("token")
+    if (token) {
+        setIsLoggedIn(true)
+        setActiveTab(tab)
+    } else {
+        setIsLoggedIn(false)
+        setShowLoginModal(true) // 로그인 유도 모달 띄우기
     }
   }
 
+  const handleGoToLogin = () => {
+      router.push("/login")
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F3F4F6] p-4 font-['Pretendard']">
-      <Card className="w-full max-w-md rounded-3xl shadow-xl border-none">
-        <CardHeader className="text-center pb-2">
-          <CardTitle className="text-2xl font-bold text-[#7C3AED]">WeMeet 회원가입</CardTitle>
-          <CardDescription>친구들과 더 쉽고 편하게 만나세요!</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSignup} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-gray-600 ml-1">이메일</label>
-              <Input 
-                type="email" 
-                placeholder="example@email.com" 
-                className="rounded-xl h-12 bg-gray-50 border-gray-200 focus:border-[#7C3AED]"
-                value={formData.email}
-                onChange={e => setFormData({...formData, email: e.target.value})}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-gray-600 ml-1">비밀번호</label>
-              <Input 
-                type="password" 
-                placeholder="********" 
-                className="rounded-xl h-12 bg-gray-50 border-gray-200 focus:border-[#7C3AED]"
-                value={formData.password}
-                onChange={e => setFormData({...formData, password: e.target.value})}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-gray-600 ml-1">닉네임</label>
-              <Input 
-                type="text" 
-                placeholder="사용할 이름" 
-                className="rounded-xl h-12 bg-gray-50 border-gray-200 focus:border-[#7C3AED]"
-                value={formData.name}
-                onChange={e => setFormData({...formData, name: e.target.value})}
-              />
-            </div>
+    <div className="flex h-screen w-full flex-col bg-[#F3F4F6] mx-auto max-w-md shadow-2xl overflow-hidden font-['Pretendard']">
+      
+      {/* 메인 콘텐츠 영역 */}
+      <main className="flex-1 overflow-hidden relative">
+        {activeTab === "home" && <HomeTab />}
+        {activeTab === "community" && <CommunityTab />}
+        {activeTab === "chat" && <ChatTab />}
+        {activeTab === "calendar" && <CalendarTab />}
+        {activeTab === "mypage" && <MyPageTab />}
+      </main>
 
-            {/* 🌟 위치 설정 버튼 */}
-            <div className="pt-2">
-                <label className="text-sm font-bold text-gray-600 ml-1 block mb-2">내 동네 설정 (추천용)</label>
-                <Button 
-                    type="button" 
-                    variant="outline" 
-                    className={`w-full h-12 rounded-xl border-dashed border-2 ${formData.lat ? "border-[#7C3AED] text-[#7C3AED] bg-purple-50" : "border-gray-300 text-gray-500 hover:bg-gray-50"}`}
-                    onClick={handleGetLocation}
-                    disabled={locLoading}
-                >
-                    {locLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <MapPin className="w-4 h-4 mr-2"/>}
-                    {formData.lat ? "위치 확인됨 (자동 저장)" : "📍 현재 위치로 주소 찾기"}
-                </Button>
-                <p className="text-xs text-center mt-2 text-gray-400">
-                    {locationStatus}
-                </p>
-            </div>
+      {/* 하단 네비게이션 바 */}
+      <nav className="flex h-20 flex-shrink-0 items-center justify-around border-t border-gray-100 bg-white px-2 pb-2 z-30 rounded-t-3xl shadow-[0_-5px_20px_rgba(0,0,0,0.03)]">
+        
+        {/* 1. 홈 (누구나 접근 가능) */}
+        <button 
+            onClick={() => handleTabChange("home")} 
+            className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
+                activeTab === "home" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+            }`}
+        >
+          <Map className={`w-6 h-6 ${activeTab === "home" ? "fill-[#7C3AED]/10" : ""}`} />
+          <span className="text-[10px] font-bold">홈</span>
+        </button>
 
-            <Button 
-                type="submit" 
-                className="w-full h-12 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold text-lg shadow-md mt-4" 
-                disabled={loading}
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : "가입하기"}
-            </Button>
-            
-            <div className="text-center mt-4">
-                <button type="button" onClick={() => router.push("/login")} className="text-xs text-gray-500 hover:text-[#7C3AED] underline">
-                    이미 계정이 있으신가요? 로그인
-                </button>
+        {/* 2. 채팅 (로그인 필요) */}
+        <button 
+            onClick={() => handleTabChange("chat")} 
+            className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
+                activeTab === "chat" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+            }`}
+        >
+          <MessageCircle className={`w-6 h-6 ${activeTab === "chat" ? "fill-[#7C3AED]/10" : ""}`} />
+          <span className="text-[10px] font-medium">채팅</span>
+        </button>
+
+        {/* 3. 커뮤니티 (로그인 필요) */}
+        <button 
+            onClick={() => handleTabChange("community")} 
+            className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
+                activeTab === "community" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+            }`}
+        >
+          <Users className={`w-6 h-6 ${activeTab === "community" ? "fill-[#7C3AED]/10" : ""}`} />
+          <span className="text-[10px] font-medium">커뮤니티</span>
+        </button>
+
+        {/* 4. 일정 (로그인 필요) */}
+        <button 
+            onClick={() => handleTabChange("calendar")} 
+            className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
+                activeTab === "calendar" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+            }`}
+        >
+          <Calendar className={`w-6 h-6 ${activeTab === "calendar" ? "fill-[#7C3AED]/10" : ""}`} />
+          <span className="text-[10px] font-medium">일정</span>
+        </button>
+
+        {/* 5. 마이 (로그인 필요) */}
+        <button 
+            onClick={() => handleTabChange("mypage")} 
+            className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
+                activeTab === "mypage" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+            }`}
+        >
+          <User className={`w-6 h-6 ${activeTab === "mypage" ? "fill-[#7C3AED]/10" : ""}`} />
+          <span className="text-[10px] font-medium">마이</span>
+        </button>
+
+      </nav>
+
+      {/* 🌟 로그인 유도 모달 */}
+      <Dialog open={showLoginModal} onOpenChange={setShowLoginModal}>
+        <DialogContent className="sm:max-w-xs rounded-3xl p-6 font-['Pretendard']">
+            <div className="flex flex-col items-center text-center gap-4">
+                <div className="w-14 h-14 bg-purple-50 rounded-full flex items-center justify-center">
+                    <Lock className="w-7 h-7 text-[#7C3AED]" />
+                </div>
+                <div>
+                    <DialogTitle className="text-lg font-bold mb-1">로그인이 필요해요</DialogTitle>
+                    <DialogDescription className="text-xs text-gray-500">
+                        회원가입하고 채팅, 모임, 일정 관리 등<br/>더 많은 기능을 사용해보세요!
+                    </DialogDescription>
+                </div>
+                <div className="w-full space-y-2 mt-2">
+                    <Button onClick={handleGoToLogin} className="w-full h-11 bg-[#FEE500] hover:bg-[#FEE500]/90 text-black font-bold rounded-xl shadow-sm">
+                        <MessageCircle className="w-4 h-4 mr-2 fill-black border-none"/> 카카오로 3초 시작
+                    </Button>
+                    <Button variant="ghost" onClick={() => setShowLoginModal(false)} className="w-full h-11 rounded-xl text-gray-500">
+                        나중에 할게요
+                    </Button>
+                </div>
             </div>
-          </form>
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }
