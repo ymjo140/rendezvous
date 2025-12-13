@@ -19,75 +19,57 @@ class ItemCategory(str, enum.Enum):
     PET = "pet"
     FOOTPRINT = "footprint"
 
-# 🌟 [Revamped] Place Data Assetization Model
 class Place(Base):
     __tablename__ = "places"
-    
     id = Column(Integer, primary_key=True, index=True)
-    
-    # 1. Basic Info
     name = Column(String, index=True, nullable=False)
-    category = Column(String) # restaurant, cafe, workspace
-    
-    # 2. 🌟 Location Info (Key to preventing duplicates)
-    address = Column(String, nullable=True) # Road name address
-    lat = Column(Float, nullable=False)     # Latitude
-    lng = Column(Float, nullable=False)     # Longitude
-    
-    # 3. Meta Data
+    category = Column(String) 
+    address = Column(String, nullable=True) 
+    lat = Column(Float, nullable=False)     
+    lng = Column(Float, nullable=False)     
     tags = Column(JSON, default=[]) 
-    wemeet_rating = Column(Float, default=0.0) # Internal rating
+    wemeet_rating = Column(Float, default=0.0) 
     review_count = Column(Integer, default=0)
-    
     external_link = Column(String, nullable=True)
 
 class MeetingLog(Base):
     __tablename__ = "meeting_logs"
-    
     id = Column(String, primary_key=True, default=generate_uuid)
     community_id = Column(String, nullable=True)
     host_id = Column(Integer, ForeignKey("users.id"))
-    
-    # Link with Place table
     place_id = Column(Integer, ForeignKey("places.id"), nullable=True)
     place_name = Column(String) 
-    
     date = Column(String) 
     purpose = Column(String) 
     participants = Column(JSON) 
-    
     is_successful = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class User(Base):
     __tablename__ = "users"
-    
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     name = Column(String, index=True)
     
-    # 🌟 [New] Segmentation fields for data analysis
-    gender = Column(String, default="unknown") # male, female, unknown
-    age_group = Column(String, default="20s")  # 10s, 20s, 30s, 40s, 50+
+    gender = Column(String, default="unknown") 
+    age_group = Column(String, default="20s")  
     
     avatar = Column(String)
     manner = Column(Float, default=36.5)
     
-    # 🌟 [위치 저장 기능] 사용자가 설정한 위치 (DB 저장)
-    lat = Column(Float, default=37.5665) # 초기값: 시청 (설정 전)
+    # 🌟 [위치 정보]
+    lat = Column(Float, default=37.5665)
     lng = Column(Float, default=126.9780)
-    location_name = Column(String, nullable=True) # 예: "우리집", "서울 중구 신당동"
+    location_name = Column(String, nullable=True) # 🌟 주소명 추가 확인
     
     preferences = Column(JSON, default={"tag_weights": {}, "avg_spend": 20000}) 
     preference_vector = Column(JSON, default={}) 
-    
     payment_history = Column(JSON, default=[])
     favorites = Column(JSON, default=[]) 
-
     wallet_balance = Column(Integer, default=3000) 
-    avatar_info = relationship("UserAvatar", uselist=False, back_populates="user")
     
+    avatar_info = relationship("UserAvatar", uselist=False, back_populates="user")
     review_count = Column(Integer, default=0)
     avg_rating_given = Column(Float, default=0.0)
 
@@ -119,35 +101,35 @@ class UserStepLog(Base):
     steps_count = Column(Integer, default=0)
     reward_claimed = Column(Boolean, default=False)
 
-# 🌟 [Modified] Chat Room Model (Added relationship)
+# 🌟 [수정] Chat Room Model (ID를 String으로 변경)
 class ChatRoom(Base):
     __tablename__ = "chat_rooms"
     
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String) # Room name
+    # 🌟 Integer -> String 변경 (UUID 호환 및 ChatRoomMember와 타입 일치)
+    id = Column(String, primary_key=True, index=True, default=generate_uuid) 
+    title = Column(String) 
     is_group = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
     
-    # Relationship to retrieve members
     members = relationship("ChatRoomMember", back_populates="room")
 
-# 🌟 [New] Chat Room Member Link Table (User <-> ChatRoom)
+# 🌟 [수정] Chat Room Member Link Table
 class ChatRoomMember(Base):
     __tablename__ = "chat_room_members"
     
     id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(String, index=True) # ForeignKey 제거하고 String으로 관리 (UUID 호환)
+    # 🌟 ForeignKey 복구 (이제 chat_rooms.id도 String이므로 안전함)
+    room_id = Column(String, ForeignKey("chat_rooms.id"), index=True) 
     user_id = Column(Integer, ForeignKey("users.id"))
     joined_at = Column(DateTime, default=datetime.now)
     
-    # Relationship settings
     room = relationship("ChatRoom", back_populates="members")
     user = relationship("User") 
 
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(String, index=True) # Note: Currently managed as String in logic
+    room_id = Column(String, index=True) 
     user_id = Column(Integer, ForeignKey("users.id"))
     content = Column(String)
     timestamp = Column(DateTime, default=datetime.now)
@@ -195,22 +177,18 @@ class Review(Base):
     __tablename__ = "reviews"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    
     place_id = Column(Integer, ForeignKey("places.id"), nullable=True)
     place_name = Column(String) 
-    
     score_taste = Column(Integer, default=3)
     score_service = Column(Integer, default=3)
     score_price = Column(Integer, default=3)
     score_vibe = Column(Integer, default=3)
-    
     rating = Column(Float) 
     calibrated_rating = Column(Float, nullable=True) 
     reason = Column(String, nullable=True)
     comment = Column(String, nullable=True)
     tags = Column(JSON) 
     created_at = Column(DateTime, default=datetime.now)
-    
     user = relationship("User")
     place = relationship("Place")
 
@@ -260,7 +238,6 @@ class TravelTimeCache(Base):
 
 class MeetingHistory(Base):
     __tablename__ = "meeting_histories"
-
     id = Column(Integer, primary_key=True, index=True)
     purpose = Column(String, index=True)  
     tags = Column(String)     

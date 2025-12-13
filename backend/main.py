@@ -32,7 +32,12 @@ def get_db():
 async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
-        # 🌟 [DB 자동 패치] 컬럼 마이그레이션
+        # 🌟 [DB 자동 패치] ID 컬럼들 String으로 변환
+        try:
+            db.execute(text("ALTER TABLE chat_rooms ALTER COLUMN id TYPE VARCHAR USING id::varchar"))
+            print("✅ DB Fix: chat_rooms.id -> VARCHAR")
+        except Exception: db.rollback() 
+
         try:
             db.execute(text("ALTER TABLE chat_room_members ALTER COLUMN room_id TYPE VARCHAR USING room_id::varchar"))
             print("✅ DB Fix: chat_room_members.room_id -> VARCHAR")
@@ -50,6 +55,14 @@ async def lifespan(app: FastAPI):
         except Exception: db.rollback()
 
         try:
+            db.execute(text("ALTER TABLE users ADD COLUMN lat FLOAT DEFAULT 37.5665"))
+        except Exception: db.rollback()
+
+        try:
+            db.execute(text("ALTER TABLE users ADD COLUMN lng FLOAT DEFAULT 126.9780"))
+        except Exception: db.rollback()
+
+        try:
             db.execute(text("ALTER TABLE users ADD COLUMN gender VARCHAR DEFAULT 'unknown'"))
         except Exception: db.rollback() 
 
@@ -59,7 +72,7 @@ async def lifespan(app: FastAPI):
         
         db.commit()
 
-        # 데이터 초기화
+        # 데이터 초기화 (기존 코드)
         if db.query(models.AvatarItem).count() == 0:
             print("🛍️ [초기화] 아바타 아이템 주입...")
             items = [
@@ -127,7 +140,7 @@ app.include_router(coins.router)
 def read_root():
     return {"status": "WeMeet API Running 🚀"}
 
-# 🌟 채팅방 참여 API
+# 채팅방 참여 API
 @app.post("/api/communities/{room_id}/join")
 def join_community(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     existing = db.query(models.ChatRoomMember).filter(
@@ -143,7 +156,7 @@ def join_community(room_id: str, db: Session = Depends(get_db), current_user: mo
     db.commit()
     return {"message": "Joined successfully"}
 
-# 🌟 일정 조회 API
+# 일정 조회 API
 @app.get("/api/chat/rooms/{room_id}/available-dates")
 def get_available_dates_for_room(room_id: str, db: Session = Depends(get_db)):
     room_members = db.query(models.ChatRoomMember).filter(
