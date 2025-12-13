@@ -4,7 +4,7 @@ import React from "react"
 import { MessageCircle } from "lucide-react"
 
 export default function LoginPage() {
-  const KAKAO_REST_API_KEY = "3239a776369dd4432092c73229b47201" 
+  const KAKAO_REST_API_KEY = "ee65ae84782ed20fc6df3256de747e74" 
   const REDIRECT_URI = "https://v0-we-meet-app-features.vercel.app/auth/callback/kakao"
   const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?client_id=${KAKAO_REST_API_KEY}&redirect_uri=${REDIRECT_URI}&response_type=code`
 
