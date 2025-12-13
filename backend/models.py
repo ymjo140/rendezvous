@@ -51,24 +51,21 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     name = Column(String, index=True)
-    
     gender = Column(String, default="unknown") 
     age_group = Column(String, default="20s")  
-    
     avatar = Column(String)
     manner = Column(Float, default=36.5)
     
-    # 🌟 [위치 정보]
+    # 🌟 위치 정보
     lat = Column(Float, default=37.5665)
     lng = Column(Float, default=126.9780)
-    location_name = Column(String, nullable=True) # 🌟 주소명 추가 확인
+    location_name = Column(String, nullable=True)
     
     preferences = Column(JSON, default={"tag_weights": {}, "avg_spend": 20000}) 
     preference_vector = Column(JSON, default={}) 
     payment_history = Column(JSON, default=[])
     favorites = Column(JSON, default=[]) 
     wallet_balance = Column(Integer, default=3000) 
-    
     avatar_info = relationship("UserAvatar", uselist=False, back_populates="user")
     review_count = Column(Integer, default=0)
     avg_rating_given = Column(Float, default=0.0)
@@ -101,11 +98,10 @@ class UserStepLog(Base):
     steps_count = Column(Integer, default=0)
     reward_claimed = Column(Boolean, default=False)
 
-# 🌟 [수정] Chat Room Model (ID를 String으로 변경)
+# 🌟 [수정] Chat Room Model (ID를 String으로 변경하여 타입 통일)
 class ChatRoom(Base):
     __tablename__ = "chat_rooms"
     
-    # 🌟 Integer -> String 변경 (UUID 호환 및 ChatRoomMember와 타입 일치)
     id = Column(String, primary_key=True, index=True, default=generate_uuid) 
     title = Column(String) 
     is_group = Column(Boolean, default=False)
@@ -113,12 +109,12 @@ class ChatRoom(Base):
     
     members = relationship("ChatRoomMember", back_populates="room")
 
-# 🌟 [수정] Chat Room Member Link Table
+# 🌟 [수정] Chat Room Member Link Table (FK 복구)
 class ChatRoomMember(Base):
     __tablename__ = "chat_room_members"
     
     id = Column(Integer, primary_key=True, index=True)
-    # 🌟 ForeignKey 복구 (이제 chat_rooms.id도 String이므로 안전함)
+    # 🌟 ForeignKey 설정 (chat_rooms.id가 String이므로 문제 없음)
     room_id = Column(String, ForeignKey("chat_rooms.id"), index=True) 
     user_id = Column(Integer, ForeignKey("users.id"))
     joined_at = Column(DateTime, default=datetime.now)

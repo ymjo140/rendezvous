@@ -32,47 +32,57 @@ def get_db():
 async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
-        # 🌟 [DB 자동 패치] ID 컬럼들 String으로 변환
+        # 🌟 [DB 자동 패치 1] ID 컬럼 타입 변경 (Integer -> String)
+        # 각 작업마다 성공 시 바로 commit() 하여 롤백 방지
         try:
             db.execute(text("ALTER TABLE chat_rooms ALTER COLUMN id TYPE VARCHAR USING id::varchar"))
+            db.commit()
             print("✅ DB Fix: chat_rooms.id -> VARCHAR")
-        except Exception: db.rollback() 
+        except Exception: db.rollback()
 
         try:
             db.execute(text("ALTER TABLE chat_room_members ALTER COLUMN room_id TYPE VARCHAR USING room_id::varchar"))
+            db.commit()
             print("✅ DB Fix: chat_room_members.room_id -> VARCHAR")
         except Exception: db.rollback() 
             
         try:
             db.execute(text("ALTER TABLE messages ALTER COLUMN room_id TYPE VARCHAR USING room_id::varchar"))
+            db.commit()
             print("✅ DB Fix: messages.room_id -> VARCHAR")
         except Exception: db.rollback()
 
-        # 🌟 [위치 정보 컬럼 추가]
+        # 🌟 [DB 자동 패치 2] 유저 위치 정보 컬럼 추가
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN location_name VARCHAR DEFAULT '서울 시청'"))
+            db.commit()
             print("✅ DB Update: location_name added")
         except Exception: db.rollback()
 
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN lat FLOAT DEFAULT 37.5665"))
+            db.commit()
+            print("✅ DB Update: lat added")
         except Exception: db.rollback()
 
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN lng FLOAT DEFAULT 126.9780"))
+            db.commit()
+            print("✅ DB Update: lng added")
         except Exception: db.rollback()
 
+        # 🌟 [DB 자동 패치 3] 기타 컬럼
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN gender VARCHAR DEFAULT 'unknown'"))
+            db.commit()
         except Exception: db.rollback() 
 
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN age_group VARCHAR DEFAULT '20s'"))
+            db.commit()
         except Exception: db.rollback() 
         
-        db.commit()
-
-        # 데이터 초기화 (기존 코드)
+        # 데이터 초기화
         if db.query(models.AvatarItem).count() == 0:
             print("🛍️ [초기화] 아바타 아이템 주입...")
             items = [
@@ -140,29 +150,21 @@ app.include_router(coins.router)
 def read_root():
     return {"status": "WeMeet API Running 🚀"}
 
-# 채팅방 참여 API
 @app.post("/api/communities/{room_id}/join")
 def join_community(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     existing = db.query(models.ChatRoomMember).filter(
         models.ChatRoomMember.room_id == room_id,
         models.ChatRoomMember.user_id == current_user.id
     ).first()
+    if existing: return {"message": "Already joined"}
     
-    if existing:
-        return {"message": "Already joined"}
-        
-    new_member = models.ChatRoomMember(room_id=room_id, user_id=current_user.id)
-    db.add(new_member)
+    db.add(models.ChatRoomMember(room_id=room_id, user_id=current_user.id))
     db.commit()
     return {"message": "Joined successfully"}
 
-# 일정 조회 API
 @app.get("/api/chat/rooms/{room_id}/available-dates")
 def get_available_dates_for_room(room_id: str, db: Session = Depends(get_db)):
-    room_members = db.query(models.ChatRoomMember).filter(
-        models.ChatRoomMember.room_id == room_id
-    ).all()
-    
+    room_members = db.query(models.ChatRoomMember).filter(models.ChatRoomMember.room_id == room_id).all()
     member_ids = [m.user_id for m in room_members]
     today = datetime.now().date()
     recommended_slots = []
@@ -173,28 +175,19 @@ def get_available_dates_for_room(room_id: str, db: Session = Depends(get_db)):
         day_of_week = target_date.weekday()
         
         base_score = 90 if day_of_week >= 5 else 70 
-        
         conflicts = 0
         if member_ids:
             events = db.query(models.Event).filter(
                 models.Event.user_id.in_(member_ids), 
                 models.Event.date == date_str
             ).all()
-            
             for e in events:
                 try:
                     h = int(e.time.split(":")[0])
                     if 18 <= h <= 21: conflicts += 1
                 except: pass
-
         final_score = base_score - (conflicts * 30)
-        
-        if conflicts == 0: 
-            label = "🔥 모두 가능"
-            final_score += 10 
-        else: 
-            label = f"{conflicts}명 불가능"
-
+        label = "🔥 모두 가능" if conflicts == 0 else f"{conflicts}명 불가능"
         recommended_slots.append({
             "fullDate": date_str,
             "displayDate": f"{target_date.month}/{target_date.day} ({['월','화','수','목','금','토','일'][day_of_week]})",
@@ -202,16 +195,10 @@ def get_available_dates_for_room(room_id: str, db: Session = Depends(get_db)):
             "label": label,
             "score": final_score
         })
-
     recommended_slots.sort(key=lambda x: x['score'], reverse=True)
     return recommended_slots
 
 @app.get("/api/b2b/demand-forecast")
-def get_b2b_forecast(
-    region: str = "강남", 
-    days: int = 7, 
-    db: Session = Depends(get_db)
-):
+def get_b2b_forecast(region: str = "강남", days: int = 7, db: Session = Depends(get_db)):
     engine = DemandIntelligenceEngine(db)
-    result = engine.get_future_demand(region, days)
-    return result
+    return engine.get_future_demand(region, days)
