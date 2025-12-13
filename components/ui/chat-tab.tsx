@@ -42,8 +42,8 @@ const formatDate = (dateStr: string) => {
     return `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
 };
 
-// 🌟 [핵심] 투표 및 확정 카드 컴포넌트
-const VoteCard = ({ data, messageId, roomId, onConfirm }: { data: any, messageId: number, roomId: string, onConfirm: () => void }) => {
+// 🌟 [핵심 수정] 투표 및 확정 카드 컴포넌트 (API 연동 추가됨)
+const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId: number, roomId: string, onRefresh: () => void }) => {
     const [votes, setVotes] = useState(data.vote_count || 0);
     const [voted, setVoted] = useState(false);
     const [confirmLoading, setConfirmLoading] = useState(false);
@@ -93,7 +93,7 @@ const VoteCard = ({ data, messageId, roomId, onConfirm }: { data: any, messageId
                     category: data.place.category
                 })
             });
-            onConfirm(); 
+            onRefresh(); // 목록 갱신
         } catch (e) {
             alert("확정 처리 중 오류가 발생했습니다.");
         } finally {
@@ -130,7 +130,7 @@ const VoteCard = ({ data, messageId, roomId, onConfirm }: { data: any, messageId
                 <Button 
                     variant="outline" 
                     size="sm"
-                    className={`flex-1 h-9 text-xs ${voted ? "bg-purple-50 text-purple-700 border-purple-200" : "hover:bg-gray-50"}`}
+                    className={`flex-1 h-9 text-xs ${voted ? "bg-purple-100 text-purple-700 border-purple-200" : "hover:bg-gray-50"}`}
                     onClick={handleVote}
                 >
                     <ThumbsUp className="w-3 h-3 mr-1.5"/> {voted ? "투표완료" : "좋아요"}
@@ -232,6 +232,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
             })
 
             if(res.ok) {
+                // 🌟 [수정됨] alert 제거하고 즉시 새로고침
                 onRefresh(); 
                 onClose();
             } else {
@@ -654,7 +655,7 @@ export function ChatTab() {
                             const jsonContent = JSON.parse(msg.content)
                             // 🌟 [핵심] 투표 카드 렌더링 (messageId와 onRefresh 전달)
                             if (jsonContent.type === "vote_card") {
-                                content = <VoteCard data={jsonContent} messageId={msg.id} roomId={activeRoom.id} onConfirm={fetchMessages} />
+                                content = <VoteCard data={jsonContent} messageId={msg.id} roomId={activeRoom.id} onRefresh={fetchMessages} />
                             } else if (jsonContent.text) {
                                 content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{jsonContent.text}</div>
                             } else {
@@ -666,7 +667,7 @@ export function ChatTab() {
                         return (
                             <div key={i} className={`flex gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                 {!isMe && <Avatar className="w-8 h-8 border border-white shadow-sm"><AvatarFallback className="text-[10px] bg-gray-100">{msg.name?.[0]}</AvatarFallback></Avatar>}
-                                <div className="max-w-[85%] flex flex-col">
+                                <div className="max-w-[85%] flex flex-col items-start">
                                     {!isMe && <div className="text-[10px] text-gray-500 mb-1 ml-1">{msg.name}</div>}
                                     {content}
                                     <div className={`text-[9px] text-gray-300 mt-1 ${isMe ? 'text-right mr-1' : 'ml-1'}`}>{msg.timestamp}</div>

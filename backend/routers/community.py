@@ -9,11 +9,12 @@ from datetime import datetime, timedelta
 
 import models
 from dependencies import get_db, get_current_user
+# 🌟 [필수] connection_manager.py가 같은 폴더나 상위에 있어야 함
 from connection_manager import manager
 
 router = APIRouter()
 
-# 🌟 [신규] 생성 요청용 스키마 (입력받을 것만 정의)
+# --- [Models] ---
 class CommunityCreate(BaseModel):
     title: str
     category: str
@@ -23,7 +24,6 @@ class CommunityCreate(BaseModel):
     description: str
     tags: List[str] = []
 
-# 응답용 스키마 (모든 정보 포함)
 class CommunitySchema(BaseModel):
     id: Optional[str] = None
     host_id: int
@@ -38,12 +38,30 @@ class CommunitySchema(BaseModel):
     current_members: List[Any] = []
     model_config = ConfigDict(from_attributes=True)
 
-class ChatRoomSchema(BaseModel): id: str; name: str; lastMessage: str; time: str; unread: int; isGroup: bool = True
-class ShareRequest(BaseModel): room_id: str; place_name: str; place_category: str; place_tags: List[str]
-class VoteRequest(BaseModel): message_id: int; vote_type: str 
-class ConfirmMeetingRequest(BaseModel): room_id: str; place_name: str; date_time: str 
+class ChatRoomSchema(BaseModel): 
+    id: str
+    name: str
+    lastMessage: str
+    time: str
+    unread: int
+    isGroup: bool = True
 
-# --- APIs ---
+class ShareRequest(BaseModel): 
+    room_id: str
+    place_name: str
+    place_category: str
+    place_tags: List[str]
+
+class VoteRequest(BaseModel): 
+    message_id: int
+    vote_type: str 
+
+class ConfirmMeetingRequest(BaseModel): 
+    room_id: str
+    place_name: str
+    date_time: str 
+
+# --- [Community APIs] ---
 
 @router.get("/api/communities", response_model=List[CommunitySchema])
 def get_communities(db: Session = Depends(get_db)):
@@ -60,15 +78,12 @@ def get_communities(db: Session = Depends(get_db)):
         ))
     return sorted(results, key=lambda x: x.date_time, reverse=True)
 
-# 🌟 [수정] 입력 모델을 CommunityCreate로 변경
 @router.post("/api/communities", response_model=CommunitySchema)
 def create_community(comm: CommunityCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     new_id = str(uuid4())
-    
-    # host_id는 입력받지 않고 토큰(current_user)에서 가져옴
     db_comm = models.Community(
         id=new_id, 
-        host_id=current_user.id, # 👈 여기서 자동 할당
+        host_id=current_user.id,
         title=comm.title, 
         category=comm.category, 
         location=comm.location, 
@@ -82,7 +97,6 @@ def create_community(comm: CommunityCreate, current_user: models.User = Depends(
     db.add(db_comm)
     db.commit()
     
-    # 응답 생성
     return CommunitySchema(
         id=new_id, host_id=current_user.id, title=comm.title, category=comm.category,
         location=comm.location, date_time=comm.date_time, max_members=comm.max_members,
@@ -102,6 +116,17 @@ def join_community(community_id: str, current_user: models.User = Depends(get_cu
         flag_modified(comm, "member_ids")
         db.commit()
     return {"message": "Joined", "status": "joined"}
+
+@router.delete("/api/communities/{community_id}")
+def delete_community(community_id: str, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    comm = db.query(models.Community).filter(models.Community.id == community_id).first()
+    if not comm: raise HTTPException(status_code=404, detail="Community not found")
+    if comm.host_id != current_user.id: raise HTTPException(status_code=403, detail="삭제 권한이 없습니다.")
+    db.delete(comm)
+    db.commit()
+    return {"message": "Successfully deleted"}
+
+# --- [Chat APIs] ---
 
 @router.get("/api/chat/rooms", response_model=List[ChatRoomSchema])
 def get_chat_rooms(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -156,7 +181,16 @@ def get_chat_history(room_id: str, db: Session = Depends(get_db)):
                 else: final_content = msg.content
             else: m_type = "text"; final_content = json.dumps({"type": "text", "text": msg.content})
         except: m_type = "text"; final_content = json.dumps({"type": "text", "text": msg.content})
-        results.append({ "user_id": msg.user_id, "name": sender.name if sender else "System", "avatar": "👤", "content": final_content, "type": m_type, "message_id": msg.id, "timestamp": msg.timestamp.strftime("%H:%M") })
+        
+        results.append({ 
+            "user_id": msg.user_id, 
+            "name": sender.name if sender else "System", 
+            "avatar": "👤", 
+            "content": final_content, 
+            "type": m_type, 
+            "message_id": msg.id, 
+            "timestamp": msg.timestamp.strftime("%H:%M") 
+        })
     return results
 
 class MessageRequest(BaseModel):
@@ -166,11 +200,10 @@ class MessageRequest(BaseModel):
 
 @router.post("/api/chat/message")
 async def send_message(req: MessageRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Format content
     if req.type == "text":
         save_content = json.dumps({"type": "text", "text": req.content})
     else:
-        save_content = req.content # Assume valid JSON string if not text type
+        save_content = req.content
     
     db_msg = models.Message(room_id=req.room_id, user_id=current_user.id, content=save_content, timestamp=datetime.now())
     db.add(db_msg); db.commit(); db.refresh(db_msg)
@@ -189,96 +222,127 @@ async def cast_vote(req: VoteRequest, current_user: models.User = Depends(get_cu
     if existing_vote: db.delete(existing_vote)
     else: db.add(models.Vote(message_id=req.message_id, user_id=current_user.id, vote_type=req.vote_type))
     db.commit()
+    
     count = db.query(models.Vote).filter(models.Vote.message_id == req.message_id).count()
     msg = db.query(models.Message).filter(models.Message.id == req.message_id).first()
-    if msg: await manager.broadcast({ "type": "vote_update", "message_id": req.message_id, "count": count }, msg.room_id)
+    
+    # 🌟 투표 결과 실시간 전파
+    if msg: 
+        # 메시지 내용을 파싱해서 vote_count 업데이트 후 재저장
+        try:
+            content_data = json.loads(msg.content)
+            content_data["vote_count"] = count
+            msg.content = json.dumps(content_data)
+            db.commit()
+        except: pass
+        
+        await manager.broadcast({ "type": "vote_update", "message_id": req.message_id, "count": count }, msg.room_id)
+        
     return {"count": count}
 
+# 🌟 [확정 API] - 캘린더 연동 핵심
 @router.post("/api/chat/confirm")
 async def confirm_meeting(req: ConfirmMeetingRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     room = db.query(models.Community).filter(models.Community.id == req.room_id).first()
     if not room: raise HTTPException(404, "Room not found")
-    member_ids = room.member_ids or []; created_count = 0
+    
+    member_ids = room.member_ids or []
+    
+    # 1. 캘린더(Event) 등록
     for uid in member_ids:
-        try: dt_obj = datetime.strptime(req.date_time, "%Y-%m-%d %H:%M"); date_str = dt_obj.strftime("%Y-%m-%d"); time_str = dt_obj.strftime("%H:%M")
-        except: now = datetime.now() + timedelta(days=1); date_str = now.strftime("%Y-%m-%d"); time_str = "19:00"
-        new_event = models.Event(id=str(uuid4()), user_id=uid, title=f"[{room.title}] 모임", date=date_str, time=time_str, duration_hours=2.0, location_name=req.place_name, purpose="약속")
-        db.add(new_event); created_count += 1
+        try: 
+            dt_obj = datetime.strptime(req.date_time, "%Y-%m-%d %H:%M")
+            date_str = dt_obj.strftime("%Y-%m-%d")
+            time_str = dt_obj.strftime("%H:%M")
+        except: 
+            # 날짜 형식이 안 맞으면 임시로 내일 저녁으로
+            now = datetime.now() + timedelta(days=1)
+            date_str = now.strftime("%Y-%m-%d")
+            time_str = "19:00"
+            
+        new_event = models.Event(
+            id=str(uuid4()), 
+            user_id=uid, 
+            title=f"[{room.title}] 모임", 
+            date=date_str, 
+            time=time_str, 
+            duration_hours=2.0, 
+            location_name=req.place_name, 
+            purpose="약속"
+        )
+        db.add(new_event)
+        
     db.commit()
-    system_msg_content = json.dumps({ "type": "system", "text": f"✅ 약속이 확정되었습니다!\n장소: {req.place_name}\n일시: {req.date_time}\n(캘린더에 자동 등록됨)" })
+    
+    # 2. 시스템 알림 메시지 전송
+    system_msg_content = json.dumps({ 
+        "type": "system", 
+        "text": f"✅ 약속이 확정되었습니다!\n장소: {req.place_name}\n일시: {req.date_time}\n(참여자 전원 캘린더에 자동 등록됨)" 
+    }, ensure_ascii=False)
+    
     db_msg = models.Message(room_id=req.room_id, user_id=current_user.id, content=system_msg_content, timestamp=datetime.now())
-    db.add(db_msg); db.commit()
-    await manager.broadcast({ "user_id": 0, "name": "System", "avatar": "🤖", "content": system_msg_content, "type": "system", "timestamp": datetime.now().strftime("%H:%M") }, req.room_id)
+    db.add(db_msg)
+    db.commit()
+    
+    await manager.broadcast({ 
+        "user_id": 0, "name": "System", "avatar": "🤖", 
+        "content": system_msg_content, "type": "system", 
+        "timestamp": datetime.now().strftime("%H:%M") 
+    }, req.room_id)
+    
     return {"message": "Confirmed"}
+
+@router.post("/api/chat/rooms/{room_id}/leave")
+def leave_chat_room(room_id: str, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    comm = db.query(models.Community).filter(models.Community.id == room_id).first()
+    if not comm: raise HTTPException(404, "Room not found")
+    
+    members = list(comm.member_ids) if comm.member_ids else []
+    if current_user.id in members:
+        members.remove(current_user.id)
+        comm.member_ids = members
+        flag_modified(comm, "member_ids")
+        db.commit()
+        return {"message": "Left", "status": "left"}
+    raise HTTPException(400, "User not in room")
 
 @router.websocket("/ws/{room_id}/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: int, db: Session = Depends(get_db)):
     await manager.connect(websocket, room_id)
-    history = db.query(models.Message).filter(models.Message.room_id == room_id).order_by(models.Message.timestamp).all()
+    
+    # 접속 시 히스토리 전송 (선택 사항 - 클라이언트가 API로 조회하면 생략 가능하지만, 여기선 보냄)
+    history = db.query(models.Message).filter(models.Message.room_id == room_id).order_by(models.Message.timestamp).limit(50).all()
     for msg in history:
         sender = db.query(models.User).filter(models.User.id == msg.user_id).first()
-        vote_count = db.query(models.Vote).filter(models.Vote.message_id == msg.id).count()
-        try: 
-            cdata = json.loads(msg.content)
-            if isinstance(cdata, dict):
-                m_type = cdata.get("type", "text")
-                if m_type == "vote_card": cdata["vote_count"] = vote_count; final_content = json.dumps(cdata)
-                else: final_content = msg.content
-            else: m_type = "text"; final_content = json.dumps({"type": "text", "text": msg.content})
-        except: m_type = "text"; final_content = json.dumps({"type": "text", "text": msg.content})
-        await websocket.send_json({ "user_id": msg.user_id, "name": sender.name if sender else "System", "avatar": "👤", "content": final_content, "type": m_type, "message_id": msg.id, "timestamp": msg.timestamp.strftime("%H:%M") })
+        try: content_json = json.loads(msg.content)
+        except: content_json = {"type": "text", "text": msg.content}
+        
+        await websocket.send_json({ 
+            "user_id": msg.user_id, "name": sender.name if sender else "System", "avatar": "👤", 
+            "content": json.dumps(content_json), "type": content_json.get("type", "text"), 
+            "message_id": msg.id, "timestamp": msg.timestamp.strftime("%H:%M") 
+        })
+        
     try:
         while True:
             payload = await websocket.receive_json()
             msg_type = payload.get('type', 'text')
-            if msg_type == 'text': save_content = json.dumps({"type": "text", "text": payload.get('content', '')})
-            else: save_content = json.dumps(payload)
+            
+            if msg_type == 'text': 
+                save_content = json.dumps({"type": "text", "text": payload.get('content', '')})
+            else: 
+                save_content = json.dumps(payload)
+            
             db_msg = models.Message(room_id=room_id, user_id=user_id, content=save_content, timestamp=datetime.now())
             db.add(db_msg); db.commit(); db.refresh(db_msg)
+            
             sender = db.query(models.User).filter(models.User.id == user_id).first()
-            await manager.broadcast({ "user_id": user_id, "name": sender.name, "avatar": "👤", "content": save_content, "type": msg_type, "message_id": db_msg.id, "timestamp": datetime.now().strftime("%H:%M") }, room_id)
-    except WebSocketDisconnect: manager.disconnect(websocket, room_id)
-
-@router.post("/api/chat/rooms/{room_id}/leave")
-def leave_chat_room(
-    room_id: str, 
-    current_user: models.User = Depends(get_current_user), 
-    db: Session = Depends(get_db)
-):
-    # 1. 채팅방(커뮤니티) 찾기 (UUID 문자열이므로 str 타입 사용)
-    comm = db.query(models.Community).filter(models.Community.id == room_id).first()
-    if not comm:
-        raise HTTPException(status_code=404, detail="Chat room not found")
-
-    # 2. 멤버 목록 확인 및 제거
-    # SQLAlchemy의 ARRAY 타입이나 JSON 타입 리스트를 수정할 때는 list()로 복사 후 수정해야 함
-    members = list(comm.member_ids) if comm.member_ids else []
-    
-    if current_user.id in members:
-        members.remove(current_user.id)
-        comm.member_ids = members
-        flag_modified(comm, "member_ids") # 변경 사항을 ORM에 알림
-        db.commit()
-        return {"message": "Successfully left the chat room", "status": "left"}
-    
-    raise HTTPException(status_code=400, detail="User is not in the room")
-@router.delete("/api/communities/{community_id}")
-def delete_community(
-    community_id: str, 
-    current_user: models.User = Depends(get_current_user), 
-    db: Session = Depends(get_db)
-):
-    # 1. 모임 찾기
-    comm = db.query(models.Community).filter(models.Community.id == community_id).first()
-    if not comm:
-        raise HTTPException(status_code=404, detail="Community not found")
-
-    # 2. 권한 확인 (작성자 본인인지?)
-    if comm.host_id != current_user.id:
-        raise HTTPException(status_code=403, detail="삭제 권한이 없습니다. (작성자만 삭제 가능)")
-
-    # 3. 삭제 수행
-    db.delete(comm)
-    db.commit()
-    
-    return {"message": "Successfully deleted"}
+            
+            await manager.broadcast({ 
+                "user_id": user_id, "name": sender.name, "avatar": "👤", 
+                "content": save_content, "type": msg_type, 
+                "message_id": db_msg.id, "timestamp": datetime.now().strftime("%H:%M") 
+            }, room_id)
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, room_id)
