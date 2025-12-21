@@ -1,18 +1,13 @@
 import math
 import requests
-from typing import List, Dict
-from sqlalchemy.orm import Session
-from database import SessionLocal
-import models
+from ..core.config import settings
 
 class TransportEngine:
-    # ODsay API Key (발급받은 키 확인)
-    ODSAY_API_KEY = "ILj4gNSd6U8ZTMlQ52YyxA" # 혹은 os.getenv("ODSAY_API_KEY")
     ODSAY_URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
-
-    # 🌟 [대규모 확장] 서울/경기/인천 주요 거점 및 환승역 좌표 DB
+    
+    # 🌟 서울/경기/인천 주요 거점 및 환승역 (확장된 리스트 유지)
     SEOUL_HOTSPOTS = [
-        # --- 1호선 ---
+         # --- 1호선 ---
         {"name": "서울역", "lat": 37.5559, "lng": 126.9723, "lines": [1, 4, "공항", "KTX"]},
         {"name": "시청", "lat": 37.5657, "lng": 126.9769, "lines": [1, 2]},
         {"name": "종각", "lat": 37.5702, "lng": 126.9831, "lines": [1]},
@@ -224,124 +219,26 @@ class TransportEngine:
         {"name": "의정부", "lat": 37.7386, "lng": 127.0460, "lines": [1]}
     ]
 
-    # 👇 [복구됨] build_cache.py가 호출하는 원본 함수
     @staticmethod
-    def get_transit_time(start_lat, start_lng, end_lat, end_lng):
-        """ODsay API를 통해 대중교통 소요 시간(분)을 가져옵니다. (최단 경로 기준)"""
+    def get_transit_time(sx, sy, ex, ey):
+        """ODsay API를 사용하여 대중교통 소요 시간(분)을 반환"""
+        if not settings.ODSAY_API_KEY:
+            return None 
+
+        params = {
+            "SX": sx, "SY": sy, "EX": ex, "EY": ey,
+            "apiKey": settings.ODSAY_API_KEY
+        }
         try:
-            params = {
-                "SX": start_lng, "SY": start_lat,
-                "EX": end_lng, "EY": end_lat,
-                "apiKey": TransportEngine.ODSAY_API_KEY,
-            }
-            # API 호출
-            response = requests.get(TransportEngine.ODSAY_URL, params=params, timeout=3)
-            
-            if response.status_code == 200:
-                data = response.json()
+            res = requests.get(TransportEngine.ODSAY_URL, params=params, timeout=3)
+            if res.status_code == 200:
+                data = res.json()
                 if "result" in data and "path" in data["result"]:
-                    paths = data["result"]["path"]
-                    # 최단 시간 선택
-                    min_time = min(p["info"]["totalTime"] for p in paths)
-                    return min_time
-                    
-        except Exception as e:
-            # 에러 발생 시 로그 찍고 백업 로직으로 넘어감
-            print(f"⚠️ ODsay Error: {e}")
+                    # 최단 시간 경로 반환
+                    best_path = min(data["result"]["path"], key=lambda x: x["info"]["totalTime"])
+                    return best_path["info"]["totalTime"]
+        except:
             pass
-        
-        # API 실패 또는 경로 없음 시: 직선거리 기반 추정 (백업 로직)
-        dist_m = TransportEngine._haversine(start_lat, start_lng, end_lat, end_lng)
-        # 1km당 2분 + 기본 15분 (교통 체증 고려)
-        return int((dist_m / 1000) * 2) + 15
-
-    # 👇 [캐시 로직] meetings.py가 호출하는 함수
-    @staticmethod
-    def get_transit_time_with_cache(start_name, end_name, start_lat, start_lng, end_lat, end_lng):
-        """
-        1순위: DB 캐시 조회
-        2순위: 실시간 API 호출 (그리고 DB 저장)
-        3순위: 직선 거리 계산
-        """
-        if start_name == end_name:
-            return 0
-        db = SessionLocal()
-        
-        # 1. DB 캐시 확인
-        cache_id = f"{start_name}_{end_name}"
-        cached = db.query(models.TravelTimeCache).filter_by(id=cache_id).first()
-        
-        if cached:
-            db.close()
-            return cached.total_time
-
-        # 2. 캐시 없으면 API 호출
-        print(f"📡 API 호출: {start_name} -> {end_name}")
-        real_time = TransportEngine.get_transit_time(start_lat, start_lng, end_lat, end_lng)
-        
-        # 결과가 유효하면 DB에 저장 (다음 번을 위해)
-        if real_time and real_time < 200: # 200분 미만인 유효값만
-            try:
-                new_cache = models.TravelTimeCache(
-                    id=cache_id, start_name=start_name, end_name=end_name, total_time=real_time
-                )
-                db.add(new_cache)
-                db.commit()
-            except: pass
-        
-        db.close()
-        return real_time
-
-    # 👇 [2명일 때] 시간상 중간 지점 찾기
-    @staticmethod
-    def get_time_based_midpoint(sx, sy, ex, ey):
-        try:
-            url = "https://api.odsay.com/v1/api/searchPubTransPathT"
-            params = {
-                "SX": sx, "SY": sy, "EX": ex, "EY": ey,
-                "apiKey": TransportEngine.ODSAY_API_KEY,
-            }
-            # API 호출
-            response = requests.get(url, params=params, timeout=5)
-            if response.status_code != 200: return None
-
-            data = response.json()
-            if "result" not in data or "path" not in data["result"]: return None
-
-            # 1. 최적 경로 (첫 번째 경로) 가져오기
-            best_path = data["result"]["path"][0]
-            total_time = best_path["info"]["totalTime"]
-            target_time = total_time / 2 
-
-            current_time = 0
-            midpoint_coords = None
-
-            # 2. 경로의 세부 구간(subPath)을 순회하며 중간 지점 찾기
-            for sub in best_path["subPath"]:
-                section_time = sub["sectionTime"]
-                
-                # 시간이 누적되어 목표 시간(절반)을 넘어서는 순간의 구간(정류장)을 찾음
-                if current_time + section_time >= target_time:
-                    # 이 구간이 대중교통(지하철/버스)라면 해당 역 좌표 반환
-                    if sub["trafficType"] in [1, 2]: # 1:지하철, 2:버스
-                        # 구간의 시작점(정류장) 좌표 사용
-                        if "startY" in sub and "startX" in sub:
-                            midpoint_coords = (float(sub["startY"]), float(sub["startX"]))
-                            return midpoint_coords
-                    else:
-                        pass 
-                
-                current_time += section_time
-
-            # 반복문에서 못 찾았으면(마지막 도보 등), 경로의 마지막 하차 지점이라도 반환
-            if not midpoint_coords:
-                last_sub = best_path["subPath"][-2] if len(best_path["subPath"]) > 1 else best_path["subPath"][0]
-                if "endY" in last_sub:
-                    return (float(last_sub["endY"]), float(last_sub["endX"]))
-
-        except Exception as e:
-            return None
-        
         return None
 
     @staticmethod
@@ -355,15 +252,43 @@ class TransportEngine:
         return R * c * 1000 # 미터 단위
 
     @staticmethod
-    def get_nearest_hotspot(lat: float, lng: float) -> str:
+    def get_nearest_hotspot(lat, lng):
+        """특정 위치에서 가장 가까운 핫스팟 찾기 (단일 사용자용)"""
         nearest = None
         min_dist = float('inf')
-        
         for spot in TransportEngine.SEOUL_HOTSPOTS:
-            dist = TransportEngine._haversine(lat, lng, spot['lat'], spot['lng'])
+            dist = TransportEngine._haversine(lat, lng, spot["lat"], spot["lng"])
             if dist < min_dist:
                 min_dist = dist
                 nearest = spot
+        return nearest, min_dist
+
+    @staticmethod
+    def find_best_midpoint(users_locations: list):
+        """
+        [핵심 기능] 다수 사용자의 위치를 기반으로 이동 시간 총합이 가장 적은 최적의 장소 추천
+        """
+        best_spot = None
+        min_total_time = float('inf')
+
+        # 모든 핫스팟을 순회하며 시뮬레이션
+        for spot in TransportEngine.SEOUL_HOTSPOTS:
+            total_time = 0
+            
+            for u_loc in users_locations:
+                # 1. ODsay API로 대중교통 시간 조회
+                time_cost = TransportEngine.get_transit_time(u_loc['lng'], u_loc['lat'], spot['lng'], spot['lat'])
+                
+                # 2. 실패 시 하버사인 거리로 추정 (1km당 15분 잡고 계산)
+                if time_cost is None:
+                    dist = TransportEngine._haversine(u_loc['lat'], u_loc['lng'], spot['lat'], spot['lng'])
+                    time_cost = (dist / 1000) * 15 
+                
+                total_time += time_cost
+            
+            # 최소 시간 갱신
+            if total_time < min_total_time:
+                min_total_time = total_time
+                best_spot = spot
         
-        if nearest and min_dist < 5000: return nearest['name']
-        return "중간지점"
+        return best_spot
