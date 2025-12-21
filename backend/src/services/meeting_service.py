@@ -10,11 +10,10 @@ from ..domain import models
 from ..schemas import meeting as schemas
 from ..repositories.meeting_repository import MeetingRepository
 
-# 외부 의존성
+# 외부 의존성 및 Mock 처리
 try:
     from ..core.data_provider import RealDataProvider
     from ..core.connection_manager import manager
-    # TransportEngine이 core에 있다면 import, 없다면 하버사인 거리 계산용 임시 클래스 사용
     try:
         from ..core.transport import TransportEngine
     except ImportError:
@@ -28,12 +27,10 @@ try:
                 a = math.sin(dLat/2) * math.sin(dLat/2) + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dLon/2) * math.sin(dLon/2)
                 c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
                 return R * c * 1000
-            
             @staticmethod
             def find_best_midpoint(locs): return None
 
 except ImportError:
-    # 임시 Mock (파일 이동 전 에러 방지용)
     class RealDataProvider:
         def __init__(self, *args): pass
         def search_places_all_queries(self, *args): return []
@@ -43,17 +40,13 @@ except ImportError:
         async def broadcast(self, m, r): pass
     manager = MockManager()
 
-# 데이터 제공자 초기화 (설정 파일의 키 사용)
-data_provider = RealDataProvider(
-    settings.NAVER_SEARCH_ID, settings.NAVER_SEARCH_SECRET,
-    settings.NAVER_MAP_ID, settings.NAVER_MAP_SECRET
-)
+# 🌟 [수정] 인자 없이 생성 (Data Provider 내부에서 settings 참조)
+data_provider = RealDataProvider()
 
 class MeetingService:
     def __init__(self):
         self.repo = MeetingRepository()
 
-    # --- 헬퍼 함수 ---
     def _find_best_time_slot(self, db: Session, member_ids: List[int]) -> str:
         today = datetime.now().date()
         for i in range(14):
@@ -80,7 +73,6 @@ class MeetingService:
             }, room_id)
         except: pass
 
-    # 🌟 [복구됨] 홈 탭용 단순 장소 추천 메서드
     def get_recommendations_direct(self, db: Session, req: schemas.RecommendRequest):
         # 1. 중심 위치 설정
         c_lat, c_lng = req.current_lat, req.current_lng
@@ -90,17 +82,16 @@ class MeetingService:
                 c_lat, c_lng = float(parts[0]), float(parts[1])
             except: pass
 
-        # 2. DB에서 1차 검색
+        # 2. DB 검색
         places = self.repo.search_places_in_range(db, c_lat, c_lng, req.purpose)
 
-        # 3. 데이터가 부족하면 외부 API(네이버) 호출
+        # 3. 외부 API 검색 (데이터 부족 시)
         if len(places) < 5:
-            # 검색어 조합 (예: "강남역 식사 맛집")
             search_query = f"{req.location_name or '주변'} {req.purpose}"
             if req.user_selected_tags:
                 search_query += f" {req.user_selected_tags[0]}"
             
-            # data_provider에 search_places 메서드가 없으면 search_places_all_queries 사용
+            # 메서드 존재 여부 확인 후 호출
             if hasattr(data_provider, 'search_places'):
                 external_places = data_provider.search_places(search_query, display=10)
             else:
@@ -109,10 +100,8 @@ class MeetingService:
             for p in external_places:
                 if not self.repo.get_place_by_name(db, p.name):
                     try:
-                        # 좌표 처리 (리스트거나 개별 값이거나)
                         p_lat = p.location[0] if isinstance(p.location, (list, tuple)) else p.location
-                        p_lng = p.location[1] if isinstance(p.location, (list, tuple)) else 0.0 # 임시
-
+                        p_lng = p.location[1] if isinstance(p.location, (list, tuple)) else 0.0
                         self.repo.create_place(
                             db, p.name, p.category or req.purpose, 
                             p_lat, p_lng, 
@@ -122,31 +111,27 @@ class MeetingService:
             
             try: db.commit()
             except: db.rollback()
-            
             places = self.repo.search_places_in_range(db, c_lat, c_lng, req.purpose)
 
         # 4. 점수 산정
         scored = []
         for p in places:
             score = (p.wemeet_rating or 0) * 10
-            
             dist = TransportEngine._haversine(c_lat, c_lng, p.lat, p.lng)
             if dist < 500: score += 20
             elif dist < 1000: score += 10
             elif dist > 3000: score -= 20
             
             if p.tags and req.user_selected_tags:
-                # 태그가 리스트인지 확인
                 p_tags = p.tags if isinstance(p.tags, list) else []
                 matched = len(set(p_tags) & set(req.user_selected_tags))
                 score += matched * 15
-            
             scored.append((score, p))
         
         scored.sort(key=lambda x: x[0], reverse=True)
         top_places = [item[1] for item in scored[:5]]
 
-        # 5. 프론트엔드 포맷 변환
+        # 5. 포맷 변환
         result = []
         for place in top_places:
             result.append({
@@ -160,13 +145,11 @@ class MeetingService:
                 "image": None,
                 "score": 0.0
             })
-            
         return result
 
-    # --- 메인 로직 (웹소켓 흐름용) ---
     async def process_background_recommendation(self, req: schemas.MeetingFlowRequest, db: Session):
         try:
-            await self._send_system_msg(req.room_id, "🤖 멤버 정보와 저장된 위치를 불러옵니다...")
+            await self._send_system_msg(req.room_id, "🤖 멤버들의 위치와 일정을 분석 중입니다...")
             
             room_members = self.repo.get_room_members(db, req.room_id)
             member_ids = [m.user_id for m in room_members]
@@ -187,10 +170,8 @@ class MeetingService:
                     c_lat, c_lng = valid_users[0].lat, valid_users[0].lng
                     location_desc = f"{valid_users[0].name}님의 위치"
                 else:
-                    # TransportEngine이 있으면 사용
                     user_locs = [{"lat": u.lat, "lng": u.lng} for u in valid_users]
                     best_spot = TransportEngine.find_best_midpoint(user_locs)
-                    
                     if best_spot:
                         c_lat, c_lng = best_spot['lat'], best_spot['lng']
                         location_desc = f"{len(valid_users)}명의 중간({best_spot['name']})"
@@ -223,7 +204,6 @@ class MeetingService:
                         except: continue
                 try: db.commit()
                 except: db.rollback()
-                
                 places = self.repo.search_places_in_range(db, c_lat, c_lng, req.purpose)
 
             scored = []
@@ -249,7 +229,6 @@ class MeetingService:
                 }, ensure_ascii=False)
                 
                 msg = self.repo.create_system_message(db, req.room_id, content)
-                
                 await manager.broadcast({
                     "id": msg.id, "room_id": msg.room_id, "user_id": 1, "name": "AI 매니저", "avatar": "🤖",
                     "content": msg.content, "timestamp": str(msg.timestamp)
@@ -261,13 +240,11 @@ class MeetingService:
             print(f"Background Error: {e}")
             await self._send_system_msg(req.room_id, "⚠️ 오류가 발생했습니다.")
 
-    # --- API 핸들러 ---
     async def run_meeting_flow(self, db: Session, req: schemas.MeetingFlowRequest, background_tasks: BackgroundTasks):
         if req.room_id:
             background_tasks.add_task(self.process_background_recommendation, req, db)
             return {"status": "accepted"}
-        else:
-            return {"cards": [], "recommendations": []}
+        return {"cards": [], "recommendations": []}
 
     async def vote_meeting(self, db: Session, req: schemas.VoteRequest):
         msg = self.repo.get_message_by_id(db, req.message_id)
@@ -276,7 +253,6 @@ class MeetingService:
             data["vote_count"] = data.get("vote_count", 0) + 1
             msg.content = json.dumps(data, ensure_ascii=False)
             db.commit()
-            
             await manager.broadcast({ 
                 "id": msg.id, "room_id": msg.room_id, "user_id": msg.user_id, 
                 "content": msg.content, "timestamp": str(msg.timestamp), 
@@ -308,10 +284,8 @@ class MeetingService:
             "name": "AI 매니저", "avatar": "🤖", "content": msg.content, 
             "timestamp": str(msg.timestamp) 
         }, req.room_id)
-        
         return {"status": "success"}
 
-    # --- 이벤트 관리 ---
     def create_event(self, db: Session, event: schemas.EventSchema):
         db_ev = self.repo.create_event(db, event)
         db.commit()
