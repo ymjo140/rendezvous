@@ -46,6 +46,79 @@ class MeetingService:
             }, room_id)
         except: pass
 
+    # 🌟 [신규 추가] 홈 탭용 단순 장소 추천 메서드
+    def get_recommendations_direct(self, db: Session, req: schemas.RecommendRequest):
+        # 1. 중심 위치 설정
+        c_lat, c_lng = req.current_lat, req.current_lng
+        if req.manual_locations:
+            try:
+                parts = req.manual_locations[0].split(',')
+                c_lat, c_lng = float(parts[0]), float(parts[1])
+            except:
+                pass
+
+        # 2. DB에서 1차 검색
+        places = self.repo.search_places_in_range(db, c_lat, c_lng, req.purpose)
+
+        # 3. 데이터가 부족하면 외부 API(네이버) 호출
+        if len(places) < 5:
+            search_query = f"{req.location_name or '주변'} {req.purpose}"
+            if req.user_selected_tags:
+                search_query += f" {req.user_selected_tags[0]}"
+            
+            external_places = data_provider.search_places(search_query, display=10)
+            
+            for p in external_places:
+                if not self.repo.get_place_by_name(db, p.name):
+                    try:
+                        self.repo.create_place(
+                            db, p.name, p.category or req.purpose, 
+                            p.location[0], p.location[1], 
+                            p.tags, 0.0
+                        )
+                    except: continue
+            
+            try: db.commit()
+            except: db.rollback()
+            
+            places = self.repo.search_places_in_range(db, c_lat, c_lng, req.purpose)
+
+        # 4. 점수 산정
+        scored = []
+        for p in places:
+            score = (p.wemeet_rating or 0) * 10
+            
+            dist = TransportEngine._haversine(c_lat, c_lng, p.lat, p.lng)
+            if dist < 500: score += 20
+            elif dist < 1000: score += 10
+            elif dist > 3000: score -= 20
+            
+            if p.tags and req.user_selected_tags:
+                matched = len(set(p.tags) & set(req.user_selected_tags))
+                score += matched * 15
+            
+            scored.append((score, p))
+        
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top_places = [item[1] for item in scored[:5]]
+
+        # 5. 프론트엔드 포맷 변환
+        result = []
+        for place in top_places:
+            result.append({
+                "place_id": place.id,
+                "name": place.name,
+                "category": place.category,
+                "address": place.address or "",
+                "lat": place.lat,
+                "lng": place.lng,
+                "tags": place.tags or [],
+                "image": None,
+                "score": 0.0
+            })
+            
+        return result
+
     async def process_background_recommendation(self, req: schemas.MeetingFlowRequest, db: Session):
         try:
             await self._send_system_msg(req.room_id, "🤖 멤버들의 위치와 일정을 분석 중입니다...")
