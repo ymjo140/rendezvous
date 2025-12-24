@@ -11,6 +11,15 @@ from ..dependencies import get_current_user
 router = APIRouter()
 meeting_service = MeetingService()
 
+# 🌟 [신규 추가] 지하철역 자동완성 API
+@router.get("/api/places/autocomplete")
+def autocomplete_hotspots(query: str = Query(..., min_length=1)):
+    """
+    입력된 검색어(예: '강남')가 포함된 지하철역/핫스팟 목록을 반환합니다.
+    (TransportEngine에 정의된 좌표 DB 사용)
+    """
+    return meeting_service.search_hotspots(query)
+
 # 🌟 [수정] 프론트엔드가 'lat', 'lng' 키를 사용하므로 키 이름 변경
 @router.get("/api/places/search")
 def search_places(query: str = Query(..., min_length=1), db: Session = Depends(get_db)):

@@ -266,7 +266,27 @@ class MeetingService:
                 "content": content, "timestamp": datetime.now().strftime("%H:%M")
             }, room_id)
         except: pass
-
+# 🌟 [신규 기능] 핫스팟(지하철역) 자동완성 검색
+    def search_hotspots(self, query: str):
+        if not query: return []
+        
+        results = []
+        # TransportEngine에 정의된 주요 역 리스트에서 검색
+        if hasattr(TransportEngine, 'SEOUL_HOTSPOTS'):
+            for spot in TransportEngine.SEOUL_HOTSPOTS:
+                # "강남" 입력 시 "강남역", "강남구청" 등 포함되는 것 모두 찾기
+                if query in spot['name']:
+                    results.append({
+                        "name": spot['name'],
+                        "lat": spot['lat'],
+                        "lng": spot['lng'],
+                        "lines": spot.get('lines', [])
+                    })
+        
+        # 이름 길이 순으로 정렬 (강남 -> 강남역 -> 강남구청 순으로 보기 좋게)
+        results.sort(key=lambda x: len(x['name']))
+        return results[:10] # 최대 10개까지만 반환
+    
     # 🌟 [핵심 수정] DB 카테고리 매핑 및 Mock 제거
     def get_recommendations_direct(self, db: Session, req: schemas.RecommendRequest):
         # 1. 기준 중심점 설정
