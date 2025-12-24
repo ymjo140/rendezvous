@@ -2,8 +2,8 @@ import requests
 import urllib.parse
 
 # 👇 여기에 네이버 클라우드에서 복사한 값을 직접 붙여넣으세요 (환경변수 X)
-client_id = "djsgmvkn5q"  # 사용자님이 알려주신 ID
-client_secret = "gvpXgJJzWmEoaxDJ2WdMXanIWIAukwp1a1rOV6Dr" # Secret 값 (gvpX...로 시작하는거)
+client_id = "9v6ryi96pr"  # 사용자님이 알려주신 ID
+client_secret = "SWzbnHxWxlEJLNAC0oRu58qkSrIXonCHAp6tAoO4" # Secret 값 (gvpX...로 시작하는거)
 
 headers = {
     "X-NCP-APIGW-API-KEY-ID": client_id,
