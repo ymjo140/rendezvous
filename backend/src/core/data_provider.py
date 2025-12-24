@@ -82,7 +82,7 @@ class RealDataProvider:
             
             try:
                 # 정확도순(random), 10개 검색
-                url = f"https://openapi.naver.com/v1/search/local.json?query={urllib.parse.quote(search_query)}&display=10&sort=random"
+                url = f"https://openapi.naver.com/v1/search/local.json?query={urllib.parse.quote(search_query)}&display=50&sort=random"
                 
                 res = requests.get(url, headers=self.search_headers)
                 if res.status_code == 200:

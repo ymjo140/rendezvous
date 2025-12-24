@@ -13,7 +13,7 @@ class MeetingRepository:
 # 🌟 [추가] 키워드로 장소 검색 (이름에 포함된 경우)
     def search_places_by_keyword(self, db: Session, keyword: str):
         # ILIKE로 대소문자 구분 없이 부분 일치 검색
-        return db.query(models.Place).filter(models.Place.name.ilike(f"%{keyword}%")).limit(10).all()
+        return db.query(models.Place).filter(models.Place.name.ilike(f"%{keyword}%")).limit(1000).all()
     def create_place(self, db: Session, name: str, category: str, lat: float, lng: float, tags: list, rating: float = 0.0):
         place = models.Place(name=name, category=category, lat=lat, lng=lng, tags=tags, wemeet_rating=rating)
         db.add(place)

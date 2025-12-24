@@ -131,7 +131,7 @@ class MeetingService:
                         score += matched * 15
                     scored.append((score, p))
                 scored.sort(key=lambda x: x[0], reverse=True)
-                top_places = [item[1] for item in scored[:5]]
+                top_places = [item[1] for item in scored[:50]]
 
                 for place in top_places:
                     formatted_places.append({
