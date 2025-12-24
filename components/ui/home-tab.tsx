@@ -73,7 +73,7 @@ export function HomeTab() {
   const [myLocation, setMyLocation] = useState<{lat: number, lng: number} | null>(null)
   const [myLocationInput, setMyLocationInput] = useState("위치 확인 중...")
   
-  const [manualInputs, setManualInputs] = useState<string[]>([""]); 
+  const [manualInputs, setManualInputs] = useState<{text: string, lat?: number, lng?: number}[]>([{ text: "" }]);
   const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
   const [includeMe, setIncludeMe] = useState(true);
 
@@ -277,22 +277,33 @@ export function HomeTab() {
     });
 
     // 3. 🌟 수동 입력 장소 (좌표 변환하여 경로에 추가)
-    // 수동 입력값들을 순회하며 좌표를 찾습니다.
-    for (const locName of manualInputs) {
-        if (!locName || locName.trim() === "") continue;
+    for (const input of manualInputs) {
+        // [수정 1] 객체의 .text 속성을 확인
+        if (!input.text || input.text.trim() === "") continue;
+
+        // [수정 2] 이미 좌표가 있으면(자동완성 선택) API 호출 없이 바로 추가
+        if (input.lat && input.lng) {
+            origins.push({
+                lat: input.lat,
+                lng: input.lng,
+                color: '#10B981', // 초록색
+                name: input.text
+            });
+            continue; // 다음 루프로 넘어감
+        }
+
+        // [수정 3] 좌표가 없으면(직접 타이핑) API로 검색
         try {
-            // API를 통해 텍스트 -> 좌표 변환 (검색 API 활용)
-            const res = await fetch(`${API_URL}/api/places/search?query=${locName}`);
+            const res = await fetch(`${API_URL}/api/places/search?query=${input.text}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.length > 0) {
-                    // 첫 번째 검색 결과를 해당 위치로 사용
                     const topHit = data[0];
                     origins.push({
                         lat: topHit.lat,
                         lng: topHit.lng,
-                        color: '#10B981', // 수동 입력은 초록색
-                        name: locName
+                        color: '#10B981',
+                        name: input.text
                     });
                 }
             }
@@ -380,15 +391,21 @@ export function HomeTab() {
   }, [currentDisplayRegion]);
 
   // API 호출
-  const fetchRecommendations = async (participants: any[], manualLocs: string[]) => {
+  const fetchRecommendations = async (participants: any[], manualLocs: {text: string, lat?: number, lng?: number}[]) => {
     setLoading(true);
     try {
       const allTags = Object.values(selectedFilters).flat();
       const usersToSend = participants.map(u => ({
         id: u.id || 0, name: u.name || "User", location: u.location || { lat: 37.5665, lng: 126.9780 }, preferences: u.preferences || {}
       }));
-      // 수동 위치는 백엔드에도 보내지만, 프론트에서 시각화할 때도 씁니다.
-      const validManualLocs = manualLocs.filter(loc => loc && loc.trim() !== "");
+
+      // 🌟 [핵심] 좌표가 있으면 "lat,lng" 문자열로 변환하여 전송 (백엔드가 인식함)
+      const validManualLocs = manualLocs
+            .filter(loc => loc.text && loc.text.trim() !== "")
+            .map(loc => {
+                if (loc.lat && loc.lng) return `${loc.lat},${loc.lng}`;
+                return loc.text;
+            });
       
       const response = await fetch(`${API_URL}/api/recommend`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -418,16 +435,26 @@ export function HomeTab() {
           const me = myProfile || { id: 0, name: "나", location: myLocation, preferences: {} };
           if (me.location) participants = [me, ...selectedFriends];
       }
-      const hasManualInput = manualInputs.some(txt => txt && txt.trim() !== "");
-      if (participants.length === 0 && !hasManualInput) { alert("출발지를 설정해주세요!"); return; }
-      fetchRecommendations(participants, manualInputs);
-  };
+      const hasManualInput = manualInputs.some(input => input.text && input.text.trim() !== "");
+    
+    if (participants.length === 0 && !hasManualInput) { alert("출발지를 설정해주세요!"); return; }
+    
+    fetchRecommendations(participants, manualInputs);
+};
 
   const handleManualInputChange = (idx: number, val: string) => { 
-      const newInputs = [...manualInputs]; newInputs[idx] = val; setManualInputs(newInputs); 
-  };
-  const addManualInput = () => setManualInputs([...manualInputs, ""]);
-  const removeManualInput = (idx: number) => setManualInputs(manualInputs.filter((_, i) => i !== idx));
+    const newInputs = [...manualInputs]; 
+    // 텍스트가 바뀌면 기존 좌표는 무효화 (사용자가 직접 수정했으므로)
+    newInputs[idx] = { ...newInputs[idx], text: val, lat: undefined, lng: undefined }; 
+    setManualInputs(newInputs); 
+};
+const handleManualSelect = (idx: number, place: any) => {
+    const newInputs = [...manualInputs];
+    newInputs[idx] = { text: place.name, lat: place.lat, lng: place.lng };
+    setManualInputs(newInputs);
+};
+const addManualInput = () => setManualInputs([...manualInputs, { text: "" }]);
+const removeManualInput = (idx: number) => setManualInputs(manualInputs.filter((_, i) => i !== idx));
   const toggleFriend = (friend: any) => { 
       if (selectedFriends.find(f => f.id === friend.id)) setSelectedFriends(prev => prev.filter(f => f.id !== friend.id)); else setSelectedFriends(prev => [...prev, friend]); 
   };
@@ -463,7 +490,9 @@ export function HomeTab() {
       drawPathsToTarget(p.location[0], p.location[1], currentDisplayRegion?.transit_info);
   };
 
-  const handleTopSearch = () => { if(searchQuery) fetchRecommendations([myProfile], [searchQuery]); }
+  const handleTopSearch = () => { 
+    if(searchQuery) fetchRecommendations([myProfile], [{ text: searchQuery }]); 
+}
   const currentFilters = PURPOSE_FILTERS[selectedPurpose];
 
   // --- Render ---
@@ -510,14 +539,20 @@ export function HomeTab() {
                 {includeMe && <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><span className="text-xl">👤</span><span className="flex-1 text-sm">{myLocationInput}</span><button onClick={()=>setIncludeMe(false)}><Trash2 className="w-4 h-4 text-gray-400"/></button></div>}
                 {selectedFriends.map(f => <div key={f.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><Avatar className="w-8 h-8"><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><span className="flex-1 text-sm">{f.name}</span><button onClick={()=>toggleFriend(f)}><X className="w-4 h-4 text-gray-400"/></button></div>)}
                 {manualInputs.map((val, i) => (
-                    <div key={i} className="flex items-start gap-3 p-2 bg-gray-50 rounded-xl relative z-50">
-                        <MapPin className="w-5 h-5 text-gray-400 mt-1.5"/>
-                        <div className="flex-1">
-                            <PlaceAutocomplete value={val} onChange={(v: string)=>handleManualInputChange(i, v)} placeholder="장소 입력 (예: 강남역)"/>
-                        </div>
-                        <button onClick={()=>removeManualInput(i)} className="mt-1"><Trash2 className="w-4 h-4 text-gray-400"/></button>
-                    </div>
-                ))}
+    <div key={i} className="flex items-start gap-3 p-2 bg-gray-50 rounded-xl relative z-50">
+        <MapPin className="w-5 h-5 text-gray-400 mt-1.5"/>
+        <div className="flex-1">
+            {/* 🌟 수정된 PlaceAutocomplete 연동 */}
+            <PlaceAutocomplete 
+                value={val.text} 
+                onChange={(v: string) => handleManualInputChange(i, v)} 
+                onSelect={(place: any) => handleManualSelect(i, place)}
+                placeholder="장소 입력 (예: 강남)"
+            />
+        </div>
+        <button onClick={() => removeManualInput(i)} className="mt-1"><Trash2 className="w-4 h-4 text-gray-400"/></button>
+    </div>
+))}
             </div>
             <div className="grid grid-cols-2 gap-2 mt-3">
                 <Button variant="outline" onClick={() => setIsFriendModalOpen(true)}><Users className="w-4 h-4 mr-2"/>친구</Button>
@@ -533,7 +568,15 @@ export function HomeTab() {
         {recommendations.length > 0 && (
             <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] max-h-[60vh] overflow-y-auto z-20">
                 <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4"/>
-                <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">추천 지역</h3><button onClick={()=>{setRecommendations([]); setManualInputs([""]);}} className="text-xs text-gray-400">다시 찾기</button></div>
+                <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">추천 지역</h3><button 
+    onClick={() => {
+        setRecommendations([]); 
+        setManualInputs([{ text: "" }]); 
+    }} 
+    className="text-xs text-gray-400"
+>
+    다시 찾기
+</button></div>
                 
                 {/* 지역 선택 탭 */}
                 <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
@@ -654,24 +697,56 @@ export function HomeTab() {
   )
 }
 
-function PlaceAutocomplete({ value, onChange, placeholder }: any) {
+function PlaceAutocomplete({ value, onChange, onSelect, placeholder }: any) {
     const [list, setList] = useState<any[]>([]);
+
     useEffect(() => {
-        if(value.length < 1) { setList([]); return; }
-        const t = setTimeout(async() => {
-            try { const res = await fetch(`${API_URL}/api/places/search?query=${value}`); if(res.ok) setList(await res.json()); } catch(e){}
+        if (!value || value.length < 1) { setList([]); return; }
+        
+        const t = setTimeout(async () => {
+            try {
+                // 🌟 [핵심 변경] 우리 서버의 자동완성 API 호출 (지하철역 등 핫스팟 검색)
+                const res = await fetch(`${API_URL}/api/places/autocomplete?query=${value}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setList(data);
+                }
+            } catch (e) {
+                console.error(e);
+            }
         }, 300);
         return () => clearTimeout(t);
     }, [value]);
+
     return (
         <div className="relative w-full">
-            <Input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className="h-8 text-sm bg-transparent border-none p-0 focus-visible:ring-0"/>
+            <Input 
+                value={value} 
+                onChange={e => onChange(e.target.value)} 
+                placeholder={placeholder} 
+                className="h-8 text-sm bg-transparent border-none p-0 focus-visible:ring-0"
+            />
             {list.length > 0 && (
-                <div className="relative z-[9999] bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-y-auto">
+                <div className="absolute left-0 right-0 top-full z-[9999] bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-y-auto">
                     {list.map((item, i) => (
-                        <div key={i} onClick={()=>{onChange(item.title); setList([])}} className="p-3 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0 border-gray-100 transition-colors">
-                            <div className="font-bold text-gray-800">{item.title}</div>
-                            <div className="text-xs text-gray-500 truncate">{item.address}</div>
+                        <div 
+                            key={i} 
+                            onClick={() => {
+                                // 🌟 클릭 시 상위 컴포넌트로 선택된 장소 정보(좌표 포함) 전달
+                                onSelect(item); 
+                                setList([]);
+                            }} 
+                            className="p-3 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0 border-gray-100 transition-colors flex justify-between items-center"
+                        >
+                            <div className="font-bold text-gray-800">
+                                {item.name} 
+                                {/* 호선 정보가 있으면 표시 */}
+                                {item.lines && item.lines.length > 0 && (
+                                    <span className="ml-2 text-[10px] font-normal text-gray-500 bg-gray-100 px-1 rounded">
+                                        {item.lines.join(",")}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>
