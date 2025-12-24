@@ -727,30 +727,29 @@ function PlaceAutocomplete({ value, onChange, onSelect, placeholder }: any) {
                 className="h-8 text-sm bg-transparent border-none p-0 focus-visible:ring-0"
             />
             {list.length > 0 && (
-                <div className="absolute left-0 right-0 top-full z-[9999] bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-y-auto">
-                    {list.map((item, i) => (
-                        <div 
-                            key={i} 
-                            onClick={() => {
-                                // 🌟 클릭 시 상위 컴포넌트로 선택된 장소 정보(좌표 포함) 전달
-                                onSelect(item); 
-                                setList([]);
-                            }} 
-                            className="p-3 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0 border-gray-100 transition-colors flex justify-between items-center"
-                        >
-                            <div className="font-bold text-gray-800">
-                                {item.name} 
-                                {/* 호선 정보가 있으면 표시 */}
-                                {item.lines && item.lines.length > 0 && (
-                                    <span className="ml-2 text-[10px] font-normal text-gray-500 bg-gray-100 px-1 rounded">
-                                        {item.lines.join(",")}
-                                    </span>
-                                )}
-                            </div>
+                <div className="w-full bg-white border border-gray-200 rounded-lg shadow-sm mt-2 max-h-60 overflow-y-auto">
+                {list.map((item, i) => (
+                    <div 
+                        key={i} 
+                        onClick={() => {
+                            onSelect(item); 
+                            setList([]);
+                        }} 
+                        className="p-3 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0 border-gray-100 transition-colors flex justify-between items-center"
+                    >
+                        <div className="font-bold text-gray-800">
+                            {item.name} 
+                            {/* 호선 정보가 있으면 표시 */}
+                            {item.lines && item.lines.length > 0 && (
+                                <span className="ml-2 text-[10px] font-normal text-gray-500 bg-gray-100 px-1 rounded">
+                                    {item.lines.join(",")}
+                                </span>
+                            )}
                         </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    )
+                    </div>
+                ))}
+            </div>
+        )}
+    </div>
+)
 }
