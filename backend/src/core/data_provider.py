@@ -1,11 +1,9 @@
 import requests
 import urllib.parse
+import time
 from typing import List, Any
-from sqlalchemy.orm import Session # DB 세션을 받기 위해 필요
+from sqlalchemy.orm import Session
 from .config import settings
-
-# 🌟 DB 접근을 위해 Repository 임포트 (순환 참조 방지를 위해 메서드 내부에서 임포트하거나 여기서 임포트)
-# 여기서는 메서드 인자로 db 세션을 받고, 직접 쿼리를 날리거나 repo를 사용하도록 구조를 잡습니다.
 
 class PlaceInfo:
     def __init__(self, name, category, location, avg_rating=0.0, tags=None, address=None):
@@ -28,6 +26,7 @@ class RealDataProvider:
         }
 
     def get_coordinates(self, query: str):
+        if not query: return 0.0, 0.0
         try:
             url = f"https://naveropenapi.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(query)}"
             res = requests.get(url, headers=self.map_headers)
@@ -36,27 +35,25 @@ class RealDataProvider:
                 if data.get('addresses'):
                     item = data['addresses'][0]
                     return float(item['y']), float(item['x'])
-        except:
-            pass
+        except Exception as e:
+            print(f"Geocoding Error ({query}): {e}")
         return 0.0, 0.0
 
-    # 🌟 [핵심 수정] DB 세션을 인자로 받아서 "DB 조회 -> API 호출 -> DB 저장" 흐름 구현
     def search_places_all_queries(self, queries: List[str], region_name: str, center_lat: float, center_lng: float, db: Session = None) -> List[PlaceInfo]:
-        from ..repositories.meeting_repository import MeetingRepository # 순환 참조 방지
+        from ..repositories.meeting_repository import MeetingRepository
         repo = MeetingRepository()
         
         results = []
         seen_names = set()
 
         for q in queries:
-            # 1. 🌟 [DB 조회] 먼저 우리 DB에 있는지 확인
+            # 1. [DB 조회]
             if db:
-                # DB에서 이름으로 검색 (부분 일치)
-                db_places = repo.search_places_by_keyword(db, q)
+                # DB에서 넉넉하게 50개까지 찾아봄
+                db_places = repo.search_places_by_keyword(db, q) 
                 for p in db_places:
                     if p.name in seen_names: continue
                     
-                    # 거리 필터링 (필요시)
                     if center_lat != 0.0 and ((p.lat - center_lat)**2 + (p.lng - center_lng)**2)**0.5 > 0.05:
                         continue
 
@@ -70,68 +67,72 @@ class RealDataProvider:
                         address=p.address
                     ))
             
-            # DB에서 충분히 찾았으면 API 호출 건너뜀 (예: 5개 이상이면)
+            # DB만으로 30개 넘으면 API 호출 생략
             if len(results) >= 30:
                 continue
 
-            # 2. [API 호출] DB에 없거나 부족하면 네이버 검색
-            if region_name:
-                search_query = f"{region_name} {q}"
-            else:
-                search_query = q
+            # 2. [API 호출] 부족하면 네이버 검색
+            search_query = f"{region_name} {q}" if region_name else q
             
-            try:
-                # 정확도순(random), 10개 검색
-                url = f"https://openapi.naver.com/v1/search/local.json?query={urllib.parse.quote(search_query)}&display=50&sort=random"
-                
-                res = requests.get(url, headers=self.search_headers)
-                if res.status_code == 200:
-                    items = res.json().get('items', [])
-                    for item in items:
-                        clean_name = item['title'].replace('<b>', '').replace('</b>', '')
-                        if clean_name in seen_names: continue
-                        
-                        address = item['address'] or item['roadAddress']
-                        lat, lng = self.get_coordinates(address)
-                        if lat == 0.0: continue
+            # 🌟 최대 10페이지(50개)까지 조회 (기존 5페이지 -> 10페이지)
+            # display=5 (Max)
+            for start_idx in range(1, 50, 5):
+                if len(results) >= 30: # 목표 달성 시 중단
+                    break
 
-                        # 거리 필터링
-                        if center_lat != 0.0 and ((lat - center_lat)**2 + (lng - center_lng)**2)**0.5 > 0.05:
-                            continue
+                try:
+                    # 🌟 약간의 딜레이로 API 안정성 확보
+                    time.sleep(0.05) 
+                    
+                    url = f"https://openapi.naver.com/v1/search/local.json?query={urllib.parse.quote(search_query)}&display=5&start={start_idx}&sort=random"
+                    res = requests.get(url, headers=self.search_headers)
+                    
+                    if res.status_code == 200:
+                        items = res.json().get('items', [])
+                        if not items: break 
 
-                        seen_names.add(clean_name)
-                        category = item['category'].split('>')[0] if item['category'] else "기타"
-                        
-                        # 3. 🌟 [DB 저장] 새로 찾은 장소를 우리 DB에 저장 (Caching)
-                        if db:
-                            try:
-                                if not repo.get_place_by_name(db, clean_name):
-                                    repo.create_place(
-                                        db, 
-                                        name=clean_name, 
-                                        category=category, 
-                                        lat=lat, 
-                                        lng=lng, 
-                                        tags=[q], 
-                                        rating=0.0,
-                                        address=address
-                                    )
-                                    # 저장 후 커밋은 상위 서비스 레이어에서 하거나 여기서 부분 커밋
-                                    db.commit() 
-                            except Exception as e:
-                                db.rollback()
-                                # print(f"DB Save Error: {e}")
+                        for item in items:
+                            clean_name = item['title'].replace('<b>', '').replace('</b>', '')
+                            
+                            if clean_name in seen_names: continue
+                            
+                            # 도로명 주소 우선, 없으면 지번 주소
+                            address = item['roadAddress'] or item['address']
+                            lat, lng = self.get_coordinates(address)
+                            
+                            # 좌표 변환 실패 시 로그 출력 (디버깅용)
+                            if lat == 0.0: 
+                                # print(f"⚠️ 좌표 변환 실패: {clean_name} ({address})")
+                                continue
 
-                        results.append(PlaceInfo(
-                            name=clean_name,
-                            category=category,
-                            location=[lat, lng],
-                            avg_rating=0.0,
-                            tags=[q],
-                            address=address
-                        ))
-            except Exception as e:
-                print(f"Search Error: {e}")
-                continue
+                            if center_lat != 0.0 and ((lat - center_lat)**2 + (lng - center_lng)**2)**0.5 > 0.05:
+                                continue
+
+                            seen_names.add(clean_name)
+                            category = item['category'].split('>')[0] if item['category'] else "기타"
+                            
+                            # DB 저장
+                            if db:
+                                try:
+                                    if not repo.get_place_by_name(db, clean_name):
+                                        repo.create_place(
+                                            db, name=clean_name, category=category, 
+                                            lat=lat, lng=lng, tags=[q], rating=0.0, address=address
+                                        )
+                                        db.commit() 
+                                except Exception:
+                                    db.rollback()
+
+                            results.append(PlaceInfo(
+                                name=clean_name,
+                                category=category,
+                                location=[lat, lng],
+                                avg_rating=0.0,
+                                tags=[q],
+                                address=address
+                            ))
+                except Exception as e:
+                    print(f"Search API Error: {e}")
+                    break
         
         return results
