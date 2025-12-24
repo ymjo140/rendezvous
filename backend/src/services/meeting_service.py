@@ -104,7 +104,7 @@ class MeetingService:
                 if req.user_selected_tags:
                     search_query += f" {req.user_selected_tags[0]}"
                 
-                api_pois = data_provider.search_places_all_queries([search_query], r_name, r_lat, r_lng)
+                api_pois = data_provider.search_places_all_queries([search_query], r_name, r_lat, r_lng, db=db)
                 for p in api_pois:
                     if not self.repo.get_place_by_name(db, p.name):
                         try:

@@ -27,7 +27,7 @@ def search_places(query: str = Query(..., min_length=1), db: Session = Depends(g
     네이버 로컬 검색 API를 통해 장소를 검색합니다.
     """
     # data_provider의 search_places_all_queries를 재활용
-    results = data_provider.search_places_all_queries([query], "", 0.0, 0.0)
+    results = data_provider.search_places_all_queries([query], "", 0.0, 0.0, db=db)
     
     response = []
     for place in results:
