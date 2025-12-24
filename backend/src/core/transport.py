@@ -1,13 +1,13 @@
 import math
 import requests
-from sqlalchemy.orm import Session  # 🌟 추가됨
-from sqlalchemy import text         # 🌟 추가됨
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 from ..core.config import settings
 
 class TransportEngine:
     ODSAY_URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
     
-    # 🌟 서울/경기/인천 주요 거점 및 환승역 (사용자님 데이터 그대로 유지)
+    # 🌟 서울/경기/인천 주요 거점 및 환승역
     SEOUL_HOTSPOTS = [
          # --- 1호선 ---
         {"name": "서울역", "lat": 37.5559, "lng": 126.9723, "lines": [1, 4, "공항", "KTX"]},
@@ -248,13 +248,14 @@ class TransportEngine:
         if start_name == end_name:
             return 0
 
-        # 1. 캐시 테이블 조회 (start_name_end_name 키값 생성)
-        cache_key = f"{start_name}_{end_name}"
+        # 1. 캐시 테이블 조회
+        # (DB에는 양방향 모두 저장되어 있을 수 있으므로 두 가지 키 확인)
+        cache_keys = [f"{start_name}_{end_name}", f"{end_name}_{start_name}"]
+        
         try:
-            query = text("SELECT total_time FROM travel_time_cache WHERE id = :id")
-            result = db.execute(query, {"id": cache_key}).fetchone()
+            query = text("SELECT total_time FROM travel_time_cache WHERE id = :id1 OR id = :id2")
+            result = db.execute(query, {"id1": cache_keys[0], "id2": cache_keys[1]}).fetchone()
             if result:
-                # print(f"✅ Cache Hit: {start_name} -> {end_name} ({result[0]}분)")
                 return result[0]
         except Exception as e:
             print(f"Cache Read Error: {e}")
@@ -279,9 +280,8 @@ class TransportEngine:
                             VALUES (:id, :start, :end, :time, NOW())
                             ON CONFLICT (id) DO NOTHING
                         """)
-                        db.execute(insert_query, {"id": cache_key, "start": start_name, "end": end_name, "time": time_min})
+                        db.execute(insert_query, {"id": cache_keys[0], "start": start_name, "end": end_name, "time": time_min})
                         db.commit()
-                        # print(f"💾 Cache Saved: {start_name} -> {end_name}")
                     except Exception as e:
                         print(f"Cache Save Error: {e}")
                         db.rollback()
@@ -291,48 +291,49 @@ class TransportEngine:
             pass
         return None
 
-    # 🌟 [수정] DB 세션을 받아서 처리하도록 변경
+    # 🌟 [알고리즘 수정] Sum 대신 Min-Max (최대 소요시간 최소화) 적용
     @staticmethod
     def find_best_midpoints(db: Session, users_locations: list):
         candidates = []
 
         for spot in TransportEngine.SEOUL_HOTSPOTS:
-            total_time = 0
-            valid_path_count = 0
+            times = []
             
             for u_loc in users_locations:
-                # 사용자 위치에서 가장 가까운 역을 '출발역'으로 설정
                 start_node, dist = TransportEngine.get_nearest_hotspot(u_loc['lat'], u_loc['lng'])
                 
-                if start_node and dist < 2000: # 2km 이내면 해당 역을 출발지로 간주
-                    start_name = start_node['name']
-                    # DB 캐시를 활용하여 시간 조회
+                time_cost = None
+                if start_node and dist < 2000:
                     time_cost = TransportEngine.get_transit_time(
-                        db, start_name, spot['name'], 
+                        db, start_node['name'], spot['name'], 
                         start_node['lng'], start_node['lat'], 
                         spot['lng'], spot['lat']
                     )
-                else:
-                    # 역이 너무 멀면 그냥 좌표 기반으로 API 호출 (캐시 사용 X)
-                    # (여기서도 좌표 기반 캐싱을 할 수 있지만 복잡해지므로 생략)
-                    time_cost = TransportEngine.get_transit_time(
-                        db, "TEMP_COORD", spot['name'], 
-                        u_loc['lng'], u_loc['lat'], 
-                        spot['lng'], spot['lat']
-                    )
-
-                # 실패 시 하버사인 거리로 대체
+                
+                # 실패 시 거리 기반 추산
                 if time_cost is None:
                     direct_dist = TransportEngine._haversine(u_loc['lat'], u_loc['lng'], spot['lat'], spot['lng'])
-                    time_cost = (direct_dist / 1000) * 15 # 1km = 15분
+                    time_cost = (direct_dist / 1000) * 15 
                 
-                total_time += time_cost
-                valid_path_count += 1
+                times.append(time_cost)
+            
+            if not times: continue
+
+            # 🌟 점수 계산 로직 변경 (핵심!)
+            # 1순위: 가장 오래 걸리는 사람의 시간 (Max Time) -> 낮을수록 좋음 (공평함)
+            # 2순위: 총 이동 시간 평균 (Avg Time) -> 낮을수록 좋음 (효율성)
+            max_t = max(times)
+            avg_t = sum(times) / len(times)
+            
+            # Max Time에 가중치를 많이 둠 (80% Max, 20% Avg)
+            score = (max_t * 0.8) + (avg_t * 0.2)
             
             candidates.append({
                 "spot": spot,
-                "score": total_time
+                "score": score
             })
         
+        # 점수가 낮은 순(시간이 적게 걸리는 순)으로 정렬
         candidates.sort(key=lambda x: x["score"])
+        
         return [c["spot"] for c in candidates[:3]]
