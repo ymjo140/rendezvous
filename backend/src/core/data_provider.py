@@ -76,11 +76,11 @@ class RealDataProvider:
                 search_query = f"{region_name} {q}" if region_name else q
                 
                 # 빠르게 5페이지(25개)만 검색
-                for start_idx in range(1, 25, 5): 
+                for start_idx in range(1, 100, 50): 
                     if len(results) >= 50: break
                     time.sleep(0.1) 
                     
-                    url = f"https://openapi.naver.com/v1/search/local.json?query={urllib.parse.quote(search_query)}&display=5&start={start_idx}&sort=random"
+                    url = f"https://openapi.naver.com/v1/search/local.json?query={urllib.parse.quote(search_query)}&display=100&start={start_idx}&sort=random"
                     
                     # ✅ 오직 Search API만 호출 (권한 문제 없음)
                     res = requests.get(url, headers=self.search_headers)
