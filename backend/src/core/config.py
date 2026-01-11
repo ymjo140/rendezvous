@@ -27,7 +27,7 @@ class Settings:
     ODSAY_API_KEY: str = os.getenv("ODSAY_API_KEY")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY")
     KAKAO_REST_API_KEY: str = os.getenv("KAKAO_REST_API_KEY")
-
+    KAKAO_REDIRECT_URI: str = os.getenv("KAKAO_REDIRECT_URI")
     # 운영 상수 (constants.py 내용 통합)
     PURPOSE_CONFIG = {
         "식사": { "allowed": ["restaurant"], "keywords": ["한식", "중식", "양식", "일식", "아시안 음식", "밥집"] },
