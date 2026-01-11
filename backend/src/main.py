@@ -1,10 +1,8 @@
-# backend/src/main.py
-
-from fastapi import FastAPI, Request
+import fastapi
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-app = FastAPI()
+app = fastapi.FastAPI()
 
 # I. CORS 설정
 origins = [
@@ -26,12 +24,15 @@ app.add_middleware(
 # - backend/src/api/__init__.py
 # - backend/src/api/routers/__init__.py
 try:
-    from .api.routers import auth, users, places, coins
+    from .api.routers import auth, users, meetings, coins, community, sync
 
-    app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-    app.include_router(users.router, prefix="/api/users", tags=["users"])
-    app.include_router(places.router, prefix="/api/places", tags=["places"])
-    app.include_router(coins.router, prefix="/api/coins", tags=["coins"])
+    # 각 라우터가 이미 /api/... 경로를 포함하므로 prefix는 생략한다.
+    app.include_router(auth.router, tags=["auth"])
+    app.include_router(users.router, tags=["users"])
+    app.include_router(meetings.router, tags=["meetings"])
+    app.include_router(coins.router, tags=["coins"])
+    app.include_router(community.router, tags=["community"])
+    app.include_router(sync.router, tags=["sync"])
 
     print("✅ 라우터 로딩 성공: src/api/routers/*")
 
@@ -55,7 +56,7 @@ async def get_chat_rooms_dummy():
     return []
 
 @app.post("/api/sync/ical")
-async def sync_ical_dummy(request: Request):
+async def sync_ical_dummy(request: fastapi.Request):
     return {"status": "success", "message": "iCal sync disabled for stability"}
 
 # IV. 서버 상태 확인
@@ -65,7 +66,7 @@ async def root():
 
 # V. 전역 500 에러 핸들러
 @app.exception_handler(500)
-async def internal_exception_handler(request: Request, exc: Exception):
+async def internal_exception_handler(request: fastapi.Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={"message": f"Internal Server Error: {str(exc)}"},
