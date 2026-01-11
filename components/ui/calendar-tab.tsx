@@ -267,7 +267,7 @@ export function CalendarTab() {
                                 ))}
                                 {weekDates.map((dayDate, dayIdx) => {
                                     const dayEvents = eventsOnDate(dayDate);
-                                    return dayEvents.map((ev: any) => {
+                                    return dayevents?.map((ev: any) => {
                                         const [h, m] = ev.time.split(":").map(Number);
                                         if (h < 8) return null;
                                         const top = (h - 8) * 48 + (m / 60) * 48;
