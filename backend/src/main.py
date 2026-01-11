@@ -1,3 +1,5 @@
+# backend/src/main.py
+
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
