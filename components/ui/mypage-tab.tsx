@@ -40,7 +40,7 @@ interface UserInfo {
     preferences?: any;
 }
 
-const API_URL = "https://wemeet-backend-xqlo.onrender.com";
+const API_URL = "https://wemeet-backend-4lza.onrender.com";
 
 // 🌟 [신규] 장소 검색 컴포넌트 (배민 스타일 위치 설정용)
 function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {

@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://wemeet-backend-xqlo.onrender.com";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://wemeet-backend-4lza.onrender.com";
 
 export const fetchWithAuth = async (endpoint: string, options: RequestInit = {}) => {
     const token = localStorage.getItem("token");

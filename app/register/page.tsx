@@ -18,7 +18,7 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
-      const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/register", {
+      const res = await fetch("https://wemeet-backend-4lza.onrender.com/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData)
