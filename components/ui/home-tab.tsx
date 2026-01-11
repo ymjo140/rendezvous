@@ -201,10 +201,10 @@ export function HomeTab() {
             }
 
             // 추천 장소 마커
-            markersRef.current?.foreach(m => m.setMap(null));
+            markersRef.current?.forEach(m => m.setMap(null));
             markersRef.current = [];
             if (currentDisplayRegion?.places) {
-                currentDisplayRegion.places?.foreach((p: any) => {
+                currentDisplayRegion.places?.forEach((p: any) => {
                     const marker = new window.naver.maps.Marker({
                         position: new window.naver.maps.LatLng(p.location[0], p.location[1]),
                         map: mapRef.current, title: p.name
@@ -217,9 +217,9 @@ export function HomeTab() {
             }
 
             // 보물 마커
-            lootMarkersRef.current?.foreach(m => m.setMap(null));
+            lootMarkersRef.current?.forEach(m => m.setMap(null));
             lootMarkersRef.current = [];
-            loots?.foreach((loot) => {
+            loots?.forEach((loot) => {
                 const marker = new window.naver.maps.Marker({
                     position: new window.naver.maps.LatLng(loot.lat, loot.lng),
                     map: mapRef.current,
@@ -229,9 +229,9 @@ export function HomeTab() {
             });
 
             // 친구 위치 마커
-            friendMarkersRef.current?.foreach(m => m.setMap(null));
+            friendMarkersRef.current?.forEach(m => m.setMap(null));
             friendMarkersRef.current = [];
-            selectedFriends?.foreach(f => {
+            selectedFriends?.forEach(f => {
                 const marker = new window.naver.maps.Marker({
                     position: new window.naver.maps.LatLng(f.location.lat, f.location.lng),
                     map: mapRef.current,
@@ -245,9 +245,9 @@ export function HomeTab() {
 
     // 🌟 [수정됨] 경로 그리기 함수 (객체 타입 manualInputs 지원)
     const drawPathsToTarget = async (destLat: number, destLng: number, transitInfo: any = null) => {
-        polylinesRef.current?.foreach(p => p.setMap(null));
+        polylinesRef.current?.forEach(p => p.setMap(null));
         polylinesRef.current = [];
-        timeMarkersRef.current?.foreach(m => m.setMap(null));
+        timeMarkersRef.current?.forEach(m => m.setMap(null));
         timeMarkersRef.current = [];
 
         if (!mapRef.current) return;
@@ -266,7 +266,7 @@ export function HomeTab() {
         }
 
         // 2. 친구들
-        selectedFriends?.foreach(f => {
+        selectedFriends?.forEach(f => {
             if (f.location) {
                 origins.push({
                     lat: f.location.lat, lng: f.location.lng,
@@ -311,7 +311,7 @@ export function HomeTab() {
         }
 
         // 4. 지도에 그리기
-        origins?.foreach(origin => {
+        origins?.forEach(origin => {
             const polyline = new window.naver.maps.Polyline({
                 map: mapRef.current,
                 path: [new window.naver.maps.LatLng(origin.lat, origin.lng), destLatLng],
@@ -678,9 +678,9 @@ export function HomeTab() {
             <Dialog open={isDetailOpen} onOpenChange={(open) => {
                 setIsDetailOpen(open);
                 if (!open) {
-                    polylinesRef.current?.foreach(p => p.setMap(null));
+                    polylinesRef.current?.forEach(p => p.setMap(null));
                     polylinesRef.current = [];
-                    timeMarkersRef.current?.foreach(m => m.setMap(null));
+                    timeMarkersRef.current?.forEach(m => m.setMap(null));
                     timeMarkersRef.current = [];
                     if (currentDisplayRegion) drawRegionPaths(currentDisplayRegion);
                 }
