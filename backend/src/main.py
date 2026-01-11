@@ -40,10 +40,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+origins = [
+    "http://localhost:3000",  # 로컬 테스트용
+    "https://v0-we-meet-app-features.vercel.app",  # ✅ 프론트엔드 배포 주소 (맨 뒤 슬래시 / 없음)
+]
+
+# 2. allow_origins에 ["*"] 대신 위 변수(origins)를 넣습니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=origins,    # 👈 여기가 핵심! * 대신 구체적인 주소를 넣어야 함
+    allow_credentials=True,   # 로그인하려면 이게 True여야 하는데, 그러려면 위에서 주소를 지정해야 함
     allow_methods=["*"],
     allow_headers=["*"],
 )
