@@ -4,11 +4,11 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
-from ..core.config import settings
-from ..domain import models
-from ..schemas import user as schemas
-from ..repositories.user_repository import UserRepository
-from ..core.security import get_password_hash, create_access_token, verify_password
+from core.config import settings
+from domain import models
+from schemas import user as schemas
+from repositories.user_repository import UserRepository
+from core.security import get_password_hash, create_access_token, verify_password
 
 user_repo = UserRepository()
 

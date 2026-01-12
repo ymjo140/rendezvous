@@ -5,13 +5,13 @@ from typing import List
 from sqlalchemy.orm import Session
 from fastapi import BackgroundTasks
 
-from ..core.config import settings
-from ..domain import models
-from ..schemas import meeting as schemas
-from ..repositories.meeting_repository import MeetingRepository
-from ..core.data_provider import RealDataProvider
-from ..core.connection_manager import manager
-from ..core.transport import TransportEngine 
+from core.config import settings
+from domain import models
+from schemas import meeting as schemas
+from repositories.meeting_repository import MeetingRepository
+from core.data_provider import RealDataProvider
+from core.connection_manager import manager
+from core.transport import TransportEngine 
 
 data_provider = RealDataProvider()
 

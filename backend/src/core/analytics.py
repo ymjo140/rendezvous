@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from collections import defaultdict
-from ..domain import models
+from domain import models
 
 class DemandIntelligenceEngine:
     def __init__(self, db: Session):

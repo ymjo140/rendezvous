@@ -3,8 +3,8 @@ from sqlalchemy import or_
 from uuid import uuid4
 from datetime import datetime, timedelta
 
-from ..domain import models
-from ..schemas import meeting as schemas
+from domain import models
+from schemas import meeting as schemas
 
 class MeetingRepository:
     # --- 장소 (Place) ---

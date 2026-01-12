@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from uuid import uuid4
-from ..domain import models
-from ..schemas import community as schemas
+from domain import models
+from schemas import community as schemas
 
 class CommunityRepository:
     def create(self, db: Session, user_id: int, dto: schemas.CommunityCreate):

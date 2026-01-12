@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from ..domain import models
-from ..repositories.community_repository import CommunityRepository
-from ..repositories.user_repository import UserRepository
-from ..schemas import community as schemas
+from domain import models
+from repositories.community_repository import CommunityRepository
+from repositories.user_repository import UserRepository
+from schemas import community as schemas
 
 class CommunityService:
     def __init__(self):

@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from dataclasses import dataclass
 import numpy as np
-from ..domain.models import MeetingHistory
+from domain.models import MeetingHistory
 
 @dataclass
 class POI:

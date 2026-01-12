@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from ..domain import models
-from ..schemas import user as schemas
+from domain import models
+from schemas import user as schemas
 
 class UserRepository:
     def get_by_email(self, db: Session, email: str):

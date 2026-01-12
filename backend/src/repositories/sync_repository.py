@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from ..domain import models
+from domain import models
 
 class SyncRepository:
     def delete_events_by_source(self, db: Session, user_id: int, source_name: str):

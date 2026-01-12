@@ -8,9 +8,9 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from ..domain import models
-from ..schemas import sync as schemas
-from ..repositories.sync_repository import SyncRepository
+from domain import models
+from schemas import sync as schemas
+from repositories.sync_repository import SyncRepository
 
 # 한국 시간대
 KST = pytz.timezone('Asia/Seoul')

@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from ..domain import models
-from ..repositories.coin_repository import CoinRepository
-from ..schemas import coins as schemas
+from domain import models
+from repositories.coin_repository import CoinRepository
+from schemas import coins as schemas
 
 class CoinService:
     def __init__(self):

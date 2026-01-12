@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from ..domain import models
+from domain import models
 
 class CoinRepository:
     def create_history(self, db: Session, user_id: int, amount: int, type: str, description: str):

@@ -2,9 +2,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from fastapi import HTTPException
 
-from ..domain import models
-from ..schemas import user as schemas
-from ..repositories.user_repository import UserRepository
+from domain import models
+from schemas import user as schemas
+from repositories.user_repository import UserRepository
 
 # 🌟 [수정] 경로에 맞게 정확히 import 합니다.
 try:

@@ -2,7 +2,7 @@ import math
 import requests
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from ..core.config import settings
+from core.config import settings
 
 class TransportEngine:
     ODSAY_URL = "https://api.odsay.com/v1/api/searchPubTransPathT"

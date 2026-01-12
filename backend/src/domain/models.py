@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 import enum
-from ..core.database import Base
+from core.database import Base
 
 def generate_uuid():
     return str(uuid.uuid4())
