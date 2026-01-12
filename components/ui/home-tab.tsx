@@ -123,64 +123,6 @@ export function HomeTab() {
 
     // --- Effects ---
     useEffect(() => {
-        const fetchMyInfo = async () => {
-            const token = localStorage.getItem("token");
-            if (!token) { setMyLocationInput("📍 현위치 (비회원)"); return; }
-            try {
-                const res = await fetchWithAuth("/api/users/me");
-                if (res.ok) {
-                    const user = await res.json();
-                    setMyProfile({ ...user, locationName: "현위치" });
-                    setMyLocationInput("📍 현위치 (GPS)");
-                    if (!user.preferences?.foods || user.preferences.foods.length === 0) setIsPreferenceModalOpen(true);
-                    if (user.location) fetchLoots(user.location.lat, user.location.lng);
-                }
-            } catch (e) { }
-        }
-        fetchMyInfo();
-    }, []);
-
-    const fetchLoots = async (lat: number, lng: number) => {
-        try {
-            const res = await fetchWithAuth("/api/coins/map-loot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat, lng }) });
-            if (res.ok) setLoots(await res.json());
-        } catch (e) { }
-    }
-
-    // GPS
-    useEffect(() => {
-        if (!navigator.geolocation) return;
-        const watchId = navigator.geolocation.watchPosition(
-            (pos) => {
-                setGpsError("");
-                const { latitude, longitude } = pos.coords;
-                setMyLocation({ lat: latitude, lng: longitude });
-
-                if (currentDisplayRegion?.places?.length > 0) {
-                    let foundPlace = null;
-                    for (const place of currentDisplayRegion.places) {
-                        const dist = calculateDistance(latitude, longitude, place.location[0], place.location[1]);
-                        if (dist <= 500) { foundPlace = place; break; }
-                    }
-                    setNearbyPlace(foundPlace);
-                }
-                if (loots.length > 0) {
-                    let foundLoot = null;
-                    for (const loot of loots) {
-                        const dist = calculateDistance(latitude, longitude, loot.lat, loot.lng);
-                        if (dist <= 50) { foundLoot = loot; break; }
-                    }
-                    setNearbyLoot(foundLoot);
-                }
-            },
-            (err) => setGpsError("위치 정보를 가져올 수 없습니다."),
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
-        return () => navigator.geolocation.clearWatch(watchId);
-    }, [currentDisplayRegion, loots]);
-
-    // 지도 초기화 및 마커
-    useEffect(() => {
         const initMap = () => {
             if (typeof window.naver === 'undefined' || !window.naver.maps) { setTimeout(initMap, 100); return; }
             const center = myLocation || { lat: 37.5665, lng: 126.9780 };
@@ -200,45 +142,60 @@ export function HomeTab() {
                 }
             }
 
-            // 추천 장소 마커
-            markersRef.current?.forEach(m => m.setMap(null));
+            // 1. 추천 장소 마커 (안전장치 추가: Array.isArray)
+            if (Array.isArray(markersRef.current)) {
+                markersRef.current.forEach((m: any) => m.setMap(null));
+            }
             markersRef.current = [];
-            if (currentDisplayRegion?.places) {
-                currentDisplayRegion.places?.forEach((p: any) => {
+
+            if (currentDisplayRegion && Array.isArray(currentDisplayRegion.places)) {
+                currentDisplayRegion.places.forEach((p: any) => {
                     const marker = new window.naver.maps.Marker({
                         position: new window.naver.maps.LatLng(p.location[0], p.location[1]),
                         map: mapRef.current, title: p.name
                     });
                     markersRef.current.push(marker);
                 });
+                
                 if (currentDisplayRegion.lat && currentDisplayRegion.lng) {
                     mapRef.current.morph(new window.naver.maps.LatLng(currentDisplayRegion.lat, currentDisplayRegion.lng));
                 }
             }
 
-            // 보물 마커
-            lootMarkersRef.current?.forEach(m => m.setMap(null));
+            // 2. 보물 마커 (여기가 범인! 안전장치 추가)
+            if (Array.isArray(lootMarkersRef.current)) {
+                lootMarkersRef.current.forEach((m: any) => m.setMap(null));
+            }
             lootMarkersRef.current = [];
-            loots?.forEach((loot) => {
-                const marker = new window.naver.maps.Marker({
-                    position: new window.naver.maps.LatLng(loot.lat, loot.lng),
-                    map: mapRef.current,
-                    icon: { content: '<div style="font-size:24px; animation: bounce 2s infinite;">💎</div>' }
+            
+            // 🔥 핵심 수정: loots가 배열일 때만 forEach 실행
+            if (Array.isArray(loots)) {
+                loots.forEach((loot: any) => {
+                    const marker = new window.naver.maps.Marker({
+                        position: new window.naver.maps.LatLng(loot.lat, loot.lng),
+                        map: mapRef.current,
+                        icon: { content: '<div style="font-size:24px; animation: bounce 2s infinite;">💎</div>' }
+                    });
+                    lootMarkersRef.current.push(marker);
                 });
-                lootMarkersRef.current.push(marker);
-            });
+            }
 
-            // 친구 위치 마커
-            friendMarkersRef.current?.forEach(m => m.setMap(null));
+            // 3. 친구 위치 마커 (안전장치 추가)
+            if (Array.isArray(friendMarkersRef.current)) {
+                friendMarkersRef.current.forEach((m: any) => m.setMap(null));
+            }
             friendMarkersRef.current = [];
-            selectedFriends?.forEach(f => {
-                const marker = new window.naver.maps.Marker({
-                    position: new window.naver.maps.LatLng(f.location.lat, f.location.lng),
-                    map: mapRef.current,
-                    icon: { content: `<div style="padding:5px; background:white; border-radius:50%; border:2px solid #F59E0B; font-weight:bold;">${f.name[0]}</div>` }
+            
+            if (Array.isArray(selectedFriends)) {
+                selectedFriends.forEach((f: any) => {
+                    const marker = new window.naver.maps.Marker({
+                        position: new window.naver.maps.LatLng(f.location.lat, f.location.lng),
+                        map: mapRef.current,
+                        icon: { content: `<div style="padding:5px; background:white; border-radius:50%; border:2px solid #F59E0B; font-weight:bold;">${f.name[0]}</div>` }
+                    });
+                    friendMarkersRef.current.push(marker);
                 });
-                friendMarkersRef.current.push(marker);
-            });
+            }
         };
         initMap();
     }, [myLocation, currentDisplayRegion, loots, selectedFriends, includeMe]);
