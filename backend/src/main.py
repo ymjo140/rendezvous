@@ -2,7 +2,7 @@ import sys
 import os
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
-from SUPABASE import create_client, Client
+from supabase import create_client, Client
 from pydantic import BaseModel
 from typing import Optional, List
 

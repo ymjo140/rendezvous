@@ -5,7 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from SUPABASE import create_client, Client
+from supabase import create_client, Client
 from icalendar import Calendar
 
 router = APIRouter()

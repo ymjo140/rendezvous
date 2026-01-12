@@ -4,7 +4,7 @@ from typing import Optional, Any
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from SUPABASE import create_client, Client
+from supabase import create_client, Client
 
 router = APIRouter()
 
