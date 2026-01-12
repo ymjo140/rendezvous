@@ -8,28 +8,32 @@ from core.config import settings
 from core.database import get_db
 from repositories.user_repository import UserRepository
 
-# 토큰을 추출하는 스키마 정의
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
+# auto_error=False를 설정해야 토큰이 없어도 401 에러를 자동으로 던지지 않습니다.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login", auto_error=False)
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+def get_current_user(token: Optional[str] = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """
+    토큰이 있으면 유저 객체를 반환하고, 없거나 유효하지 않으면 None을 반환합니다.
+    """
+    # 1. 토큰이 없는 경우 (비로그인 상태)
+    if not token:
+        return None
+    
     try:
-        # 토큰 디코딩
+        # 2. 토큰 디코딩
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
-            raise credentials_exception
+            return None
     except JWTError:
-        raise credentials_exception
+        # 토큰 변조나 만료 시 에러 대신 None 반환
+        return None
     
-    # DB에서 유저 조회
+    # 3. DB에서 유저 조회
     repo = UserRepository()
     user = repo.get_by_email(db, email=email)
+    
     if user is None:
-        raise credentials_exception
+        return None
         
     return user
