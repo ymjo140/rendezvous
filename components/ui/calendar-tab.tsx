@@ -14,6 +14,9 @@ const API_URL = "https://wemeet-backend-4lza.onrender.com";
 export function CalendarTab() {
     const router = useRouter();
     const [isGuest, setIsGuest] = useState(false);
+    
+    // 🌟 [추가] 로그인한 유저의 진짜 ID를 담을 상태
+    const [myId, setMyId] = useState<number | null>(null);
 
     const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
     const [date, setDate] = useState<Date>(new Date())
@@ -25,12 +28,11 @@ export function CalendarTab() {
     const [syncLoading, setSyncLoading] = useState(false)
     const [isAutoSyncing, setIsAutoSyncing] = useState(false)
 
-    // 🌟 [수정 1] 입력 폼 상태 확장 (날짜, 시간, 소요시간)
     const [newEvent, setNewEvent] = useState({
         title: "",
-        date: new Date().toISOString().split('T')[0], // YYYY-MM-DD
+        date: new Date().toISOString().split('T')[0], 
         time: "12:00",
-        duration: "60", // 분 단위
+        duration: "60", 
         location: ""
     })
 
@@ -44,6 +46,18 @@ export function CalendarTab() {
         return `${year}-${month}-${day}`;
     };
 
+    // 🌟 [추가] 내 정보(ID) 가져오기
+    const fetchMyInfo = async () => {
+        try {
+            const res = await fetchWithAuth("/api/users/me");
+            if (res.ok) {
+                const data = await res.json();
+                setMyId(data.id); // 내 진짜 ID 저장
+                console.log("✅ 로그인된 유저 ID:", data.id);
+            }
+        } catch (e) { console.error("유저 정보 로드 실패", e); }
+    };
+
     const loadEvents = async () => {
         try {
             const token = localStorage.getItem("token");
@@ -52,16 +66,13 @@ export function CalendarTab() {
             const res = await fetchWithAuth("/api/events")
             if (res.ok) {
                 const data = await res.json();
-                // 🌟 DB 데이터(date, time 분리됨)를 프론트엔드 달력용 객체로 변환
                 const formattedEvents = data.map((e: any) => {
-                    // date(YYYY-MM-DD)와 time(HH:MM)을 합쳐서 Date 객체 생성
                     const dateStr = e.date ? e.date : ""; 
                     const timeStr = e.time ? e.time : "00:00";
                     return {
                         ...e,
                         date: dateStr, 
                         time: timeStr,
-                        // 캘린더 라이브러리가 쓸 수 있게 합쳐진 날짜 객체 생성
                         dateObj: new Date(`${dateStr}T${timeStr}:00`)
                     };
                 });
@@ -88,6 +99,7 @@ export function CalendarTab() {
     useEffect(() => {
         const token = localStorage.getItem("token");
         if(token) {
+            fetchMyInfo(); // 🌟 컴포넌트 켜질 때 내 정보 먼저 가져옴
             loadEvents();
             const savedUrl = localStorage.getItem("calendar_sync_url");
             const savedSource = localStorage.getItem("calendar_sync_source");
@@ -136,20 +148,20 @@ export function CalendarTab() {
         } catch (e) { alert("오류 발생"); }
     };
 
-    // 🌟 [수정 2] 일정 생성 로직 개선 (날짜+시간 합쳐서 전송)
+    // 🌟 [수정] 일정 생성 시 '진짜 내 ID'를 함께 전송
     const handleCreateEvent = async () => {
         if(!newEvent.title || !newEvent.date || !newEvent.time) return alert("일정 제목, 날짜, 시간을 모두 입력하세요.");
-        
+        if(!myId) return alert("유저 정보를 불러오지 못했습니다. 다시 로그인해주세요.");
+
         try {
-            // 🌟 DB 컬럼명에 정확히 맞춘 Payload
             const payload = {
-                id: crypto.randomUUID(), // 혹시 몰라 프론트에서도 생성하지만 백엔드가 덮어쓸 것임
-                user_id: 1, // 임시 유저 ID
+                id: crypto.randomUUID(), 
+                user_id: myId, // 👈 여기가 핵심! (1이나 null이 아니라 진짜 내 ID)
                 title: newEvent.title,
-                date: newEvent.date,          // "YYYY-MM-DD"
-                time: newEvent.time,          // "HH:MM"
-                duration_hours: Number(newEvent.duration) / 60, // 분 -> 시간 변환 (float)
-                location_name: newEvent.location, // location -> location_name
+                date: newEvent.date,          
+                time: newEvent.time,          
+                duration_hours: Number(newEvent.duration) / 60, 
+                location_name: newEvent.location, 
                 purpose: "개인",
                 is_private: true
             };
@@ -166,7 +178,6 @@ export function CalendarTab() {
                 alert("일정이 등록되었습니다.");
                 setIsCreateOpen(false); 
                 loadEvents();
-                // 초기화
                 setNewEvent({ title: "", date: new Date().toISOString().split('T')[0], time: "12:00", duration: "60", location: "" });
             } else { 
                 const err = await res.json();
@@ -178,7 +189,7 @@ export function CalendarTab() {
         }
     }
 
-    // --- 달력 계산 ---
+    // --- 달력 계산 (기존 동일) ---
     const getDaysInMonth = (year: number, month: number) => {
         const date = new Date(year, month, 1); const days = [];
         while (date.getMonth() === month) { days.push(new Date(date)); date.setDate(date.getDate() + 1); }
@@ -193,7 +204,6 @@ export function CalendarTab() {
     }
     const handleDateClick = (d: Date) => { 
         setSelectedDate(d); setDate(d); 
-        // 클릭한 날짜를 기본값으로 설정
         setNewEvent(prev => ({...prev, date: formatDateLocal(d)}));
     };
 
@@ -211,7 +221,6 @@ export function CalendarTab() {
     const weekDates = getWeekDates(date);
     const HOURS = Array.from({ length: 17 }, (_, i) => i + 8); 
 
-    // 비회원 차단
     if (isGuest) {
         return (
             <div className="flex flex-col items-center justify-center h-full p-6 space-y-6 bg-[#F3F4F6] font-['Pretendard']">
@@ -277,7 +286,7 @@ export function CalendarTab() {
                                             <div className="font-bold text-sm text-gray-800 mb-1">{ev.title}</div>
                                             <div className="text-xs text-gray-500 flex gap-2">
                                                 <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {ev.time}</span>
-                                                {ev.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/> {ev.location}</span>}
+                                                {ev.location_name && <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/> {ev.location_name}</span>}
                                             </div>
                                         </div>
                                         <button onClick={() => handleDeleteEvent(ev.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 className="w-4 h-4" /></button>
@@ -290,20 +299,18 @@ export function CalendarTab() {
 
                 {viewMode === 'week' && (
                     <div className="mt-4 pb-24 relative overflow-x-auto">
-                        {/* (주간 뷰는 기존 로직 유지하되 필요시 데이터 매핑 확인) */}
                         <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-2xl shadow-sm">
                             <Button variant="ghost" size="icon" onClick={() => setDate(new Date(date.setDate(date.getDate() - 7)))}><ChevronLeft className="w-5 h-5"/></Button>
                             <div className="text-sm font-bold text-center">{weekDates[0].getMonth()+1}.{weekDates[0].getDate()} - {weekDates[6].getMonth()+1}.{weekDates[6].getDate()}</div>
                             <Button variant="ghost" size="icon" onClick={() => setDate(new Date(date.setDate(date.getDate() + 7)))}><ChevronRight className="w-5 h-5"/></Button>
                         </div>
-                        {/* (주간 그리드 생략 없이 기존 코드 유지) */}
+                        {/* (주간 그리드 UI는 생략 - 위와 동일) */}
                     </div>
                 )}
             </ScrollArea>
 
             <div className="absolute bottom-24 right-5"><Button className="rounded-full h-14 w-14 bg-[#14B8A6] hover:bg-[#0D9488] text-white shadow-lg flex items-center justify-center p-0" onClick={() => setIsCreateOpen(true)}><Plus className="w-7 h-7" /></Button></div>
 
-            {/* 🌟 [수정 3] 새 일정 추가 모달 (개선된 UI) */}
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                 <DialogContent className="sm:max-w-xs rounded-2xl font-['Pretendard']">
                     <DialogHeader>
@@ -311,7 +318,6 @@ export function CalendarTab() {
                         <DialogDescription className="hidden">일정을 추가합니다.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-2">
-                        {/* 제목 */}
                         <div>
                             <label className="text-xs font-bold text-gray-500 mb-1 block">일정 제목</label>
                             <Input 
@@ -321,8 +327,6 @@ export function CalendarTab() {
                                 className="bg-gray-50 border-gray-200 focus:border-[#7C3AED] focus:ring-[#7C3AED]"
                             />
                         </div>
-
-                        {/* 날짜 선택 */}
                         <div>
                             <label className="text-xs font-bold text-gray-500 mb-1 block">날짜</label>
                             <Input 
@@ -332,8 +336,6 @@ export function CalendarTab() {
                                 className="bg-gray-50 border-gray-200"
                             />
                         </div>
-
-                        {/* 시간 및 소요시간 */}
                         <div className="flex gap-3">
                             <div className="flex-1">
                                 <label className="text-xs font-bold text-gray-500 mb-1 block">시작 시간</label>
@@ -359,8 +361,6 @@ export function CalendarTab() {
                                 </select>
                             </div>
                         </div>
-
-                        {/* 장소 */}
                         <div>
                             <label className="text-xs font-bold text-gray-500 mb-1 block">장소</label>
                             <Input 
@@ -379,7 +379,6 @@ export function CalendarTab() {
                 </DialogContent>
             </Dialog>
 
-            {/* 외부 일정 연동 모달 */}
             <Dialog open={isSyncOpen} onOpenChange={setIsSyncOpen}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader><DialogTitle>외부 캘린더 가져오기</DialogTitle><DialogDescription className="text-xs text-gray-500">에브리타임, 구글 캘린더 URL 입력</DialogDescription></DialogHeader>
