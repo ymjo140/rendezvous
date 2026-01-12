@@ -43,7 +43,7 @@ interface UserInfo {
     preferences?: any;
 }
 
-const API_URL = "https://wemeet-backend-4lza.onrender.com";
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 // 장소 검색 컴포넌트
 function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {

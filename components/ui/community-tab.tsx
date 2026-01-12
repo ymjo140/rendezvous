@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { fetchWithAuth } from "@/lib/api-client"
 
-const API_URL = "https://wemeet-backend-4lza.onrender.com";
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 const CATEGORIES = ["전체", "맛집", "운동", "스터디", "취미", "여행"];
 
 export function CommunityTab() {

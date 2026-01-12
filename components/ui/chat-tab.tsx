@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
 
-const API_URL = "https://wemeet-backend-4lza.onrender.com";
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 const WS_URL = "wss://wemeet-backend-xqlo.onrender.com";
 
 // --- AI 장소 추천용 필터 데이터 ---

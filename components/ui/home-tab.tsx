@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from "framer-motion"
 
 // --- 1. 의존성 컴포넌트 및 유틸리티 ---
 
-const API_URL = "https://wemeet-backend-4lza.onrender.com";
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 const PlaceCard = ({ place, onClick }: { place: any, onClick: () => void }) => (
     <div className="bg-white p-4 rounded-xl shadow-sm border flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors" onClick={onClick}>

@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Trash2, Link as LinkIcon, RefreshCw, ArrowLeft, Loader2 } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
-const API_URL = "https://wemeet-backend-4lza.onrender.com";
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 export function CalendarTab() {
     const router = useRouter();

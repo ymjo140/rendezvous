@@ -33,19 +33,20 @@ app.add_middleware(
 async def root():
     return {"status": "ok", "message": "WeMeet Backend is Live."}
 
-# --- 라우터 연결 (Events, Sync, 기타 등등) ---
+# --- 라우터 연결 (경로 수정 완료) ---
 try:
-    # 1. Events 라우터 연결 (방금 만든 파일)
+    # 1. Events 라우터 연결 (위치: src/api/events.py)
     from api import events
     app.include_router(events.router, prefix="/api/events", tags=["events"])
     print("✅ Events 라우터 연결 성공")
 
-    # 2. Sync 라우터 연결 (아까 만든 파일)
-    from api import sync
+    # 2. Sync 라우터 연결 (위치: src/api/routers/sync.py) 
+    # 🌟 [수정됨] api 폴더가 아니라 api.routers 폴더에서 가져옵니다.
+    from api.routers import sync
     app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
     print("✅ Sync 라우터 연결 성공")
 
-    # 3. 기존 라우터들 (auth, users 등)
+    # 3. 기존 라우터들 (위치: src/api/routers/...)
     from api.routers import auth, users, coins, recommend
     app.include_router(recommend.router, prefix="/api", tags=["recommend"])
     app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
@@ -53,10 +54,12 @@ try:
     app.include_router(coins.router, prefix="/api/coins", tags=["coins"])
     
 except Exception as e:
+    # 에러 발생 시 원인 상세 출력
+    import traceback
+    traceback.print_exc()
     print(f"⚠️ 라우터 로드 중 경고: {e}")
 
-# 커뮤니티는 아직 파일 분리가 안 되어 있다면 임시로 여기 둡니다 (삭제 가능)
-# (이미 api/routers/communities.py가 있다면 거기서 불러오는 게 맞습니다)
+# 커뮤니티 (임시)
 class CommunityCreate(BaseModel):
     title: str
     class Config:
