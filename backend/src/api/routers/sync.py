@@ -5,21 +5,21 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from supabase import create_client, Client
+from SUPABASE import create_client, Client
 from icalendar import Calendar
 
 router = APIRouter()
 
-# --- Supabase 설정 (여기서도 필요합니다) ---
+# --- SUPABASE 설정 (여기서도 필요합니다) ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-supabase: Client = None
+SUPABASE: Client = None
 
 if SUPABASE_URL and SUPABASE_KEY:
     try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        SUPABASE = create_client(SUPABASE_URL, SUPABASE_KEY)
     except Exception as e:
-        print(f"❌ Supabase Connection Error in Sync: {e}")
+        print(f"❌ SUPABASE Connection Error in Sync: {e}")
 
 # --- 데이터 모델 (여기서만 쓰므로 이동) ---
 class IcalSyncRequest(BaseModel):
@@ -33,7 +33,7 @@ class IcalSyncRequest(BaseModel):
 async def sync_ical(req: IcalSyncRequest):
     print(f"📡 iCal 요청 URL: {req.url}")
     
-    if not supabase: 
+    if not SUPABASE: 
         return JSONResponse(status_code=500, content={"message": "DB 미연결"})
 
     try:
@@ -84,7 +84,7 @@ async def sync_ical(req: IcalSyncRequest):
         # 3. DB 저장
         if new_events:
             print(f"💾 {count}개 일정 저장 중...")
-            supabase.table("events").insert(new_events).execute()
+            SUPABASE.table("events").insert(new_events).execute()
             return {"status": "success", "message": f"{count}개의 일정을 불러왔습니다!"}
         
         return {"status": "success", "message": "가져올 일정이 없습니다."}

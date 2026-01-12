@@ -4,20 +4,20 @@ from typing import Optional, Any
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from supabase import create_client, Client
+from SUPABASE import create_client, Client
 
 router = APIRouter()
 
-# --- Supabase 설정 ---
+# --- SUPABASE 설정 ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-supabase: Client = None
+SUPABASE: Client = None
 
 if SUPABASE_URL and SUPABASE_KEY:
     try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        SUPABASE = create_client(SUPABASE_URL, SUPABASE_KEY)
     except Exception as e:
-        print(f"❌ Supabase Connection Error in Events: {e}")
+        print(f"❌ SUPABASE Connection Error in Events: {e}")
 
 # --- 데이터 모델 ---
 class EventCreate(BaseModel):
@@ -38,9 +38,9 @@ class EventCreate(BaseModel):
 # GET /api/events (메인에서 prefix를 붙이므로 여기선 / 만 씀)
 @router.get("/")
 async def get_events():
-    if not supabase: return []
+    if not SUPABASE: return []
     try:
-        res = supabase.table("events").select("*").execute()
+        res = SUPABASE.table("events").select("*").execute()
         return res.data
     except Exception as e:
         print(f"❌ Event List Error: {e}")
@@ -51,7 +51,7 @@ async def get_events():
 async def create_event(evt: EventCreate):
     print(f"📩 일정 생성 요청: {evt.dict()}")
 
-    if not supabase: 
+    if not SUPABASE: 
         return JSONResponse(status_code=500, content={"message": "DB 연결 끊김"})
     
     try:
@@ -91,7 +91,7 @@ async def create_event(evt: EventCreate):
 
         print(f"💾 DB 저장 시도: {db_payload}")
         
-        res = supabase.table("events").insert(db_payload).execute()
+        res = SUPABASE.table("events").insert(db_payload).execute()
         
         return {"status": "success", "message": "일정 등록 성공", "data": res.data[0] if res.data else {}}
 
@@ -102,9 +102,9 @@ async def create_event(evt: EventCreate):
 # DELETE /api/events/{id}
 @router.delete("/{event_id}")
 async def delete_event(event_id: str):
-    if not supabase: return {"status": "error"}
+    if not SUPABASE: return {"status": "error"}
     try:
-        supabase.table("events").delete().eq("id", event_id).execute()
+        SUPABASE.table("events").delete().eq("id", event_id).execute()
         return {"status": "success"}
     except Exception as e:
         return JSONResponse(status_code=400, content={"message": str(e)})
