@@ -47,11 +47,16 @@ def search_places(query: str = Query(..., min_length=1), db: Session = Depends(g
     return response
 
 @router.post("/api/recommend")
-def get_recommendation(req: schemas.RecommendRequest, db: Session = Depends(get_db)):
+def get_recommendation(
+    req: schemas.RecommendRequest, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user) # 👈 유저 인증 추가
+):
     """
-    사용자 취향/목적 기반 단순 장소 추천
-    (DB 검색 -> 없으면 네이버 검색 -> 점수 산정 -> 반환)
+    하드코딩된 recommend.py가 아닌, 실제 DB와 연동된 
+    meeting_service의 로직을 호출합니다.
     """
+    # 🌟 로그인된 유저 정보를 요청 객체에 포함 (필요 시)
     return meeting_service.get_recommendations_direct(db, req)
 
 # --- 회의/모임 흐름 ---
@@ -72,9 +77,9 @@ async def confirm_meeting(req: schemas.ConfirmRequest, db: Session = Depends(get
 def create_event(
     event: schemas.EventSchema, 
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user) # 👈 유저 인증 추가
+    current_user: models.User = Depends(get_current_user) #
 ):
-    # 🌟 로그인된 유저의 ID를 일정 정보에 할당
+    # 🌟 로그인된 유저 ID를 강제로 할당하여 Supabase DB 저장 오류 방지
     event.user_id = current_user.id
     return meeting_service.create_event(db, event)
 
