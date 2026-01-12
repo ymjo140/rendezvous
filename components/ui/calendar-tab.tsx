@@ -52,15 +52,19 @@ export function CalendarTab() {
             const res = await fetchWithAuth("/api/events")
             if (res.ok) {
                 const data = await res.json();
-                // DB의 start_time을 캘린더용 date 객체 등으로 변환
-                const formattedEvents = data.map((e: any) => ({
-                    ...e,
-                    // start가 없으면 start_time 사용 (DB 컬럼 호환성)
-                    date: e.start ? e.start.split("T")[0] : (e.start_time ? e.start_time.split("T")[0] : ""), 
-                    time: e.start ? e.start.split("T")[1].substring(0, 5) : (e.start_time ? e.start_time.split("T")[1].substring(0, 5) : ""),
-                    // Date 객체 생성 (달력 표시용)
-                    dateObj: new Date(e.start || e.start_time)
-                }));
+                // 🌟 DB 데이터(date, time 분리됨)를 프론트엔드 달력용 객체로 변환
+                const formattedEvents = data.map((e: any) => {
+                    // date(YYYY-MM-DD)와 time(HH:MM)을 합쳐서 Date 객체 생성
+                    const dateStr = e.date ? e.date : ""; 
+                    const timeStr = e.time ? e.time : "00:00";
+                    return {
+                        ...e,
+                        date: dateStr, 
+                        time: timeStr,
+                        // 캘린더 라이브러리가 쓸 수 있게 합쳐진 날짜 객체 생성
+                        dateObj: new Date(`${dateStr}T${timeStr}:00`)
+                    };
+                });
                 setEvents(formattedEvents);
             }
             else if (res.status === 401) setIsGuest(true);
@@ -135,30 +139,43 @@ export function CalendarTab() {
     // 🌟 [수정 2] 일정 생성 로직 개선 (날짜+시간 합쳐서 전송)
     const handleCreateEvent = async () => {
         if(!newEvent.title || !newEvent.date || !newEvent.time) return alert("일정 제목, 날짜, 시간을 모두 입력하세요.");
+        
         try {
-            // 날짜와 시간을 합쳐서 ISO 포맷으로 변환 (YYYY-MM-DDTHH:MM:SS)
-            const combinedStart = new Date(`${newEvent.date}T${newEvent.time}:00`);
-            
+            // 🌟 DB 컬럼명에 정확히 맞춘 Payload
             const payload = {
+                id: crypto.randomUUID(), // 혹시 몰라 프론트에서도 생성하지만 백엔드가 덮어쓸 것임
+                user_id: 1, // 임시 유저 ID
                 title: newEvent.title,
-                start: combinedStart.toISOString(), // 백엔드 'start_time' 매핑용
-                location: newEvent.location,
-                description: `소요시간: ${newEvent.duration}분` // 소요시간은 설명에 저장
+                date: newEvent.date,          // "YYYY-MM-DD"
+                time: newEvent.time,          // "HH:MM"
+                duration_hours: Number(newEvent.duration) / 60, // 분 -> 시간 변환 (float)
+                location_name: newEvent.location, // location -> location_name
+                purpose: "개인",
+                is_private: true
             };
+
+            console.log("전송 데이터:", payload);
 
             const res = await fetchWithAuth("/api/events", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
+
             if(res.ok) {
                 alert("일정이 등록되었습니다.");
                 setIsCreateOpen(false); 
                 loadEvents();
                 // 초기화
                 setNewEvent({ title: "", date: new Date().toISOString().split('T')[0], time: "12:00", duration: "60", location: "" });
-            } else { alert("등록 실패"); }
-        } catch(e) { alert("오류 발생"); }
+            } else { 
+                const err = await res.json();
+                alert(`등록 실패: ${err.message || "서버 오류"}`); 
+            }
+        } catch(e) { 
+            console.error(e);
+            alert("오류 발생"); 
+        }
     }
 
     // --- 달력 계산 ---
