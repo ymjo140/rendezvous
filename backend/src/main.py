@@ -2,9 +2,7 @@ import sys
 import os
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
-from supabase import create_client, Client
 from pydantic import BaseModel
-from typing import Optional, List
 
 # [경로 설정]
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -13,7 +11,7 @@ if current_dir not in sys.path:
 
 app = fastapi.FastAPI()
 
-# --- CORS 설정 (기존 유지) ---
+# --- CORS 설정 ---
 origins = [
     "http://localhost:3000",
     "https://v0-we-meet-app-features.vercel.app",
@@ -35,32 +33,31 @@ app.add_middleware(
 async def root():
     return {"status": "ok", "message": "WeMeet Backend is Live."}
 
-# --- 라우터 연결 (수정됨) ---
-# 주의: try-except를 제거했습니다. 에러가 나면 서버가 켜지지 않고 로그에 원인이 뜹니다.
+# --- 라우터 연결 ---
 
-# 1. Events 라우터 (위치: src/api/events.py 라고 가정)
-from api import events
-app.include_router(events.router, prefix="/api/events", tags=["events"])
-print("✅ Events 라우터 연결 성공")
+# 1. Events (기존 유지)
+try:
+    from api import events
+    app.include_router(events.router, prefix="/api/events", tags=["events"])
+    print("✅ Events 라우터 연결 성공")
+except Exception:
+    print("⚠️ Events 라우터 없음")
 
-# 2. Routers 폴더 내 파일들 연결 (sync, auth, users 등)
-# 위치: src/api/routers/ 폴더 안
-from api.routers import sync
-from api.routers import auth
-from api.routers import users
-from api.routers import coins
-from api.routers import recommend
+# 2. Routers 폴더 연결
+from api.routers import sync, auth, users, coins, recommend
 
-app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
-app.include_router(recommend.router, prefix="/api", tags=["recommend"])
-app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-app.include_router(users.router, prefix="/api/users", tags=["users"])
-app.include_router(coins.router, prefix="/api/coins", tags=["coins"])
+# ✅ [수정] 파일 안에 이미 '/api/...' 경로가 있는 애들은 prefix를 뺍니다.
+app.include_router(auth.router, tags=["auth"])    # prefix 제거! (/api/auth/kakao 그대로 사용)
+app.include_router(users.router, tags=["users"])  # prefix 제거! (/api/users/me 등 그대로 사용)
+app.include_router(coins.router, tags=["coins"])  # prefix 제거! (/api/coins/wallet 그대로 사용)
+
+# ✅ [유지] 파일 안에 경로가 짧은 애들은 prefix를 붙여줍니다.
+app.include_router(sync.router, prefix="/api/sync", tags=["sync"])  # (/ical -> /api/sync/ical)
+app.include_router(recommend.router, prefix="/api", tags=["recommend"]) # (/recommend -> /api/recommend)
 
 print("✅ 모든 라우터(Sync, Auth, Users 등) 연결 성공")
 
-
-# --- 커뮤니티 (임시 코드 유지) ---
+# --- 커뮤니티 (임시) ---
 class CommunityCreate(BaseModel):
     title: str
     class Config:
