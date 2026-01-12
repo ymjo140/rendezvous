@@ -44,7 +44,7 @@ except Exception:
     print("⚠️ Events 라우터 없음")
 
 # 2. Routers 폴더 연결
-from api.routers import sync, auth, users, coins, meetings, recommend
+from api.routers import sync, auth, users, coins, meetings
 
 # ✅ [수정] 파일 안에 이미 '/api/...' 경로가 있는 애들은 prefix를 뺍니다.
 app.include_router(auth.router, tags=["auth"])    # prefix 제거! (/api/auth/kakao 그대로 사용)
@@ -53,7 +53,7 @@ app.include_router(coins.router, tags=["coins"])  # prefix 제거! (/api/coins/w
 app.include_router(meetings.router, tags=["meetings"])
 # ✅ [유지] 파일 안에 경로가 짧은 애들은 prefix를 붙여줍니다.
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])  # (/ical -> /api/sync/ical)
-app.include_router(recommend.router, prefix="/api", tags=["recommend"]) # (/recommend -> /api/recommend)
+
 
 print("✅ 모든 라우터(Sync, Auth, Users 등) 연결 성공")
 

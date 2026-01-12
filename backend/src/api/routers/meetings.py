@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional # Optional 추가
 
 from core.database import get_db
 from domain import models
 from schemas import meeting as schemas
 from services.meeting_service import MeetingService, data_provider
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user # 인증 의존성
 
 router = APIRouter()
 meeting_service = MeetingService()
@@ -16,22 +16,19 @@ meeting_service = MeetingService()
 def autocomplete_hotspots(query: str = Query(..., min_length=1)):
     """
     입력된 검색어(예: '강남')가 포함된 지하철역/핫스팟 목록을 반환합니다.
-    (TransportEngine에 정의된 좌표 DB 사용)
     """
     return meeting_service.search_hotspots(query)
 
-# 🌟 [수정] 프론트엔드가 'lat', 'lng' 키를 사용하므로 키 이름 변경
+# 🌟 [수정] 장소 검색 API
 @router.get("/api/places/search")
 def search_places(query: str = Query(..., min_length=1), db: Session = Depends(get_db)):
     """
     네이버 로컬 검색 API를 통해 장소를 검색합니다.
     """
-    # data_provider의 search_places_all_queries를 재활용
     results = data_provider.search_places_all_queries([query], "", 0.0, 0.0, db=db)
     
     response = []
     for place in results:
-        # 좌표 배열 처리
         lat = place.location[0] if isinstance(place.location, (list, tuple)) else place.location
         lng = place.location[1] if isinstance(place.location, (list, tuple)) else 0.0
 
@@ -39,24 +36,25 @@ def search_places(query: str = Query(..., min_length=1), db: Session = Depends(g
             "title": place.name,
             "address": place.address or "",
             "category": place.category,
-            # 🌟 수정: mapx, mapy 대신 lat, lng 사용 (프론트엔드 호환)
             "lat": lat,
             "lng": lng,
             "link": "" 
         })
     return response
 
+# 🌟 [핵심 수정] AI 장소 추천 API
 @router.post("/api/recommend")
 def get_recommendation(
     req: schemas.RecommendRequest, 
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user) # 👈 유저 인증 추가
+    # Optional을 사용해 토큰이 없어도(로그인 안해도) 401 에러 없이 통과시킵니다.
+    current_user: Optional[models.User] = Depends(get_current_user) 
 ):
     """
-    하드코딩된 recommend.py가 아닌, 실제 DB와 연동된 
-    meeting_service의 로직을 호출합니다.
+    1. 로그인 안 함 (current_user is None): 일반적인 목적/취향 기반 추천
+    2. 로그인 함 (current_user 존재): 유저의 개인 취향(preferences)을 반영한 추천
     """
-    # 🌟 로그인된 유저 정보를 요청 객체에 포함 (필요 시)
+    # 하드코딩된 데이터가 없는 실제 서비스 로직을 호출합니다.
     return meeting_service.get_recommendations_direct(db, req)
 
 # --- 회의/모임 흐름 ---
@@ -77,9 +75,9 @@ async def confirm_meeting(req: schemas.ConfirmRequest, db: Session = Depends(get
 def create_event(
     event: schemas.EventSchema, 
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user) #
+    current_user: models.User = Depends(get_current_user) # 여기는 일정 생성이므로 로그인 필수
 ):
-    # 🌟 로그인된 유저 ID를 강제로 할당하여 Supabase DB 저장 오류 방지
+    # 로그인된 유저 ID를 할당합니다.
     event.user_id = current_user.id
     return meeting_service.create_event(db, event)
 
