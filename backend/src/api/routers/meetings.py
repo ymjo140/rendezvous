@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from typing import List
 
-from ...core.database import get_db
-from ...domain import models
-from ...schemas import meeting as schemas
-from ...services.meeting_service import MeetingService, data_provider
-from ..dependencies import get_current_user
+from core.database import get_db
+from domain import models
+from schemas import meeting as schemas
+from services.meeting_service import MeetingService, data_provider
+from dependencies import get_current_user
 
 router = APIRouter()
 meeting_service = MeetingService()

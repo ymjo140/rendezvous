@@ -4,9 +4,9 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.orm import Session
 
-from ..core.config import settings
-from ..core.database import get_db
-from ..repositories.user_repository import UserRepository
+from core.config import settings
+from core.database import get_db
+from repositories.user_repository import UserRepository
 
 # 토큰을 추출하는 스키마 정의
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
