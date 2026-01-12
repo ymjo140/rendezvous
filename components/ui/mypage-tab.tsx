@@ -13,10 +13,13 @@ import { Slider } from "@/components/ui/slider"
 import { 
     Settings, Bell, LogOut, Palette, Coins, ShoppingBag, 
     Heart, Star, MessageSquare, Pencil, Check, X, Utensils, 
-    ChevronRight, MapPin, Search, Loader2 
+    ChevronRight, MapPin, Search, Loader2, Calendar // 🌟 Calendar 아이콘 추가
 } from "lucide-react"
 
-// 🌟 취향 조사 모달 import (경로 확인 필요)
+// 🌟 [추가] 캘린더 탭 컴포넌트 가져오기
+// (주의: calendar-tab.tsx 파일의 최상위 div에서 'h-full'이나 'h-screen' 클래스가 있다면 제거하거나 'min-h-[500px]' 등으로 변경해야 자연스럽습니다.)
+import { CalendarTab } from "@/components/ui/calendar-tab"
+
 import { PreferenceModal } from "@/components/ui/preference-modal"
 
 // --- 상수 및 타입 정의 ---
@@ -33,7 +36,7 @@ const CATEGORIES = [
 interface AvatarItem { id: string; category: string; name: string; image_url: string; price_coin: number; }
 interface UserInfo { 
     id: number; name: string; email: string; wallet_balance: number; 
-    location_name?: string; lat?: number; lng?: number; // 🌟 위치 정보 필드 추가
+    location_name?: string; lat?: number; lng?: number; 
     avatar: { level: number; equipped: Record<string, string | null>; inventory: string[]; }; 
     favorites: { id: number; name: string; category?: string; address?: string }[]; 
     reviews: any[]; 
@@ -42,7 +45,7 @@ interface UserInfo {
 
 const API_URL = "https://wemeet-backend-4lza.onrender.com";
 
-// 🌟 [신규] 장소 검색 컴포넌트 (배민 스타일 위치 설정용)
+// 장소 검색 컴포넌트
 function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<any[]>([]);
@@ -53,19 +56,16 @@ function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
         const t = setTimeout(async () => {
             setSearching(true);
             try {
-                // 실제 백엔드 API (없으면 더미 데이터 반환하도록 try-catch 처리)
                 const res = await fetch(`${API_URL}/api/places/search?query=${query}`);
                 if (res.ok) {
                     setResults(await res.json());
                 } else {
-                    // 🌟 백엔드 검색 API 미구현 시 테스트용 더미 데이터
                     setResults([
                         { title: `${query} (검색결과)`, address: "서울시 중구 세종대로 110", lat: 37.5665, lng: 126.9780 },
                         { title: "강남역", address: "서울시 강남구 강남대로 396", lat: 37.4980, lng: 127.0276 }
                     ]);
                 }
             } catch (e) {
-                // 에러 발생 시 테스트용 더미 데이터
                 setResults([
                     { title: `${query} (검색결과)`, address: "서울시 중구 세종대로 110", lat: 37.5665, lng: 126.9780 },
                     { title: "강남역", address: "서울시 강남구 강남대로 396", lat: 37.4980, lng: 127.0276 }
@@ -122,11 +122,9 @@ export function MyPageTab() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState("");
 
-  // 🌟 위치 설정 관련 State
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [locLoading, setLocLoading] = useState(false);
 
-  // 취향 조사 모달 상태
   const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
 
   // --- Data Fetching Logic ---
@@ -141,7 +139,6 @@ export function MyPageTab() {
               setNewName(data.name); 
               if (data.avatar) setPreviewEquipped(data.avatar.equipped || {});
 
-              // 가입 직후 취향 정보가 없으면 자동으로 띄우기
               if (!data.preferences || !data.preferences.foods || data.preferences.foods.length === 0) {
                   setIsPreferenceModalOpen(true);
               }
@@ -156,7 +153,7 @@ export function MyPageTab() {
   useEffect(() => { fetchMyInfo(); }, []);
   useEffect(() => { if (isEditorOpen) fetchShopItems(); }, [isEditorOpen]);
 
-  // --- Handlers (기존 로직 유지) ---
+  // --- Handlers ---
   const handleBuy = async (item: AvatarItem) => {
       if (!user) return;
       if (user.wallet_balance < item.price_coin) { alert("코인이 부족합니다! 열심히 활동해서 모아보세요."); return; }
@@ -209,7 +206,6 @@ export function MyPageTab() {
       } catch (e) { alert("변경 실패"); }
   };
 
-  // 🌟 [신규] 위치 저장 핸들러
   const handleSaveLocation = async (place: any) => {
       if (!confirm(`'${place.title}'을(를) 내 위치로 설정하시겠습니까?`)) return;
       setLocLoading(true);
@@ -274,22 +270,18 @@ export function MyPageTab() {
   return (
     <div className="h-full bg-[#F3F4F6] overflow-y-auto pb-24 font-['Pretendard']">
       
-      {/* 1. 상단 프로필 카드 (그라디언트 & 글래스모피즘 적용) */}
+      {/* 1. 상단 프로필 카드 */}
       <div className="p-5 pt-8">
           <Card className="relative overflow-hidden border-none shadow-xl text-white rounded-3xl">
-            {/* 배경 그라디언트 */}
             <div className="absolute inset-0 bg-gradient-to-br from-[#7C3AED] to-[#14B8A6]"></div>
-            {/* 유리 질감 패턴 */}
             <div className="absolute inset-0 bg-white/10 backdrop-blur-[1px]"></div>
 
             <CardContent className="relative p-6 z-10">
                 <div className="flex items-center gap-5">
-                    {/* 아바타 영역 (테두리 효과) */}
                     <div className="w-24 h-24 rounded-full border-4 border-white/30 shadow-inner bg-white/20 backdrop-blur-md overflow-hidden flex items-center justify-center relative flex-shrink-0">
-                         {renderAvatarLayered(user.avatar?.equipped || {}, 96)}
+                          {renderAvatarLayered(user.avatar?.equipped || {}, 96)}
                     </div>
                     
-                    {/* 텍스트 영역 */}
                     <div className="flex-1 min-w-0">
                         {isEditingName ? (
                             <div className="flex items-center gap-2 mb-2">
@@ -316,7 +308,6 @@ export function MyPageTab() {
                     </div>
                 </div>
 
-                {/* 🌟 위치 설정 버튼 (배달앱 스타일) */}
                 <div className="mt-6">
                     <button onClick={() => setIsLocationModalOpen(true)} className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl p-3 flex items-center justify-between text-white transition-all">
                         <div className="flex items-center gap-2">
@@ -330,7 +321,6 @@ export function MyPageTab() {
                     </button>
                 </div>
 
-                {/* 하단 액션 버튼들 */}
                 <div className="mt-3 grid grid-cols-2 gap-3">
                     <Button className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-md h-12 rounded-xl text-sm font-medium transition-all" onClick={() => setIsEditorOpen(true)}>
                         <Palette className="w-4 h-4 mr-2" /> 아바타 꾸미기
@@ -343,26 +333,41 @@ export function MyPageTab() {
         </Card>
       </div>
 
-      {/* 2. 탭 영역 */}
+      {/* 2. 탭 영역 (캘린더 추가됨) */}
       <div className="px-5">
-        <Tabs defaultValue="reviews" className="w-full">
-            <TabsList className="w-full h-14 bg-white rounded-2xl p-1.5 shadow-sm mb-6 grid grid-cols-2 border border-gray-100">
+        <Tabs defaultValue="calendar" className="w-full">
+            {/* 🌟 grid-cols-3으로 변경 */}
+            <TabsList className="w-full h-14 bg-white rounded-2xl p-1.5 shadow-sm mb-6 grid grid-cols-3 border border-gray-100">
+                <TabsTrigger 
+                    value="calendar" 
+                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#7C3AED] data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
+                >
+                   <Calendar className="w-4 h-4 mr-1"/> 내 일정
+                </TabsTrigger>
                 <TabsTrigger 
                     value="reviews" 
-                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#7C3AED] data-[state=active]:text-white font-bold transition-all shadow-none"
+                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#7C3AED] data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
                 >
                     내 활동
                 </TabsTrigger>
                 <TabsTrigger 
                     value="favorites" 
-                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#14B8A6] data-[state=active]:text-white font-bold transition-all shadow-none"
+                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#14B8A6] data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
                 >
                     즐겨찾기
                 </TabsTrigger>
             </TabsList>
             
+            {/* 🌟 [신규] 캘린더 탭 컨텐츠 */}
+            <TabsContent value="calendar" className="space-y-4">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden min-h-[500px]">
+                     {/* CalendarTab 컴포넌트 렌더링 */}
+                     <CalendarTab />
+                </div>
+            </TabsContent>
+
             <TabsContent value="reviews" className="space-y-4">
-                 {user.reviews && user.reviews.length > 0 ? user.reviews.map((review: any) => (
+                  {user.reviews && user.reviews.length > 0 ? user.reviews.map((review: any) => (
                     <div key={review.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
                         <div className="flex justify-between items-start mb-3">
                             <h3 className="font-bold text-gray-800">{review.place_name}</h3>
@@ -379,17 +384,17 @@ export function MyPageTab() {
                             "{review.comment}"
                         </p>
                     </div>
-                 )) : (
+                  )) : (
                     <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center space-y-2">
                         <div className="text-4xl mb-2">📝</div>
                         <div className="text-gray-800 font-bold">아직 활동 내역이 없어요</div>
                         <div className="text-gray-400 text-sm">첫 모임을 갖고 리뷰를 남겨보세요!</div>
                     </div>
-                 )}
+                  )}
             </TabsContent>
             
             <TabsContent value="favorites" className="space-y-4">
-                 {user.favorites && user.favorites.length > 0 ? user.favorites.map((fav: any, i: number) => (
+                  {user.favorites && user.favorites.length > 0 ? user.favorites.map((fav: any, i: number) => (
                     <div key={i} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:border-[#14B8A6] transition-colors cursor-pointer">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-500">
@@ -402,13 +407,13 @@ export function MyPageTab() {
                         </div>
                         <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-[#14B8A6] transition-colors" />
                     </div>
-                 )) : (
+                  )) : (
                     <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center space-y-2">
                         <div className="text-4xl mb-2">❤️</div>
                         <div className="text-gray-800 font-bold">즐겨찾는 장소가 없습니다</div>
                         <div className="text-gray-400 text-sm">마음에 드는 장소를 찜해보세요.</div>
                     </div>
-                 )}
+                  )}
             </TabsContent>
         </Tabs>
       </div>
@@ -456,7 +461,7 @@ export function MyPageTab() {
         </div>
       </div>
 
-      {/* 🌟 4. 위치 설정 모달 */}
+      {/* 4. 위치 설정 모달 */}
       <Dialog open={isLocationModalOpen} onOpenChange={setIsLocationModalOpen}>
           <DialogContent className="sm:max-w-md rounded-3xl">
               <DialogHeader><DialogTitle>내 동네 설정</DialogTitle><DialogDescription>만날 장소를 추천받을 기준 위치를 설정해주세요.</DialogDescription></DialogHeader>
@@ -467,7 +472,7 @@ export function MyPageTab() {
           </DialogContent>
       </Dialog>
 
-      {/* 5. 아바타 꾸미기 모달 (기존 로직 + 디자인 적용) */}
+      {/* 5. 아바타 꾸미기 모달 */}
       <Dialog open={isEditorOpen} onOpenChange={setIsEditorOpen}>
         <DialogContent className="sm:max-w-md h-[85vh] flex flex-col p-0 gap-0 overflow-hidden rounded-3xl border-0 font-['Pretendard']">
             <DialogHeader className="px-6 pt-5 pb-3 bg-white border-b border-gray-100 flex-shrink-0">
@@ -475,7 +480,6 @@ export function MyPageTab() {
                 <DialogDescription className="text-xs text-gray-400">나만의 개성을 표현해보세요!</DialogDescription>
             </DialogHeader>
             
-            {/* 미리보기 영역 */}
             <div className="bg-gradient-to-b from-purple-50 to-white p-6 flex flex-col items-center justify-center border-b border-gray-100 flex-shrink-0 relative">
                 {renderAvatarLayered(previewEquipped, 220)}
                 <div className="absolute top-4 right-4 bg-white/80 backdrop-blur px-3 py-1.5 rounded-full text-sm font-bold flex items-center gap-1 shadow-sm border border-gray-100">
@@ -483,7 +487,6 @@ export function MyPageTab() {
                 </div>
             </div>
 
-            {/* 아이템 탭 */}
             <div className="flex-1 flex flex-col bg-white overflow-hidden">
                 <Tabs defaultValue="inventory" className="flex-1 flex flex-col" onValueChange={setActiveTab}>
                     <div className="px-4 pt-3 border-b border-gray-100">
@@ -492,7 +495,6 @@ export function MyPageTab() {
                             <TabsTrigger value="shop" className="rounded-lg text-xs font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm text-[#7C3AED]">상점 (구매)</TabsTrigger>
                         </TabsList>
                         
-                        {/* 카테고리 필터 */}
                         <div className="flex gap-2 overflow-x-auto py-3 scrollbar-hide">
                             {CATEGORIES.map(cat => (
                                 <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${activeCategory === cat.id ? "bg-[#7C3AED] text-white border-[#7C3AED] shadow-sm" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"}`}>
@@ -583,7 +585,7 @@ export function MyPageTab() {
           </DialogContent>
       </Dialog>
 
-      {/* 7. 취향 모달 (컴포넌트) */}
+      {/* 7. 취향 모달 */}
       <PreferenceModal 
           isOpen={isPreferenceModalOpen} 
           onClose={() => setIsPreferenceModalOpen(false)} 

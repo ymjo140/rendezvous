@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation"
 import { HomeTab } from "@/components/ui/home-tab"
 import { CommunityTab } from "@/components/ui/community-tab" 
 import { ChatTab } from "@/components/ui/chat-tab" 
-import { CalendarTab } from "@/components/ui/calendar-tab" 
+// 🌟 [수정 1] CalendarTab 제거하고 DiscoveryTab 추가
+import { DiscoveryTab } from "@/components/ui/discovery-tab" 
 import { MyPageTab } from "@/components/ui/mypage-tab"
-import { Map, MessageCircle, Calendar, User, Users, Lock, LogIn } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+// 🌟 [수정 2] 아이콘 변경: Calendar -> Compass (탐색용 나침반 아이콘)
+import { Map, MessageCircle, Compass, User, Users, Lock } from "lucide-react"
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 
 export default function Page() {
@@ -31,7 +33,7 @@ export default function Page() {
         return
     }
 
-    // 2. 다른 탭은 로그인 필요
+    // 2. 다른 탭(탐색 포함)은 로그인 필요
     const token = localStorage.getItem("token")
     if (token) {
         setIsLoggedIn(true)
@@ -54,7 +56,8 @@ export default function Page() {
         {activeTab === "home" && <HomeTab />}
         {activeTab === "community" && <CommunityTab />}
         {activeTab === "chat" && <ChatTab />}
-        {activeTab === "calendar" && <CalendarTab />}
+        {/* 🌟 [수정 3] activeTab이 'discovery'일 때 DiscoveryTab 렌더링 */}
+        {activeTab === "discovery" && <DiscoveryTab />}
         {activeTab === "mypage" && <MyPageTab />}
       </main>
 
@@ -94,15 +97,16 @@ export default function Page() {
           <span className="text-[10px] font-medium">커뮤니티</span>
         </button>
 
-        {/* 4. 일정 (로그인 필요) */}
+        {/* 🌟 [수정 4] 일정 -> 탐색 (아이콘 및 텍스트 변경) */}
         <button 
-            onClick={() => handleTabChange("calendar")} 
+            onClick={() => handleTabChange("discovery")} 
             className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
-                activeTab === "calendar" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+                activeTab === "discovery" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
             }`}
         >
-          <Calendar className={`w-6 h-6 ${activeTab === "calendar" ? "fill-[#7C3AED]/10" : ""}`} />
-          <span className="text-[10px] font-medium">일정</span>
+          {/* Compass 아이콘 사용 */}
+          <Compass className={`w-6 h-6 ${activeTab === "discovery" ? "fill-[#7C3AED]/10" : ""}`} />
+          <span className="text-[10px] font-medium">탐색</span>
         </button>
 
         {/* 5. 마이 (로그인 필요) */}
@@ -118,7 +122,7 @@ export default function Page() {
 
       </nav>
 
-      {/* 🌟 로그인 유도 모달 */}
+      {/* 로그인 유도 모달 */}
       <Dialog open={showLoginModal} onOpenChange={setShowLoginModal}>
         <DialogContent className="sm:max-w-xs rounded-3xl p-6 font-['Pretendard']">
             <div className="flex flex-col items-center text-center gap-4">
