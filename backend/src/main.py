@@ -13,10 +13,12 @@ if current_dir not in sys.path:
 
 app = fastapi.FastAPI()
 
-# --- CORS 설정 ---
+# --- CORS 설정 (기존 유지) ---
 origins = [
     "http://localhost:3000",
     "https://v0-we-meet-app-features.vercel.app",
+    "https://wemeet-frontend.onrender.com", 
+    "https://wemeet-frontend-*.onrender.com",
     "*"
 ]
 
@@ -33,33 +35,32 @@ app.add_middleware(
 async def root():
     return {"status": "ok", "message": "WeMeet Backend is Live."}
 
-# --- 라우터 연결 (경로 수정 완료) ---
-try:
-    # 1. Events 라우터 연결 (위치: src/api/events.py)
-    from api import events
-    app.include_router(events.router, prefix="/api/events", tags=["events"])
-    print("✅ Events 라우터 연결 성공")
+# --- 라우터 연결 (수정됨) ---
+# 주의: try-except를 제거했습니다. 에러가 나면 서버가 켜지지 않고 로그에 원인이 뜹니다.
 
-    # 2. Sync 라우터 연결 (위치: src/api/routers/sync.py) 
-    # 🌟 [수정됨] api 폴더가 아니라 api.routers 폴더에서 가져옵니다.
-    from api.routers import sync
-    app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
-    print("✅ Sync 라우터 연결 성공")
+# 1. Events 라우터 (위치: src/api/events.py 라고 가정)
+from api import events
+app.include_router(events.router, prefix="/api/events", tags=["events"])
+print("✅ Events 라우터 연결 성공")
 
-    # 3. 기존 라우터들 (위치: src/api/routers/...)
-    from api.routers import auth, users, coins, recommend
-    app.include_router(recommend.router, prefix="/api", tags=["recommend"])
-    app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-    app.include_router(users.router, prefix="/api/users", tags=["users"])
-    app.include_router(coins.router, prefix="/api/coins", tags=["coins"])
-    
-except Exception as e:
-    # 에러 발생 시 원인 상세 출력
-    import traceback
-    traceback.print_exc()
-    print(f"⚠️ 라우터 로드 중 경고: {e}")
+# 2. Routers 폴더 내 파일들 연결 (sync, auth, users 등)
+# 위치: src/api/routers/ 폴더 안
+from api.routers import sync
+from api.routers import auth
+from api.routers import users
+from api.routers import coins
+from api.routers import recommend
 
-# 커뮤니티 (임시)
+app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
+app.include_router(recommend.router, prefix="/api", tags=["recommend"])
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(coins.router, prefix="/api/coins", tags=["coins"])
+
+print("✅ 모든 라우터(Sync, Auth, Users 등) 연결 성공")
+
+
+# --- 커뮤니티 (임시 코드 유지) ---
 class CommunityCreate(BaseModel):
     title: str
     class Config:
