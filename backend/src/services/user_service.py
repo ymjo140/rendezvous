@@ -8,7 +8,7 @@ from repositories.user_repository import UserRepository
 
 # 🌟 [수정] 경로에 맞게 정확히 import 합니다.
 try:
-    from ..core.algorithm import AdvancedRecommender
+    from core.algorithm import AdvancedRecommender
 except ImportError:
     AdvancedRecommender = None
 

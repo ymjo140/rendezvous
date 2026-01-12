@@ -4,7 +4,7 @@ from core.database import get_db
 from domain import models
 from schemas import coins as schemas
 from services.coin_service import CoinService
-from dependencies import get_current_user
+from api.dependencies import get_current_user
 
 router = APIRouter()
 service = CoinService()

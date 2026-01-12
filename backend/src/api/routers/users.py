@@ -6,7 +6,7 @@ from core.database import get_db
 from domain import models
 from schemas import user as schemas
 from services.user_service import UserService
-from dependencies import get_current_user # core/dependencies.py 로 이동했는지 확인 필요, 없으면 아래처럼 임시 사용
+from api.dependencies import get_current_user # core/dependencies.py 로 이동했는지 확인 필요, 없으면 아래처럼 임시 사용
 
 router = APIRouter()
 user_service = UserService()
