@@ -69,11 +69,20 @@ async def confirm_meeting(req: schemas.ConfirmRequest, db: Session = Depends(get
 
 # --- 일정 (Events) ---
 @router.post("/api/events", response_model=schemas.EventSchema)
-def create_event(event: schemas.EventSchema, db: Session = Depends(get_db)):
+def create_event(
+    event: schemas.EventSchema, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user) # 👈 유저 인증 추가
+):
+    # 🌟 로그인된 유저의 ID를 일정 정보에 할당
+    event.user_id = current_user.id
     return meeting_service.create_event(db, event)
 
 @router.get("/api/events", response_model=List[schemas.EventSchema])
-def get_events(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_events(
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
     return meeting_service.get_events(db, current_user.id)
 
 @router.delete("/api/events/{event_id}")
