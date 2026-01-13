@@ -1,30 +1,31 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, Query, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional # Optional 추가
+from typing import List
 
 from core.database import get_db
 from domain import models
 from schemas import meeting as schemas
-from services.meeting_service import MeetingService, data_provider
-from api.dependencies import get_current_user # 인증 의존성
+from services.meeting_service import MeetingService
+
+# 🌟 [수정됨] 파일 위치가 'core' 폴더이므로 경로를 core로 변경합니다.
+from core.data_provider import RealDataProvider 
+from api.dependencies import get_current_user
 
 router = APIRouter()
 meeting_service = MeetingService()
 
+# 객체 생성
+data_provider = RealDataProvider() 
+
 # 🌟 [신규 추가] 지하철역 자동완성 API
 @router.get("/api/places/autocomplete")
 def autocomplete_hotspots(query: str = Query(..., min_length=1)):
-    """
-    입력된 검색어(예: '강남')가 포함된 지하철역/핫스팟 목록을 반환합니다.
-    """
     return meeting_service.search_hotspots(query)
 
 # 🌟 [수정] 장소 검색 API
 @router.get("/api/places/search")
 def search_places(query: str = Query(..., min_length=1), db: Session = Depends(get_db)):
-    """
-    네이버 로컬 검색 API를 통해 장소를 검색합니다.
-    """
+    # data_provider 객체 사용
     results = data_provider.search_places_all_queries([query], "", 0.0, 0.0, db=db)
     
     response = []
@@ -42,19 +43,8 @@ def search_places(query: str = Query(..., min_length=1), db: Session = Depends(g
         })
     return response
 
-# 🌟 [핵심 수정] AI 장소 추천 API
 @router.post("/api/recommend")
-def get_recommendation(
-    req: schemas.RecommendRequest, 
-    db: Session = Depends(get_db),
-    # Optional을 사용해 토큰이 없어도(로그인 안해도) 401 에러 없이 통과시킵니다.
-    current_user: Optional[models.User] = Depends(get_current_user) 
-):
-    """
-    1. 로그인 안 함 (current_user is None): 일반적인 목적/취향 기반 추천
-    2. 로그인 함 (current_user 존재): 유저의 개인 취향(preferences)을 반영한 추천
-    """
-    # 하드코딩된 데이터가 없는 실제 서비스 로직을 호출합니다.
+def get_recommendation(req: schemas.RecommendRequest, db: Session = Depends(get_db)):
     return meeting_service.get_recommendations_direct(db, req)
 
 # --- 회의/모임 흐름 ---
@@ -75,18 +65,14 @@ async def confirm_meeting(req: schemas.ConfirmRequest, db: Session = Depends(get
 def create_event(
     event: schemas.EventSchema, 
     db: Session = Depends(get_db),
-    # 👇 이 부분이 반드시 있어야 합니다!
+    # 👇 일정 생성 시 유저 정보 필수
     current_user: models.User = Depends(get_current_user)
 ):
     event.user_id = current_user.id
     return meeting_service.create_event(db, event)
-    
 
 @router.get("/api/events", response_model=List[schemas.EventSchema])
-def get_events(
-    current_user: models.User = Depends(get_current_user), 
-    db: Session = Depends(get_db)
-):
+def get_events(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     return meeting_service.get_events(db, current_user.id)
 
 @router.delete("/api/events/{event_id}")
