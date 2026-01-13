@@ -575,9 +575,9 @@ export function ChatTab() {
                     <div className="divide-y divide-gray-100 pb-20">
                         {rooms.length > 0 ? rooms.map(room => (
                             <div key={room.id} onClick={() => { setActiveRoom(room); setView('room'); }} className="p-4 bg-white hover:bg-gray-50 cursor-pointer flex gap-3 transition-colors">
-                                <Avatar className="w-12 h-12 border border-gray-100"><AvatarFallback className="bg-purple-50 text-[#7C3AED] font-bold">{room.name[0]}</AvatarFallback></Avatar>
+                                <Avatar className="w-12 h-12 border border-gray-100"><AvatarFallback className="bg-purple-50 text-[#7C3AED] font-bold">{room.title[0]}</AvatarFallback></Avatar>
                                 <div className="flex-1 overflow-hidden py-1">
-                                    <div className="flex justify-between items-center mb-1"><h3 className="font-bold text-sm text-gray-900 truncate">{room.name}</h3><span className="text-[10px] text-gray-400">방금 전</span></div>
+                                    <div className="flex justify-between items-center mb-1"><h3 className="font-bold text-sm text-gray-900 truncate">{room.title}</h3><span className="text-[10px] text-gray-400">방금 전</span></div>
                                     <p className="text-xs text-gray-500 truncate">{room.last_message || "대화를 시작해보세요."}</p>
                                 </div>
                             </div>

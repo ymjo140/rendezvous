@@ -117,7 +117,7 @@ class TravelTimeCache(Base):
 class ChatRoom(Base):
     __tablename__ = "chat_rooms"
     id = Column(String, primary_key=True, default=generate_uuid)
-    name = Column(String)
+    title = Column(String)
     is_group = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
 
