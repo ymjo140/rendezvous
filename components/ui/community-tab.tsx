@@ -10,25 +10,9 @@ import { Search, Heart, MapPin, Calendar, User, Plus, Loader2, Check, Trash2, Lo
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { fetchWithAuth } from "@/lib/api-client"
 
-// ✅ [수정] 별도 파일 없이 여기서 주소와 요청 함수를 직접 정의합니다.
-const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 const CATEGORIES = ["전체", "맛집", "운동", "스터디", "취미", "여행"];
-
-// ✅ [수정] 인증 토큰을 자동으로 넣어주는 함수 (내부 정의)
-const fetchWithAuth = async (endpoint: string, options: any = {}) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
-    const url = `${API_URL}${endpoint}`;
-    
-    const headers = {
-        "Content-Type": "application/json",
-        ...options.headers,
-        ...(token ? { "Authorization": `Bearer ${token}` } : {})
-    };
-
-    console.log(`📡 요청: ${url}`);
-    return fetch(url, { ...options, headers });
-};
 
 export function CommunityTab() {
   const router = useRouter();
@@ -68,8 +52,16 @@ export function CommunityTab() {
     setLoading(true)
     try {
       const res = await fetchWithAuth("/api/communities")
-      if (res.ok) setMeetings(await res.json())
-    } catch (e) { console.error(e) } 
+      if (res.ok) {
+          const data = await res.json();
+          // 배열인지 확인 후 설정 (안전장치)
+          if (Array.isArray(data)) {
+              setMeetings(data);
+          } else {
+              setMeetings([]);
+          }
+      }
+    } catch (e) { console.error(e); setMeetings([]); } 
     finally { setLoading(false) }
   }
 
@@ -91,6 +83,7 @@ export function CommunityTab() {
           };
           await fetchWithAuth("/api/events", {
               method: "POST",
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload)
           });
       } catch (e) { console.error("캘린더 등록 실패:", e); }
@@ -114,6 +107,7 @@ export function CommunityTab() {
 
           const res = await fetchWithAuth("/api/communities", {
               method: "POST",
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload)
           });
 
@@ -216,7 +210,10 @@ export function CommunityTab() {
           {loading ? <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-[#7C3AED]"/></div> : 
            filteredMeetings.length > 0 ? filteredMeetings.map((m) => {
             const isAuthor = m.host_id === myId;
-            const isMember = m.current_members?.some((member: any) => member.id === myId);
+            // 🌟 [수정 핵심] current_members 대신 member_ids(숫자 리스트)를 사용하여 확인
+            const isMember = Array.isArray(m.member_ids) ? m.member_ids.includes(myId) : false;
+            // 🌟 [수정 핵심] 참여 인원 수도 member_ids 길이를 사용
+            const memberCount = Array.isArray(m.member_ids) ? m.member_ids.length : 0;
 
             return (
                 <div key={m.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 relative transition-all hover:shadow-md">
@@ -233,7 +230,7 @@ export function CommunityTab() {
 
                 <div className="flex flex-wrap gap-2 mb-3">
                     <Badge variant="secondary" className="bg-purple-50 text-[#7C3AED] border-0">{m.category}</Badge>
-                    <Badge variant="outline" className="text-gray-500 bg-gray-50 border-gray-200"><User className="w-3 h-3 mr-1"/> {m.current_members?.length || 0}/{m.max_members}</Badge>
+                    <Badge variant="outline" className="text-gray-500 bg-gray-50 border-gray-200"><User className="w-3 h-3 mr-1"/> {memberCount}/{m.max_members}</Badge>
                 </div>
 
                 <div className="flex justify-between items-end border-t border-gray-50 pt-3">
