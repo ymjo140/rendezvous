@@ -189,3 +189,50 @@ class MeetingService:
 
     def get_events(self, db: Session, user_id: int):
         return self.repo.get_user_events(db, user_id)
+    def create_event(self, db: Session, event_data: schemas.EventSchema):
+        try:
+            new_event = models.Event(
+                id=str(uuid.uuid4()),
+                user_id=event_data.user_id,
+                title=event_data.title,
+                date=event_data.date,
+                time=event_data.time,
+                # 🌟 고정값이 아닌 프론트엔드에서 보낸 값을 사용
+                duration_hours=getattr(event_data, 'duration_hours', 1.0), 
+                location_name=event_data.location_name,
+                purpose=event_data.purpose,
+                is_private=getattr(event_data, 'is_private', True)
+            )
+            db.add(new_event)
+            db.commit()
+            db.refresh(new_event)
+            return new_event
+        except Exception as e:
+            db.rollback()
+            print(f"CREATE EVENT ERROR: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"일정 생성 실패: {str(e)}")
+
+    # 약속 확정 시에도 유동적으로 처리 (필요시 req에 추가 가능)
+    async def confirm_meeting(self, db: Session, req: schemas.ConfirmRequest):
+        try:
+            room_members = db.query(models.ChatRoomMember).filter(models.ChatRoomMember.room_id == req.room_id).all()
+            for m in room_members:
+                event = models.Event(
+                    id=str(uuid.uuid4()), 
+                    user_id=m.user_id, 
+                    title=f"📅 {req.place_name}", 
+                    date=req.date, 
+                    time=req.time, 
+                    # 확정 시 기본값은 1.0으로 하되, 스키마에 따라 가변 적용 가능
+                    duration_hours=getattr(req, 'duration_hours', 1.0), 
+                    location_name=req.place_name, 
+                    purpose=req.category,
+                    is_private=True
+                )
+                db.add(event)
+            db.commit()
+            await self._send_system_msg(req.room_id, f"✅ {req.place_name} 약속 확정!")
+            return {"status": "success"}
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=str(e))
