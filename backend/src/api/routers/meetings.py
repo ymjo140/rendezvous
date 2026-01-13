@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, BackgroundTasks, Query, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional # Optional 추가
 
@@ -77,6 +77,11 @@ def create_event(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user) # 여기는 일정 생성이므로 로그인 필수
 ):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+        
+    event.user_id = current_user.id
+    return meeting_service.create_event(db, event)
     # 로그인된 유저 ID를 할당합니다.
     event.user_id = current_user.id
     return meeting_service.create_event(db, event)

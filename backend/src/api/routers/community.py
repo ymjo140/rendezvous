@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from core.database import get_db
@@ -12,6 +12,8 @@ service = CommunityService()
 
 @router.get("/api/communities", response_model=List[dict])
 def get_communities(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     return service.get_communities(db, user)
 
 @router.post("/api/communities")
