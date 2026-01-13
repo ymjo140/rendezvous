@@ -35,28 +35,30 @@ async def root():
 
 # --- 라우터 연결 ---
 
-# 1. Events (기존 유지)
-try:
-    from api import events
-    app.include_router(events.router, prefix="/api/events", tags=["events"])
-    print("✅ Events 라우터 연결 성공")
-except Exception:
-    print("⚠️ Events 라우터 없음")
+# ❌ [삭제/주석] 구버전 events 라우터가 요청을 가로채지 못하게 막습니다!
+# try:
+#     from api import events
+#     app.include_router(events.router, prefix="/api/events", tags=["events"])
+#     print("✅ Events 라우터 연결 성공")
+# except Exception:
+#     print("⚠️ Events 라우터 없음")
 
 # 2. Routers 폴더 연결
 from api.routers import sync, auth, users, coins, meetings, community
 
 # ✅ [수정] 파일 안에 이미 '/api/...' 경로가 있는 애들은 prefix를 뺍니다.
-app.include_router(auth.router, tags=["auth"])    # prefix 제거! (/api/auth/kakao 그대로 사용)
-app.include_router(users.router, tags=["users"])  # prefix 제거! (/api/users/me 등 그대로 사용)
-app.include_router(coins.router, tags=["coins"])  # prefix 제거! (/api/coins/wallet 그대로 사용)
-app.include_router(meetings.router, tags=["meetings"])
+app.include_router(auth.router, tags=["auth"])
+app.include_router(users.router, tags=["users"])
+app.include_router(coins.router, tags=["coins"])
+
+# 🌟 중요: 이제 meetings.py가 '/api/events' 요청을 처리하게 됩니다.
+app.include_router(meetings.router, tags=["meetings"]) 
 app.include_router(community.router, tags=["community"])
+
 # ✅ [유지] 파일 안에 경로가 짧은 애들은 prefix를 붙여줍니다.
-app.include_router(sync.router, prefix="/api/sync", tags=["sync"])  # (/ical -> /api/sync/ical)
+app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 
-
-print("✅ 모든 라우터(Sync, Auth, Users 등) 연결 성공")
+print("✅ 모든 라우터 연결 성공")
 
 # --- 커뮤니티 (임시) ---
 class CommunityCreate(BaseModel):
@@ -64,6 +66,6 @@ class CommunityCreate(BaseModel):
     class Config:
         extra = "allow"
 
-@app.post("/api/communities")
+@app.post("/api/communities_dummy")
 async def create_community_dummy(comm: CommunityCreate):
     return {"status": "success", "message": "커뮤니티 생성"}
