@@ -162,6 +162,7 @@ class Event(Base):
     location_name = Column(String, nullable=True)
     purpose = Column(String, default="개인")
     created_at = Column(DateTime, default=datetime.now)
+    is_private = Column(Boolean, default=True)
 
 class Friendship(Base):
     __tablename__ = "friendships"

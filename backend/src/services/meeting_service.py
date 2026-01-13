@@ -158,17 +158,34 @@ class MeetingService:
 
     # (confirm_meeting, vote_meeting, get_events 등 기존 메서드 유지)
     async def confirm_meeting(self, db: Session, req: schemas.ConfirmRequest):
-        room_members = db.query(models.ChatRoomMember).filter(models.ChatRoomMember.room_id == req.room_id).all()
-        count = 0
-        for m in room_members:
-            event = models.Event(
-                id=str(uuid.uuid4()), user_id=m.user_id, title=f"📅 {req.place_name}", 
-                date=req.date, time=req.time, location_name=req.place_name, purpose=req.category
-            )
-            db.add(event); count += 1
-        db.commit()
-        await self._send_system_msg(req.room_id, f"✅ {req.place_name} 약속 확정! ({count}명 캘린더 등록)")
-        return {"status": "success"}
+        try:
+            room_members = db.query(models.ChatRoomMember).filter(models.ChatRoomMember.room_id == req.room_id).all()
+            count = 0
+            for m in room_members:
+                # 🌟 DB 스키마에 맞춰 duration_hours와 is_private 추가
+                event = models.Event(
+                    id=str(uuid.uuid4()), 
+                    user_id=m.user_id, 
+                    title=f"📅 {req.place_name}", 
+                    date=req.date, 
+                    time=req.time, 
+                    duration_hours=1.0, # 👈 추가 (기본 1시간 설정)
+                    location_name=req.place_name, 
+                    purpose=req.category,
+                    is_private=True      # 👈 추가 (기본 비공개 설정)
+                )
+                db.add(event)
+                count += 1
+            
+            db.commit()
+            await self._send_system_msg(req.room_id, f"✅ {req.place_name} 약속 확정! ({count}명 캘린더 등록)")
+            return {"status": "success"}
+            
+        except Exception as e:
+            db.rollback()
+            # 서버 로그에서 상세 에러 확인용
+            print(f"Confirm Meeting Error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"약속 확정 실패: {str(e)}")
 
     def get_events(self, db: Session, user_id: int):
         return self.repo.get_user_events(db, user_id)
