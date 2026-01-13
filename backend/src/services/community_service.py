@@ -17,7 +17,7 @@ class CommunityService:
         try:
             # A. 커뮤니티 기본 정보 생성
             comm = self.repo.create(db, user.id, req)
-            
+            db.flush()
             # B. 채팅방 자동 생성 (커뮤니티 ID와 동일하게 설정하여 1:1 매칭)
             new_chat_room = models.ChatRoom(
                 id=comm.id,

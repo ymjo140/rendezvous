@@ -236,3 +236,21 @@ class MeetingService:
         except Exception as e:
             db.rollback()
             raise HTTPException(status_code=500, detail=str(e))
+    def delete_event(self, db: Session, user_id: int, event_id: str):
+        try:
+            # 내 일정인지 확인 후 가져오기
+            event = db.query(models.Event).filter(
+                models.Event.id == event_id, 
+                models.Event.user_id == user_id
+            ).first()
+            
+            if not event:
+                raise HTTPException(status_code=404, detail="삭제할 일정을 찾을 수 없습니다.")
+            
+            db.delete(event)
+            db.commit()
+            return {"status": "success", "message": "일정이 삭제되었습니다."}
+        except Exception as e:
+            db.rollback()
+            print(f"DELETE EVENT ERROR: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"삭제 실패: {str(e)}")    
