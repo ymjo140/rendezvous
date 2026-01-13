@@ -32,7 +32,7 @@ class CommunityService:
                 "location": c.location,
                 "date_time": c.date_time,
                 "max_members": c.max_members,
-                "current_members": len(members),
+                "member_ids": len(members),
                 "host_name": host.name if host else "Unknown",
                 "tags": c.tags,
                 "is_joined": user.id in members,

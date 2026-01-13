@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { fetchWithAuth } from "@/lib/api-client"
 
+// ✅ [수정 1] API_URL 삭제 (api-client에서 가져다 씀)
 const CATEGORIES = ["전체", "맛집", "운동", "스터디", "취미", "여행"];
 
 export function CommunityTab() {
@@ -54,7 +55,6 @@ export function CommunityTab() {
       const res = await fetchWithAuth("/api/communities")
       if (res.ok) {
           const data = await res.json();
-          // 배열인지 확인 후 설정 (안전장치)
           if (Array.isArray(data)) {
               setMeetings(data);
           } else {
@@ -210,9 +210,8 @@ export function CommunityTab() {
           {loading ? <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-[#7C3AED]"/></div> : 
            filteredMeetings.length > 0 ? filteredMeetings.map((m) => {
             const isAuthor = m.host_id === myId;
-            // 🌟 [수정 핵심] current_members 대신 member_ids(숫자 리스트)를 사용하여 확인
+            // 🌟 [수정 2] DB 컬럼명에 맞게 current_members -> member_ids로 변경
             const isMember = Array.isArray(m.member_ids) ? m.member_ids.includes(myId) : false;
-            // 🌟 [수정 핵심] 참여 인원 수도 member_ids 길이를 사용
             const memberCount = Array.isArray(m.member_ids) ? m.member_ids.length : 0;
 
             return (

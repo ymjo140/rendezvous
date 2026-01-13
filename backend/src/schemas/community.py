@@ -13,7 +13,7 @@ class CommunityCreate(BaseModel):
 class CommunityResponse(CommunityCreate):
     id: str
     host_name: str
-    current_members: int
+    member_ids: int
     is_joined: bool = False
 
 class JoinRequest(BaseModel):
