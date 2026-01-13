@@ -75,16 +75,12 @@ async def confirm_meeting(req: schemas.ConfirmRequest, db: Session = Depends(get
 def create_event(
     event: schemas.EventSchema, 
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user) # 여기는 일정 생성이므로 로그인 필수
+    # 👇 이 부분이 반드시 있어야 합니다!
+    current_user: models.User = Depends(get_current_user)
 ):
-    if not current_user:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-        
     event.user_id = current_user.id
     return meeting_service.create_event(db, event)
-    # 로그인된 유저 ID를 할당합니다.
-    event.user_id = current_user.id
-    return meeting_service.create_event(db, event)
+    
 
 @router.get("/api/events", response_model=List[schemas.EventSchema])
 def get_events(

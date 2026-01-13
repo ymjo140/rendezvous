@@ -7,9 +7,23 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input" 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Trash2, Link as LinkIcon, RefreshCw, ArrowLeft, Loader2 } from "lucide-react"
-import { fetchWithAuth } from "@/lib/api-client"
 
+// ✅ [수정] 파일 내부에 직접 URL과 인증 함수를 선언 (import 의존성 제거)
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
+
+const fetchWithAuth = async (endpoint: string, options: any = {}) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
+    const url = `${API_URL}${endpoint}`;
+    
+    const headers = {
+        "Content-Type": "application/json",
+        ...options.headers,
+        ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    };
+
+    console.log(`📡 Calendar 요청: ${url}`);
+    return fetch(url, { ...options, headers });
+};
 
 export function CalendarTab() {
     const router = useRouter();
@@ -88,7 +102,6 @@ export function CalendarTab() {
         try {
             const res = await fetchWithAuth("/api/sync/ical", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ url: url, source_name: source })
             });
             if (res.ok) loadEvents();
@@ -115,7 +128,6 @@ export function CalendarTab() {
         try {
             const res = await fetchWithAuth("/api/sync/ical", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ url: syncUrl, source_name: syncSource })
             });
             if (res.ok) {
@@ -170,7 +182,6 @@ export function CalendarTab() {
 
             const res = await fetchWithAuth("/api/events", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
 

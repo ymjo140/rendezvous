@@ -10,10 +10,25 @@ import { Search, Heart, MapPin, Calendar, User, Plus, Loader2, Check, Trash2, Lo
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { fetchWithAuth } from "@/lib/api-client"
 
+// ✅ [수정] 별도 파일 없이 여기서 주소와 요청 함수를 직접 정의합니다.
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 const CATEGORIES = ["전체", "맛집", "운동", "스터디", "취미", "여행"];
+
+// ✅ [수정] 인증 토큰을 자동으로 넣어주는 함수 (내부 정의)
+const fetchWithAuth = async (endpoint: string, options: any = {}) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
+    const url = `${API_URL}${endpoint}`;
+    
+    const headers = {
+        "Content-Type": "application/json",
+        ...options.headers,
+        ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    };
+
+    console.log(`📡 요청: ${url}`);
+    return fetch(url, { ...options, headers });
+};
 
 export function CommunityTab() {
   const router = useRouter();
@@ -76,7 +91,6 @@ export function CommunityTab() {
           };
           await fetchWithAuth("/api/events", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload)
           });
       } catch (e) { console.error("캘린더 등록 실패:", e); }
@@ -100,7 +114,6 @@ export function CommunityTab() {
 
           const res = await fetchWithAuth("/api/communities", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload)
           });
 
