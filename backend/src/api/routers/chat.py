@@ -39,13 +39,18 @@ manager = ConnectionManager()
 # --- 1. 채팅방 목록 (수정됨) ---
 @router.get("/api/chat/rooms")
 def get_chat_rooms(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    rooms = db.query(models.ChatRoom).all()
+    # 🌟 내가 멤버로 등록된 채팅방 ID들만 조회
+    my_room_ids = db.query(models.ChatRoomMember.room_id).filter(models.ChatRoomMember.user_id == current_user.id).all()
+    room_ids = [r[0] for r in my_room_ids]
+    
+    rooms = db.query(models.ChatRoom).filter(models.ChatRoom.id.in_(room_ids)).all()
+    
     result = []
     for r in rooms:
         result.append({
             "id": r.id,
-            "title": r.title,  # ✅ title로 보냄
-            "last_message": "대화가 없습니다.",
+            "title": r.title,
+            "last_message": "새로운 대화를 시작해보세요.",
             "is_group": r.is_group
         })
     return result

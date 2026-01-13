@@ -76,6 +76,10 @@ def get_events(current_user: models.User = Depends(get_current_user), db: Sessio
     return meeting_service.get_events(db, current_user.id)
 
 @router.delete("/api/events/{event_id}")
-def delete_event(event_id: str, db: Session = Depends(get_db)):
-    meeting_service.delete_event(db, event_id)
-    return {"detail": "Deleted"}
+def delete_event(
+    event_id: str, 
+    db: Session = Depends(get_db), 
+    user = Depends(get_current_user) # 🌟 유저 정보 주입 확인
+):
+    # 🌟 인자 3개를 정확히 전달: (db, user_id, event_id)
+    return meeting_service.delete_event(db, user.id, event_id)
