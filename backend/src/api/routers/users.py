@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -15,10 +15,14 @@ user_service = UserService()
 # --- 유저 정보 & 온보딩 ---
 @router.get("/api/users/me")
 def get_my_info(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user:
+        print("⛔ [Router Debug] get_my_info 차단됨: 로그인 필요")
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     return user_service.get_my_info(db, current_user)
 
 @router.post("/api/users/me/onboarding")
 def complete_onboarding(req: schemas.OnboardingRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user: raise HTTPException(401, "로그인 필요")
     return user_service.complete_onboarding(db, current_user, req)
 
 @router.put("/api/users/me/location")
