@@ -12,8 +12,23 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
 
+// 🌟 [핵심] 주소를 여기서 직접 관리 (커뮤니티 탭과 통일)
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 const WS_URL = "wss://wemeet-backend-xqlo.onrender.com";
+
+// 🌟 [핵심] 이 파일 전용 통신 함수 (토큰 자동 포함)
+const fetchChatAPI = async (endpoint: string, options: RequestInit = {}) => {
+    const token = localStorage.getItem("token");
+    const headers = {
+        "Content-Type": "application/json",
+        ...options.headers,
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+    } as HeadersInit;
+
+    const url = `${API_URL}${endpoint}`;
+    console.log(`📡 Chat 요청: ${url}`);
+    return fetch(url, { ...options, headers });
+};
 
 // --- AI 장소 추천용 필터 데이터 ---
 const AI_FILTER_OPTIONS: Record<string, any> = {
@@ -45,13 +60,8 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
     const handleVote = async () => {
         if (voted) return; 
         try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(`${API_URL}/api/meeting-flow/vote`, {
+            const res = await fetchChatAPI(`/api/meeting-flow/vote`, {
                 method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    ...(token && { "Authorization": `Bearer ${token}` })
-                },
                 body: JSON.stringify({
                     room_id: String(roomId), 
                     message_id: messageId 
@@ -71,13 +81,8 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
         
         setConfirmLoading(true);
         try {
-            const token = localStorage.getItem("token");
-            await fetch(`${API_URL}/api/meeting-flow/confirm`, {
+            await fetchChatAPI(`/api/meeting-flow/confirm`, {
                 method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    ...(token && { "Authorization": `Bearer ${token}` })
-                },
                 body: JSON.stringify({
                     room_id: String(roomId),
                     place_name: data.place.name,
@@ -169,12 +174,9 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     // 초기 데이터 로드 (일정 및 내 위치)
     useEffect(() => {
         const loadData = async () => {
-            const token = localStorage.getItem("token");
-            if (!token) return;
-
             // 1. 내 정보(위치) 불러오기 - DB 연동
             try {
-                const userRes = await fetch(`${API_URL}/api/users/me`, { headers: { "Authorization": `Bearer ${token}` } });
+                const userRes = await fetchChatAPI("/api/users/me");
                 if (userRes.ok) {
                     const user = await userRes.json();
                     if (user.lat && user.lng && Math.abs(user.lat) > 1.0) {
@@ -188,10 +190,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
 
             // 2. 가능한 날짜 불러오기
             try {
-                const dateRes = await fetch(`${API_URL}/api/chat/rooms/${roomId}/available-dates`, {
-                    headers: token ? { "Authorization": `Bearer ${token}` } : {}
-                });
-                
+                const dateRes = await fetchChatAPI(`/api/chat/rooms/${roomId}/available-dates`);
                 if (dateRes.ok) {
                     const candidates = await dateRes.json();
                     setRecommendedDates(candidates);
@@ -212,8 +211,6 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     const handlePlan = async () => {
         setRecLoading(true)
         try {
-            const token = localStorage.getItem("token");
-            
             const targetDate = selectedDateSlot ? selectedDateSlot.fullDate : "auto";
             const targetTime = selectedDateSlot ? selectedDateSlot.time : "auto";
 
@@ -240,14 +237,10 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
             }
 
             // 요청만 보내고 결과는 소켓으로 받음 (await 없이)
-            fetch(`${API_URL}/api/meeting-flow`, {
+            fetchChatAPI(`/api/meeting-flow`, {
                 method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    ...(token && { "Authorization": `Bearer ${token}` })
-                },
                 body: JSON.stringify(payload)
-            })
+            });
 
             // 즉시 닫기
             onClose();
@@ -261,9 +254,8 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
         if(!scheduleInput.trim()) return;
         setScheduleLoading(true);
         try {
-            const res = await fetch(`${API_URL}/api/ai/parse-schedule`, {
+            const res = await fetchChatAPI(`/api/ai/parse-schedule`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ text: scheduleInput })
             });
             if(res.ok) {
@@ -278,13 +270,8 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     const handleRegisterEvent = async () => {
         if(!parsedSchedule || !myId) return;
         try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(`${API_URL}/api/events`, {
+            const res = await fetchChatAPI(`/api/events`, {
                 method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    ...(token && { "Authorization": `Bearer ${token}` })
-                },
                 body: JSON.stringify({
                     user_id: myId,
                     title: parsedSchedule.title || "새 약속",
@@ -298,9 +285,8 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
 
             if(res.ok) {
                 // 채팅방에도 알림 메시지 보내기
-                await fetch(`${API_URL}/api/chat/message`, {
+                await fetchChatAPI(`/api/chat/message`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json", ...(token && { "Authorization": `Bearer ${token}` }) },
                     body: JSON.stringify({ room_id: String(roomId), content: `📅 [일정 등록됨] ${parsedSchedule.title} (${parsedSchedule.date} ${parsedSchedule.time})`, type: "text" })
                 });
                 
@@ -371,6 +357,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                         )}
                     </div>
 
+                    {/* 나머지 옵션 UI는 동일 */}
                     <div className="flex gap-4">
                         <div className="flex-1 space-y-1">
                             <label className="text-xs font-bold text-gray-500">인원</label>
@@ -500,7 +487,7 @@ export function ChatTab() {
             const token = localStorage.getItem("token");
             if(token) {
                 try {
-                    const res = await fetch(`${API_URL}/api/users/me`, { headers: { "Authorization": `Bearer ${token}` } });
+                    const res = await fetchChatAPI("/api/users/me");
                     if (res.ok) setMyId((await res.json()).id);
                 } catch(e) {}
             }
@@ -511,21 +498,17 @@ export function ChatTab() {
 
     const fetchRooms = async () => {
         try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(`${API_URL}/api/chat/rooms`, {
-                headers: token ? { "Authorization": `Bearer ${token}` } : {}
-            })
+            // 🌟 fetchChatAPI 사용
+            const res = await fetchChatAPI(`/api/chat/rooms`)
             if (res.ok) setRooms(await res.json())
         } catch(e) {}
     }
 
     const fetchMessages = async () => {
         if (!activeRoom) return;
-        const token = localStorage.getItem("token");
         try {
-            const res = await fetch(`${API_URL}/api/chat/${activeRoom.id}/messages`, {
-                headers: token ? { "Authorization": `Bearer ${token}` } : {}
-            });
+            // 🌟 fetchChatAPI 사용
+            const res = await fetchChatAPI(`/api/chat/${activeRoom.id}/messages`);
             if (res.ok) {
                 setMessages(await res.json());
                 setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
@@ -537,7 +520,7 @@ export function ChatTab() {
     useEffect(() => {
         if (view === 'room' && activeRoom) {
             setShowPlanner(false)
-            fetchMessages(); // 초기 로드
+            fetchMessages(); 
 
             // WebSocket 연결
             const token = localStorage.getItem("token");
@@ -548,7 +531,6 @@ export function ChatTab() {
             ws.onmessage = (event) => {
                 const newMsg = JSON.parse(event.data);
                 setMessages(prev => [...prev, newMsg]);
-                // 🌟 메시지 수신 시 스크롤
                 setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
             };
             ws.onclose = () => { setIsConnected(false); setTimeout(() => { if (view === 'room' && activeRoom) ws.close(); }, 3000); };
@@ -565,11 +547,7 @@ export function ChatTab() {
         if (!confirm("채팅방을 나가시겠습니까? 관련 모임 목록에서도 사라집니다.")) return;
 
         try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(`${API_URL}/api/chat/rooms/${activeRoom.id}/leave`, {
-                method: "POST",
-                headers: token ? { "Authorization": `Bearer ${token}` } : {}
-            });
+            const res = await fetchChatAPI(`/api/chat/rooms/${activeRoom.id}/leave`, { method: "POST" });
 
             if (res.ok) {
                 alert("채팅방을 나갔습니다.");
@@ -646,7 +624,6 @@ export function ChatTab() {
                 <div className="flex flex-col gap-3 pb-4">
                     <div className="flex justify-center my-4"><span className="bg-gray-200/60 text-gray-500 text-[10px] px-3 py-1 rounded-full">대화가 시작되었습니다.</span></div>
 
-                    {/* 🌟 AI 모임 매니저 (onRefresh 전달됨!) */}
                     {showPlanner && (
                         <MeetingPlanner 
                             roomId={activeRoom?.id} 
@@ -661,7 +638,6 @@ export function ChatTab() {
                         let content = null;
                         try {
                             const jsonContent = JSON.parse(msg.content);
-                            // 🌟 시스템 메시지 처리
                             if (jsonContent.type === "vote_card") {
                                 content = <VoteCard data={jsonContent} messageId={msg.id} roomId={activeRoom.id} onRefresh={fetchMessages} />
                             } else if (jsonContent.type === "system") {
