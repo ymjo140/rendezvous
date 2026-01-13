@@ -10,10 +10,24 @@ import { Search, Heart, MapPin, Calendar, User, Plus, Loader2, Check, Trash2, Lo
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { fetchWithAuth } from "@/lib/api-client"
 
-// ✅ [수정 1] API_URL 삭제 (api-client에서 가져다 씀)
+// 🌟 [핵심] 외부 의존성 제거: 마이페이지처럼 여기서 직접 주소를 정의합니다.
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 const CATEGORIES = ["전체", "맛집", "운동", "스터디", "취미", "여행"];
+
+// 🌟 [핵심] 외부 의존성 제거: 이 파일 전용 통신 함수를 만듭니다.
+const fetchCommunityAPI = async (endpoint: string, options: RequestInit = {}) => {
+    const token = localStorage.getItem("token");
+    const headers = {
+        "Content-Type": "application/json",
+        ...options.headers,
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+    } as HeadersInit;
+
+    const url = `${API_URL}${endpoint}`;
+    console.log(`📡 Community 요청: ${url}`); // 로그로 확인 가능
+    return fetch(url, { ...options, headers });
+};
 
 export function CommunityTab() {
   const router = useRouter();
@@ -29,30 +43,40 @@ export function CommunityTab() {
       title: "", description: "", max_members: "4", location: "", date: "", time: "", category: "맛집"
   })
 
-  // 1. 내 정보 및 로그인 체크
+  // 1. 내 정보 확인 (마이페이지와 동일한 로직)
   useEffect(() => {
-      const init = async () => {
+      const checkLogin = async () => {
           const token = localStorage.getItem("token");
-          if (!token) { setIsGuest(true); return; }
+          if (!token) { 
+              console.log("❌ 토큰 없음 -> 게스트 모드");
+              setIsGuest(true); 
+              return; 
+          }
 
           try {
-              const res = await fetchWithAuth("/api/users/me");
+              // 외부 api-client 대신, 위에 정의한 fetchCommunityAPI 사용
+              const res = await fetchCommunityAPI("/api/users/me");
               if (res.ok) {
                   const data = await res.json();
+                  console.log("✅ 로그인 성공:", data.name);
                   setMyId(data.id);
-              } else if (res.status === 401) {
+              } else {
+                  console.log("❌ 로그인 실패 (401) -> 게스트 모드");
                   setIsGuest(true);
               }
-          } catch (e) { console.error(e); }
+          } catch (e) { 
+              console.error(e); 
+              setIsGuest(true);
+          }
       }
-      init();
+      checkLogin();
   }, []);
 
   // 2. 모임 목록 불러오기
   const fetchCommunities = async () => {
     setLoading(true)
     try {
-      const res = await fetchWithAuth("/api/communities")
+      const res = await fetchCommunityAPI("/api/communities")
       if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
@@ -66,6 +90,7 @@ export function CommunityTab() {
   }
 
   useEffect(() => { 
+      // 게스트가 아닐 때만 목록을 불러옵니다.
       if(!isGuest) fetchCommunities() 
   }, [isGuest])
 
@@ -81,9 +106,8 @@ export function CommunityTab() {
               description: "커뮤니티 모임 자동 등록",
               user_id: 1, purpose: "모임" 
           };
-          await fetchWithAuth("/api/events", {
+          await fetchCommunityAPI("/api/events", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload)
           });
       } catch (e) { console.error("캘린더 등록 실패:", e); }
@@ -105,9 +129,8 @@ export function CommunityTab() {
               tags: [newMeeting.category] 
           };
 
-          const res = await fetchWithAuth("/api/communities", {
+          const res = await fetchCommunityAPI("/api/communities", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload)
           });
 
@@ -128,7 +151,7 @@ export function CommunityTab() {
   const handleJoin = async (m: any) => {
     if (!confirm(`'${m.title}' 모임에 참여하시겠습니까?`)) return;
     try {
-      const res = await fetchWithAuth(`/api/communities/${m.id}/join`, { method: "POST" })
+      const res = await fetchCommunityAPI(`/api/communities/${m.id}/join`, { method: "POST" })
       if (res.ok) { 
           const [datePart, timePart] = m.date_time.split(" ");
           const cleanTime = timePart.length > 5 ? timePart.substring(0, 5) : timePart;
@@ -144,7 +167,7 @@ export function CommunityTab() {
   const handleDelete = async (id: string) => {
       if(!confirm("정말 이 모임을 삭제하시겠습니까? (복구 불가)")) return;
       try {
-          const res = await fetchWithAuth(`/api/communities/${id}`, { method: "DELETE" });
+          const res = await fetchCommunityAPI(`/api/communities/${id}`, { method: "DELETE" });
           if(res.ok) { alert("삭제되었습니다."); fetchCommunities(); }
           else { alert("삭제 실패"); }
       } catch(e) { alert("오류 발생"); }
@@ -154,11 +177,13 @@ export function CommunityTab() {
   const handleLeave = async (id: string) => {
       if(!confirm("모임에서 나가시겠습니까?")) return;
       try {
-          const res = await fetchWithAuth(`/api/chat/rooms/${id}/leave`, { method: "POST" });
+          const res = await fetchCommunityAPI(`/api/chat/rooms/${id}/leave`, { method: "POST" });
           if(res.ok) { alert("나갔습니다."); fetchCommunities(); }
           else { alert("나가기 실패"); }
       } catch(e) { alert("오류 발생"); }
   }
+
+  // --- 렌더링 ---
 
   if (isGuest) {
         return (
@@ -210,7 +235,7 @@ export function CommunityTab() {
           {loading ? <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-[#7C3AED]"/></div> : 
            filteredMeetings.length > 0 ? filteredMeetings.map((m) => {
             const isAuthor = m.host_id === myId;
-            // 🌟 [수정 2] DB 컬럼명에 맞게 current_members -> member_ids로 변경
+            // 🌟🌟 [여기 주목] DB 컬럼명(member_ids)으로 완벽하게 수정됨
             const isMember = Array.isArray(m.member_ids) ? m.member_ids.includes(myId) : false;
             const memberCount = Array.isArray(m.member_ids) ? m.member_ids.length : 0;
 
