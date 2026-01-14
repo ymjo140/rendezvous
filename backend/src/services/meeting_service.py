@@ -162,34 +162,75 @@ class MeetingService:
         return results
 
     def get_recommendations_direct(self, db: Session, req: schemas.RecommendRequest) -> List[Dict[str, Any]]:
-        """
-        1~2단계: n개의 출발지를 인식하고 transport.py 및 travel_time_cache를 통해 중간 지점을 도출합니다.
-        """
         all_points = []
-        # [1단계] 출발지 좌표 수집 (수동 입력 및 내 위치 인식)
+        
+        # 1. 첫 번째 출발지 (current)
         if req.current_lat and req.current_lng and abs(req.current_lat) > 1.0:
             all_points.append({'lat': float(req.current_lat), 'lng': float(req.current_lng)})
         
+        # 2. 추가 출발지들 (users) - 여기서 데이터가 증발하지 않도록 강력하게 파싱
         if req.users:
             for u in req.users:
-                u_lat = getattr(u, 'lat', None) or (u.get('lat') if isinstance(u, dict) else None)
-                u_lng = getattr(u, 'lng', None) or (u.get('lng') if isinstance(u, dict) else None)
-                if not u_lat and isinstance(u, dict) and 'location' in u:
-                    u_lat, u_lng = u['location'].get('lat'), u['location'].get('lng')
+                u_lat, u_lng = None, None
+                
+                # Case A: u가 Pydantic 모델인 경우
+                if hasattr(u, 'location') and u.location:
+                    u_lat, u_lng = u.location.lat, u.location.lng
+                # Case B: u가 딕셔너리인 경우 (프론트에서 JSON으로 보냄)
+                elif isinstance(u, dict):
+                    loc = u.get('location', {})
+                    if loc:
+                        u_lat, u_lng = loc.get('lat'), loc.get('lng')
+                    else:
+                        # 혹시 location 없이 바로 lat, lng가 있는 경우
+                        u_lat, u_lng = u.get('lat'), u.get('lng')
                 
                 if u_lat and u_lng:
                     all_points.append({'lat': float(u_lat), 'lng': float(u_lng)})
 
-        print(f"📍 [Debug] 인식된 총 출발지: {len(all_points)}개")
+        print(f"📍 [Debug] 인식된 총 출발지 수: {len(all_points)}개") # 🌟 이제 2개 이상 나올 것임
 
-        if len(all_points) <= 1:
+        if len(all_points) < 2:
+            # 출발지가 1개면 중간지점 계산 불가 -> 해당 위치 주변 검색
             base_lat, base_lng = (all_points[0]['lat'], all_points[0]['lng']) if all_points else (37.5665, 126.9780)
             top_3_regions = [{"name": "설정 위치 주변", "lat": base_lat, "lng": base_lng}]
         else:
-            # [2단계] travel_time_cache를 활용한 최적의 중간지점 3곳 도출
+            # 🌟 [핵심] 2개 이상일 때만 TransportEngine으로 중간지점 계산
             top_3_regions = TransportEngine.find_best_midpoints(db, all_points)
             
         return self._format_recommendations(db, top_3_regions, req)
+
+    # 🌟 [필수] _format_recommendations 함수 (AttributeError 방지용)
+    def _format_recommendations(self, db: Session, regions: list, req: schemas.RecommendRequest) -> List[Dict[str, Any]]:
+        results = []
+        user_prefs = req.user_selected_tags or [] 
+        for r in regions:
+            # DB 조회 (wemeet_rating 사용)
+            db_query = text("""
+                SELECT name, category, lat, lng, address, tags, wemeet_rating
+                FROM places 
+                WHERE (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) <= 1.0
+                AND (category LIKE :purp OR name LIKE :purp) LIMIT 30
+            """)
+            db_rows = db.execute(db_query, {"lat": r['lat'], "lng": r['lng'], "purp": f"%{req.purpose}%"}).fetchall()
+            place_candidates = [POI(0, row[0], row[1], row[5] or [], np.array([row[2], row[3]]), 1, float(row[6] or 0.0), row[4]) for row in db_rows]
+
+            # API 보충
+            if len(place_candidates) < 5:
+                ext = data_provider.search_places_all_queries([req.purpose], r['name'], r['lat'], r['lng'], db=db)
+                for p in ext:
+                    if not any(c.name == p.name for c in place_candidates):
+                        place_candidates.append(POI(0, p.name, p.category, p.tags, np.array(p.location), 1, p.wemeet_rating, p.address))
+
+            # 취향 가중치 랭킹
+            if place_candidates:
+                recommender = AdvancedRecommender(place_candidates)
+                ranked = recommender.recommend([{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], req.purpose, top_k=5)
+                results.append({
+                    "region_name": r["name"], "center": {"lat": r["lat"], "lng": r["lng"]}, 
+                    "places": [{"name": p.name, "address": p.address, "category": p.category, "lat": float(p.location[0]), "lng": float(p.location[1]), "wemeet_rating": p.avg_rating} for p in ranked]
+                })
+        return results
 
     # ============================================================
     # 3. 자동완성 및 AI 매니저 흐름 (생략 없음)
