@@ -1,22 +1,17 @@
-import json
-import asyncio
-import re
-import uuid
-import numpy as np
+import json, asyncio, re, uuid, numpy as np
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from fastapi import HTTPException
 from fastapi import BackgroundTasks, HTTPException
-
-from core.config import settings
+from core.transport import TransportEngine 
+from core.algorithm import AdvancedRecommender, POI
+from core.data_provider import RealDataProvider
 from domain import models
 from schemas import meeting as schemas
 from repositories.meeting_repository import MeetingRepository
-from core.data_provider import RealDataProvider
 from core.connection_manager import manager
-from core.transport import TransportEngine 
-from core.algorithm import AdvancedRecommender, POI
 
 data_provider = RealDataProvider()
 
@@ -24,188 +19,16 @@ class MeetingService:
     def __init__(self):
         self.repo = MeetingRepository()
 
-    # ============================================================
-    # 1. 일정 및 자연어 파싱 로직 (생략 없음)
-    # ============================================================
-
-    def _find_best_time_slot(self, db: Session, room_id: str) -> dict:
-        """채팅방 멤버들의 일정을 분석하여 빈 저녁 시간대를 반환합니다."""
-        members = db.query(models.ChatRoomMember).filter(models.ChatRoomMember.room_id == room_id).all()
-        user_ids = [m.user_id for m in members]
-        
-        if not user_ids:
-            return {"date": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"), "time": "19:00"}
-
-        today = datetime.now().date()
-        for i in range(1, 15): # 내일부터 14일간 탐색
-            target_date = today + timedelta(days=i)
-            target_str = target_date.strftime("%Y-%m-%d")
-            
-            existing_events = db.query(models.Event).filter(
-                models.Event.user_id.in_(user_ids),
-                models.Event.date == target_str
-            ).all()
-            
-            # 저녁 시간대(18~21시) 중복 확인
-            is_busy = any(re.search(r"(1[89]|20|21):", str(e.time)) for e in existing_events)
-            
-            if not is_busy:
-                return {"date": target_str, "time": "19:00"}
-        
-        return {"date": (today + timedelta(days=1)).strftime("%Y-%m-%d"), "time": "19:00"}
-
-    def parse_ai_schedule(self, text_input: str):
-        """AI 자연어 파싱을 통해 약속의 시간, 장소를 추출합니다."""
-        today = datetime.now()
-        parsed = {
-            "title": "새 약속",
-            "date": (today + timedelta(days=1)).strftime("%Y-%m-%d"),
-            "time": "19:00", "location_name": "미정", "purpose": "모임"
-        }
-        if "오늘" in text_input: parsed["date"] = today.strftime("%Y-%m-%d")
-        elif "내일" in text_input: parsed["date"] = (today + timedelta(days=1)).strftime("%Y-%m-%d")
-        
-        time_match = re.search(r"(\d{1,2})시", text_input)
-        if time_match:
-            hour = int(time_match.group(1))
-            if ("오후" in text_input or "저녁" in text_input) and hour < 12: hour += 12
-            parsed["time"] = f"{hour:02d}:00"
-            
-        loc_match = re.search(r"([가-힣\w]+)(에서| 근처|역)", text_input)
-        if loc_match:
-            parsed["location_name"] = loc_match.group(1)
-            parsed["title"] = f"{parsed['location_name']} 모임"
-        return parsed
-
-    async def _send_system_msg(self, room_id: str, text_msg: str):
-        """채팅방에 시스템 메시지를 브로드캐스트합니다."""
-        try:
-            content = json.dumps({"type": "system", "text": text_msg}, ensure_ascii=False)
-            await manager.broadcast({
-                "room_id": room_id, "user_id": 0, "name": "System", "avatar": "🤖",
-                "content": content, "timestamp": datetime.now().strftime("%H:%M")
-            }, room_id)
-        except: pass
-
-    # ============================================================
-    # 2. 🌟 핵심: AI 장소 추천 6단계 플로우
-    # ============================================================
-
-    def _format_recommendations(self, db: Session, regions: list, req: schemas.RecommendRequest) -> List[Dict[str, Any]]:
-        """
-        3~6단계: 도출된 중간 지역의 1km 이내 장소를 DB 선조회하고 개인 취향 가중치를 적용합니다.
-        """
-        results = []
-        user_prefs = req.user_selected_tags or [] # 유저가 선택한 세부 필터 (식사, 분위기 등)
-
-        for r in regions:
-            # [3~4단계] DB에서 1km 내 장소 선조회 (wemeet_rating 반영)
-            db_query = text("""
-                SELECT name, category, lat, lng, address, tags, wemeet_rating
-                FROM places 
-                WHERE (6371 * acos(cos(radians(:center_lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:center_lng)) + sin(radians(:center_lat)) * sin(radians(lat)))) <= 1.0
-                AND (category LIKE :purpose OR name LIKE :purpose)
-                LIMIT 30
-            """)
-            
-            db_rows = db.execute(db_query, {
-                "center_lat": r['lat'], "center_lng": r['lng'], "purpose": f"%{req.purpose}%"
-            }).fetchall()
-
-            # POI 객체로 변환
-            place_candidates = []
-            for row in db_rows:
-                place_candidates.append(POI(
-                    id=0, name=row[0], category=row[1], tags=row[5] or [], 
-                    location=np.array([row[2], row[3]]), price_level=1, 
-                    avg_rating=float(row[6] or 0.0), address=row[4]
-                ))
-
-            # 데이터가 5개 미만으로 부족하면 Naver API로 보충 및 자동 저장
-            if len(place_candidates) < 5:
-                external_places = data_provider.search_places_all_queries(
-                    queries=[req.purpose], region_name=r['name'], 
-                    center_lat=r['lat'], center_lng=r['lng'], db=db
-                )
-                for p in external_places:
-                    if not any(c.name == p.name for c in place_candidates):
-                        place_candidates.append(POI(
-                            id=0, name=p.name, category=p.category, tags=p.tags, 
-                            location=np.array(p.location), price_level=1, 
-                            avg_rating=p.wemeet_rating, address=p.address
-                        ))
-
-            # [5단계] 취향 가중치 부여 (AdvancedRecommender)
-            if place_candidates:
-                recommender = AdvancedRecommender(place_candidates)
-                # 다수 유저 혹은 현재 유저의 취향 모델 기반 추천
-                ranked_pois = recommender.recommend(
-                    user_prefs_list=[{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], 
-                    purpose=req.purpose, top_k=5
-                )
-
-                # [6단계] 결과 구성
-                formatted = []
-                for p in ranked_pois:
-                    formatted.append({
-                        "name": p.name, "address": p.address, "category": p.category,
-                        "lat": float(p.location[0]), "lng": float(p.location[1]),
-                        "wemeet_rating": p.avg_rating, "tags": p.tags
-                    })
-                
-                results.append({
-                    "region_name": r["name"], 
-                    "center": {"lat": r["lat"], "lng": r["lng"]}, 
-                    "places": formatted
-                })
-
-        return results
-
-    def get_recommendations_direct(self, db: Session, req: schemas.RecommendRequest) -> List[Dict[str, Any]]:
-        all_points = []
-        
-        # 1. 첫 번째 출발지 (current)
-        if req.current_lat and req.current_lng and abs(req.current_lat) > 1.0:
-            all_points.append({'lat': float(req.current_lat), 'lng': float(req.current_lng)})
-        
-        # 2. 추가 출발지들 (users) - 여기서 데이터가 증발하지 않도록 강력하게 파싱
-        if req.users:
-            for u in req.users:
-                u_lat, u_lng = None, None
-                
-                # Case A: u가 Pydantic 모델인 경우
-                if hasattr(u, 'location') and u.location:
-                    u_lat, u_lng = u.location.lat, u.location.lng
-                # Case B: u가 딕셔너리인 경우 (프론트에서 JSON으로 보냄)
-                elif isinstance(u, dict):
-                    loc = u.get('location', {})
-                    if loc:
-                        u_lat, u_lng = loc.get('lat'), loc.get('lng')
-                    else:
-                        # 혹시 location 없이 바로 lat, lng가 있는 경우
-                        u_lat, u_lng = u.get('lat'), u.get('lng')
-                
-                if u_lat and u_lng:
-                    all_points.append({'lat': float(u_lat), 'lng': float(u_lng)})
-
-        print(f"📍 [Debug] 인식된 총 출발지 수: {len(all_points)}개") # 🌟 이제 2개 이상 나올 것임
-
-        if len(all_points) < 2:
-            # 출발지가 1개면 중간지점 계산 불가 -> 해당 위치 주변 검색
-            base_lat, base_lng = (all_points[0]['lat'], all_points[0]['lng']) if all_points else (37.5665, 126.9780)
-            top_3_regions = [{"name": "설정 위치 주변", "lat": base_lat, "lng": base_lng}]
-        else:
-            # 🌟 [핵심] 2개 이상일 때만 TransportEngine으로 중간지점 계산
-            top_3_regions = TransportEngine.find_best_midpoints(db, all_points)
-            
-        return self._format_recommendations(db, top_3_regions, req)
-
-    # 🌟 [필수] _format_recommendations 함수 (AttributeError 방지용)
+    # 🌟 [수정] 세부 필터를 검색어에 반영
     def _format_recommendations(self, db: Session, regions: list, req: schemas.RecommendRequest) -> List[Dict[str, Any]]:
         results = []
-        user_prefs = req.user_selected_tags or [] 
+        user_prefs = req.user_selected_tags or []
+        
+        # 🌟 검색어 조합: [목적] + [선택한 태그들] (예: ['식사', '한식', '고기'])
+        search_queries = [req.purpose] + user_prefs
+
         for r in regions:
-            # DB 조회 (wemeet_rating 사용)
+            # 3단계: DB 선조회
             db_query = text("""
                 SELECT name, category, lat, lng, address, tags, wemeet_rating
                 FROM places 
@@ -215,14 +38,15 @@ class MeetingService:
             db_rows = db.execute(db_query, {"lat": r['lat'], "lng": r['lng'], "purp": f"%{req.purpose}%"}).fetchall()
             place_candidates = [POI(0, row[0], row[1], row[5] or [], np.array([row[2], row[3]]), 1, float(row[6] or 0.0), row[4]) for row in db_rows]
 
-            # API 보충
+            # 4단계: API 보충 (검색어 리스트 활용)
             if len(place_candidates) < 5:
-                ext = data_provider.search_places_all_queries([req.purpose], r['name'], r['lat'], r['lng'], db=db)
+                # 🌟 여기가 핵심: search_queries를 넘겨서 '한식', '일식' 등으로도 검색하게 함
+                ext = data_provider.search_places_all_queries(search_queries, r['name'], r['lat'], r['lng'], db=db)
                 for p in ext:
                     if not any(c.name == p.name for c in place_candidates):
                         place_candidates.append(POI(0, p.name, p.category, p.tags, np.array(p.location), 1, p.wemeet_rating, p.address))
 
-            # 취향 가중치 랭킹
+            # 5단계: 취향 랭킹
             if place_candidates:
                 recommender = AdvancedRecommender(place_candidates)
                 ranked = recommender.recommend([{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], req.purpose, top_k=5)
@@ -231,6 +55,37 @@ class MeetingService:
                     "places": [{"name": p.name, "address": p.address, "category": p.category, "lat": float(p.location[0]), "lng": float(p.location[1]), "wemeet_rating": p.avg_rating} for p in ranked]
                 })
         return results
+
+    # 🌟 [수정] 1-2단계: n개의 출발지 인식 로직
+    def get_recommendations_direct(self, db: Session, req: schemas.RecommendRequest):
+        all_points = []
+        if req.current_lat and req.current_lng and abs(req.current_lat) > 1.0:
+            all_points.append({'lat': float(req.current_lat), 'lng': float(req.current_lng)})
+        
+        if req.users:
+            for u in req.users:
+                # Pydantic 모델과 Dict 모두 처리하도록 유연하게 파싱
+                u_lat = getattr(u, 'lat', None) or (u.get('lat') if isinstance(u, dict) else None)
+                u_lng = getattr(u, 'lng', None) or (u.get('lng') if isinstance(u, dict) else None)
+                
+                if not u_lat and isinstance(u, dict) and 'location' in u:
+                    loc = u['location']
+                    u_lat = loc.get('lat') if isinstance(loc, dict) else getattr(loc, 'lat', None)
+                    u_lng = loc.get('lng') if isinstance(loc, dict) else getattr(loc, 'lng', None)
+                
+                if u_lat and u_lng:
+                    all_points.append({'lat': float(u_lat), 'lng': float(u_lng)})
+
+        print(f"📍 [Debug] 인식된 총 출발지 수: {len(all_points)}개")
+
+        if len(all_points) < 2:
+            base = all_points[0] if all_points else {'lat': 37.5665, 'lng': 126.9780}
+            top_3_regions = [{"name": "설정 위치 주변", "lat": base['lat'], "lng": base['lng']}]
+        else:
+            # 🌟 2개 이상일 때만 중간지점 도출
+            top_3_regions = TransportEngine.find_best_midpoints(db, all_points)
+            
+        return self._format_recommendations(db, top_3_regions, req)
 
     # ============================================================
     # 3. 자동완성 및 AI 매니저 흐름 (생략 없음)

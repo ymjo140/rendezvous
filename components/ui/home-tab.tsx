@@ -20,7 +20,10 @@ const PlaceCard = ({ place, onClick }: { place: any, onClick: () => void }) => (
         <div className="flex-1">
             <div className="font-bold text-gray-800 flex items-center gap-2">
                 {place.name || place.title}
-                <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">{place.score ? `★${place.score}` : ''}</span>
+                {/* 🌟 백엔드에서 온 점수가 있으면 표시 (wemeet_rating or score) */}
+                <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
+                    {place.wemeet_rating ? `★${place.wemeet_rating.toFixed(1)}` : (place.score ? `★${place.score}` : '')}
+                </span>
             </div>
             <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
                 <MapPin className="w-3 h-3" /> {place.category || "장소"}
@@ -313,42 +316,74 @@ export function HomeTab() {
         }
     }, [currentDisplayRegion]);
 
-    // API 호출 (추천)
-    const fetchRecommendations = async (participants: any[], manualLocs: { text: string, lat?: number, lng?: number }[]) => {
+    // 🌟 [핵심 수정] 1. 출발지 n개 전송 및 2. 세부 필터 전송 로직 통합
+    const handleMidpointSearch = async () => {
         setLoading(true);
         try {
-            const allTags = Object.values(selectedFilters).flat();
-            const usersToSend = participants.map(u => ({
-                id: u.id || 0, name: u.name || "User", location: u.location || { lat: 37.5665, lng: 126.9780 }, preferences: u.preferences || {}
-            }));
+            // 1. 모든 유효한 좌표 수집 (내 위치 + 친구 위치 + 수동 입력)
+            const allPoints: {lat: number, lng: number}[] = [];
 
-            // 🌟 좌표 포함하여 전송
-            const validManualLocs = manualLocs
-                .filter(loc => loc.text && loc.text.trim() !== "")
-                .map(loc => {
-                    if (loc.lat && loc.lng) return `${loc.lat},${loc.lng}`;
-                    return loc.text;
-                });
+            // (1) 내 위치
+            if (includeMe) {
+                const lat = myProfile?.location?.lat || myLocation?.lat || 37.5665;
+                const lng = myProfile?.location?.lng || myLocation?.lng || 126.9780;
+                allPoints.push({ lat, lng });
+            }
+
+            // (2) 친구 위치
+            selectedFriends.forEach(f => {
+                if (f.location && f.location.lat) allPoints.push({ lat: f.location.lat, lng: f.location.lng });
+            });
+
+            // (3) 수동 입력 위치 (반드시 자동완성 선택된 것만)
+            manualInputs.forEach(i => {
+                if (i.lat && i.lng) allPoints.push({ lat: i.lat, lng: i.lng });
+            });
+
+            if (allPoints.length === 0) {
+                alert("출발지를 하나 이상 입력해주세요.");
+                setLoading(false);
+                return;
+            }
+
+            // 🌟 세부 필터(한식, 일식, 분위기 등) 모두 합치기
+            const allTags = Object.values(selectedFilters).flat();
+
+            // 2. 백엔드 규격에 맞춰 데이터 분배
+            // 첫 번째 좌표 -> current_lat/lng
+            // 나머지 좌표 -> users 배열 (location 객체로 감싸서 전송)
+            const payload = {
+                purpose: selectedPurpose,
+                user_selected_tags: allTags, // 🌟 세부 필터 전송
+                location_name: "중간지점",
+                current_lat: allPoints[0].lat,
+                current_lng: allPoints[0].lng,
+                users: allPoints.slice(1).map(p => ({
+                    location: { lat: p.lat, lng: p.lng } // 🌟 백엔드가 location 객체를 확인하므로 형식 준수
+                }))
+            };
 
             const response = await fetch(`${API_URL}/api/recommend`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    users: usersToSend, purpose: selectedPurpose, location_name: "중간지점",
-                    manual_locations: validManualLocs, user_selected_tags: allTags,
-                    current_lat: myProfile?.location?.lat || myLocation?.lat || 37.5665,
-                    current_lng: myProfile?.location?.lng || myLocation?.lng || 126.9780
-                })
-            })
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
 
             if (response.ok) {
-                const data = await response.json() as any[];
+                const data = await response.json();
                 setRecommendations(data);
                 setActiveTabIdx(0);
                 if (data.length > 0) setCurrentDisplayRegion(data[0]);
+            } else {
+                alert("추천 실패: 서버 오류가 발생했습니다.");
             }
-        } catch (e) { console.error(e) }
-        finally { setLoading(false) }
-    }
+        } catch (e) { 
+            console.error(e);
+            alert("네트워크 오류가 발생했습니다.");
+        } finally { 
+            setLoading(false); 
+        }
+    };
 
     // --- Handlers ---
     
@@ -403,20 +438,6 @@ export function HomeTab() {
             setLoading(false);
         }
     }
-
-    const handleMidpointSearch = () => {
-        let participants = [...selectedFriends];
-        if (includeMe) {
-            const me = myProfile || { id: 0, name: "나", location: myLocation, preferences: {} };
-            if (me.location) participants = [me, ...selectedFriends];
-        }
-        // 🌟 .text 속성 체크
-        const hasManualInput = manualInputs.some(input => input.text && input.text.trim() !== "");
-
-        if (participants.length === 0 && !hasManualInput) { alert("출발지를 설정해주세요!"); return; }
-
-        fetchRecommendations(participants, manualInputs);
-    };
 
     const handleManualInputChange = (idx: number, val: string) => {
         const newInputs = [...manualInputs];
@@ -654,7 +675,7 @@ export function HomeTab() {
                     <div className="flex-1 overflow-y-auto py-2 space-y-4">
                         <div className="bg-purple-50 p-4 rounded-lg text-center">
                             <div className="text-sm text-purple-800 font-bold mb-1">AI 추천 점수</div>
-                            <div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score}</div>
+                            <div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score || selectedPlace?.wemeet_rating || "NEW"}</div>
                         </div>
 
                         <div className="flex flex-wrap gap-2">
