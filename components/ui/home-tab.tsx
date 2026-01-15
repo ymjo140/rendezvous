@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Search, MapPin, X, Plus, Trash2, Users, Filter, Coins, Gem, Loader2, CheckCircle2 } from "lucide-react"
+import { Search, MapPin, X, Plus, Trash2, Users, Filter, Coins, Gem, Loader2, CheckCircle2, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
@@ -76,7 +76,7 @@ export function HomeTab() {
     const [myLocation, setMyLocation] = useState<{ lat: number, lng: number } | null>(null)
     const [myLocationInput, setMyLocationInput] = useState("위치 확인 중...")
 
-    // 🌟 manualInputs: 객체 배열로 변경
+    // manualInputs: 객체 배열
     const [manualInputs, setManualInputs] = useState<{ text: string, lat?: number, lng?: number }[]>([{ text: "" }]);
     const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
     const [includeMe, setIncludeMe] = useState(true);
@@ -108,6 +108,8 @@ export function HomeTab() {
     const markersRef = useRef<any[]>([])
     const lootMarkersRef = useRef<any[]>([])
     const friendMarkersRef = useRef<any[]>([])
+    // 🌟 [추가] 수동 입력 장소 마커를 위한 Ref
+    const manualMarkersRef = useRef<any[]>([]) 
     const myMarkerRef = useRef<any>(null)
     const polylinesRef = useRef<any[]>([])
     const timeMarkersRef = useRef<any[]>([])
@@ -124,7 +126,7 @@ export function HomeTab() {
         return R * c;
     }
 
-    // --- Effects ---
+    // --- Effects (지도 및 마커 렌더링) ---
     useEffect(() => {
         const initMap = () => {
             if (typeof window.naver === 'undefined' || !window.naver.maps) { setTimeout(initMap, 100); return; }
@@ -145,7 +147,7 @@ export function HomeTab() {
                 }
             }
 
-            // 1. 추천 장소 마커 (안전장치 추가: Array.isArray)
+            // 1. 추천 장소 마커
             if (Array.isArray(markersRef.current)) {
                 markersRef.current.forEach((m: any) => m.setMap(null));
             }
@@ -160,18 +162,17 @@ export function HomeTab() {
                     markersRef.current.push(marker);
                 });
                 
-                if (currentDisplayRegion.lat && currentDisplayRegion.lng) {
-                    mapRef.current.morph(new window.naver.maps.LatLng(currentDisplayRegion.lat, currentDisplayRegion.lng));
+                if (currentDisplayRegion.center) {
+                    mapRef.current.morph(new window.naver.maps.LatLng(currentDisplayRegion.center.lat, currentDisplayRegion.center.lng));
                 }
             }
 
-            // 2. 보물 마커 (여기가 범인! 안전장치 추가)
+            // 2. 보물 마커
             if (Array.isArray(lootMarkersRef.current)) {
                 lootMarkersRef.current.forEach((m: any) => m.setMap(null));
             }
             lootMarkersRef.current = [];
             
-            // 🔥 핵심 수정: loots가 배열일 때만 forEach 실행
             if (Array.isArray(loots)) {
                 loots.forEach((loot: any) => {
                     const marker = new window.naver.maps.Marker({
@@ -183,7 +184,7 @@ export function HomeTab() {
                 });
             }
 
-            // 3. 친구 위치 마커 (안전장치 추가)
+            // 3. 친구 위치 마커
             if (Array.isArray(friendMarkersRef.current)) {
                 friendMarkersRef.current.forEach((m: any) => m.setMap(null));
             }
@@ -199,11 +200,34 @@ export function HomeTab() {
                     friendMarkersRef.current.push(marker);
                 });
             }
+
+            // 🌟 [추가] 4. 수동 입력 장소 마커 (초록색 핀)
+            if (Array.isArray(manualMarkersRef.current)) {
+                manualMarkersRef.current.forEach((m: any) => m.setMap(null));
+            }
+            manualMarkersRef.current = [];
+
+            manualInputs.forEach((input) => {
+                if (input.lat && input.lng) {
+                    const marker = new window.naver.maps.Marker({
+                        position: new window.naver.maps.LatLng(input.lat, input.lng),
+                        map: mapRef.current,
+                        icon: { 
+                            // 초록색 핀과 장소명 라벨 스타일
+                            content: `<div style="display:flex; flex-direction:column; align-items:center; transform:translateY(-10px);">
+                                        <div style="padding:4px 8px; background:white; border-radius:12px; border:2px solid #10B981; font-weight:bold; font-size:11px; color:#10B981; margin-bottom:4px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.1);">${input.text}</div>
+                                        <div style="width:12px; height:12px; background:#10B981; border:2px solid white; border-radius:50%; box-shadow:0 2px 4px rgba(0,0,0,0.2);"></div>
+                                      </div>` 
+                        }
+                    });
+                    manualMarkersRef.current.push(marker);
+                }
+            });
         };
         initMap();
-    }, [myLocation, currentDisplayRegion, loots, selectedFriends, includeMe]);
+    }, [myLocation, currentDisplayRegion, loots, selectedFriends, includeMe, manualInputs]); // 🌟 manualInputs 의존성 추가
 
-    // 🌟 [수정됨] 경로 그리기 함수 (객체 타입 manualInputs 지원)
+    // 경로 그리기 함수
     const drawPathsToTarget = async (destLat: number, destLng: number, transitInfo: any = null) => {
         polylinesRef.current?.forEach(p => p.setMap(null));
         polylinesRef.current = [];
@@ -239,7 +263,6 @@ export function HomeTab() {
         for (const input of manualInputs) {
             if (!input.text || input.text.trim() === "") continue;
 
-            // 이미 좌표가 있으면(자동완성 선택)
             if (input.lat && input.lng) {
                 origins.push({
                     lat: input.lat,
@@ -250,7 +273,6 @@ export function HomeTab() {
                 continue;
             }
 
-            // 좌표가 없으면(직접 타이핑) API 검색
             try {
                 const res = await fetch(`${API_URL}/api/places/search?query=${input.text}`);
                 if (res.ok) {
@@ -280,7 +302,6 @@ export function HomeTab() {
             });
             polylinesRef.current.push(polyline);
 
-            // 시간 텍스트 추정 (직선 거리 기반)
             const dist = calculateDistance(origin.lat, origin.lng, destLat, destLng);
             const timeText = `약 ${Math.ceil(dist / 1000 * 5 + 10)}분`;
 
@@ -306,8 +327,9 @@ export function HomeTab() {
     }
 
     const drawRegionPaths = (region: any) => {
-        if (!region) return;
-        drawPathsToTarget(region.lat, region.lng, region.transit_info);
+        if (!region || !region.center) return;
+        // 🌟 [Fix] lat, lng 인덱싱 오류 수정 (p.lat, p.lng 사용)
+        drawPathsToTarget(region.center.lat, region.center.lng, region.transit_info);
     }
 
     useEffect(() => {
@@ -316,26 +338,22 @@ export function HomeTab() {
         }
     }, [currentDisplayRegion]);
 
-    // 🌟 [핵심 수정] 1. 출발지 n개 전송 및 2. 세부 필터 전송 로직 통합
+    // 🌟 [핵심] n개 출발지 및 필터 전송
     const handleMidpointSearch = async () => {
         setLoading(true);
         try {
-            // 1. 모든 유효한 좌표 수집 (내 위치 + 친구 위치 + 수동 입력)
             const allPoints: {lat: number, lng: number}[] = [];
 
-            // (1) 내 위치
             if (includeMe) {
                 const lat = myProfile?.location?.lat || myLocation?.lat || 37.5665;
                 const lng = myProfile?.location?.lng || myLocation?.lng || 126.9780;
                 allPoints.push({ lat, lng });
             }
 
-            // (2) 친구 위치
             selectedFriends.forEach(f => {
                 if (f.location && f.location.lat) allPoints.push({ lat: f.location.lat, lng: f.location.lng });
             });
 
-            // (3) 수동 입력 위치 (반드시 자동완성 선택된 것만)
             manualInputs.forEach(i => {
                 if (i.lat && i.lng) allPoints.push({ lat: i.lat, lng: i.lng });
             });
@@ -346,20 +364,16 @@ export function HomeTab() {
                 return;
             }
 
-            // 🌟 세부 필터(한식, 일식, 분위기 등) 모두 합치기
             const allTags = Object.values(selectedFilters).flat();
 
-            // 2. 백엔드 규격에 맞춰 데이터 분배
-            // 첫 번째 좌표 -> current_lat/lng
-            // 나머지 좌표 -> users 배열 (location 객체로 감싸서 전송)
             const payload = {
                 purpose: selectedPurpose,
-                user_selected_tags: allTags, // 🌟 세부 필터 전송
+                user_selected_tags: allTags,
                 location_name: "중간지점",
                 current_lat: allPoints[0].lat,
                 current_lng: allPoints[0].lng,
                 users: allPoints.slice(1).map(p => ({
-                    location: { lat: p.lat, lng: p.lng } // 🌟 백엔드가 location 객체를 확인하므로 형식 준수
+                    location: { lat: p.lat, lng: p.lng }
                 }))
             };
 
@@ -386,8 +400,6 @@ export function HomeTab() {
     };
 
     // --- Handlers ---
-    
-    // 🌟 [수정됨] 상단 검색바 로직: 장소 검색(Search) 수행
     const handleTopSearch = async () => {
         if (!searchQuery || searchQuery.trim() === "") return;
 
@@ -400,10 +412,9 @@ export function HomeTab() {
                 if (data && data.length > 0) {
                     const searchResultPlace = data.map((item: any, idx: number) => ({
                         id: 90000 + idx,
-                        name: item.title.replace(/<[^>]*>?/gm, ''),
+                        name: item.name,
                         category: item.category || "검색 장소",
                         address: item.address,
-                        location: [item.lat, item.lng],
                         lat: item.lat,
                         lng: item.lng,
                         tags: ["검색결과"],
@@ -413,8 +424,7 @@ export function HomeTab() {
 
                     const searchRegion = {
                         region_name: `'${searchQuery}' 검색 결과`,
-                        lat: searchResultPlace[0].lat,
-                        lng: searchResultPlace[0].lng,
+                        center: { lat: searchResultPlace[0].lat, lng: searchResultPlace[0].lng },
                         places: searchResultPlace,
                         transit_info: null
                     };
@@ -449,7 +459,6 @@ export function HomeTab() {
         newInputs[idx] = { text: place.name, lat: place.lat, lng: place.lng };
         setManualInputs(newInputs);
     };
-    // 🌟 빈 객체 추가
     const addManualInput = () => setManualInputs([...manualInputs, { text: "" }]);
     const removeManualInput = (idx: number) => setManualInputs(manualInputs.filter((_, i) => i !== idx));
     const toggleFriend = (friend: any) => {
@@ -468,7 +477,7 @@ export function HomeTab() {
         if (!nearbyPlace) return;
         setInteractionLoading(true);
         try {
-            await fetchWithAuth("/api/coins/check-in", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ place_name: nearbyPlace.name, lat: nearbyPlace.location[0], lng: nearbyPlace.location[1] }) });
+            await fetchWithAuth("/api/coins/check-in", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ place_name: nearbyPlace.name, lat: nearbyPlace.lat, lng: nearbyPlace.lng }) });
             alert("50코인 획득!"); setNearbyPlace(null);
         } catch (e) { alert("오류"); } finally { setInteractionLoading(false); }
     }
@@ -484,7 +493,8 @@ export function HomeTab() {
     const handlePlaceClick = (p: any) => {
         setSelectedPlace(p);
         setIsDetailOpen(true);
-        drawPathsToTarget(p.location[0], p.location[1], currentDisplayRegion?.transit_info);
+        // 🌟 [Fix] lat, lng 사용
+        drawPathsToTarget(p.lat, p.lng, currentDisplayRegion?.transit_info);
     };
 
     const currentFilters = PURPOSE_FILTERS[selectedPurpose];
