@@ -10,7 +10,7 @@ from api.dependencies import get_current_user
 
 router = APIRouter()
 
-# --- WebSocket 관리자 ---
+# --- WebSocket manager ---
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, List[WebSocket]] = {}
