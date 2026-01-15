@@ -154,7 +154,7 @@ export function HomeTab() {
             if (currentDisplayRegion && Array.isArray(currentDisplayRegion.places)) {
                 currentDisplayRegion.places.forEach((p: any) => {
                     const marker = new window.naver.maps.Marker({
-                        position: new window.naver.maps.LatLng(p.location[0], p.location[1]),
+                        position: new window.naver.maps.LatLng(p.lat, p.lng),
                         map: mapRef.current, title: p.name
                     });
                     markersRef.current.push(marker);
