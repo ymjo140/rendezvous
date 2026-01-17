@@ -6,12 +6,11 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ChevronUp, Clock, ThumbsUp, Heart, MessageSquare, Bookmark, ExternalLink } from "lucide-react"
+import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ChevronUp, Clock, ThumbsUp } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 // 🌟 [핵심] 주소를 여기서 직접 관리 (커뮤니티 탭과 통일)
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
@@ -483,32 +482,16 @@ export function ChatTab() {
     const scrollRef = useRef<HTMLDivElement>(null)
     const socketRef = useRef<WebSocket | null>(null)
     
-    // 📤 공유된 아이템 상세 보기
-    const [sharedItemModal, setSharedItemModal] = useState<any>(null)
-    const [sharedPostDetail, setSharedPostDetail] = useState<any>(null)
-    const [loadingPost, setLoadingPost] = useState(false)
-    
-    // 공유된 게시물 상세 정보 불러오기
-    const fetchSharedPostDetail = async (postId: string) => {
-        setLoadingPost(true);
-        try {
-            const res = await fetchChatAPI(`/api/posts/${postId}`);
-            if (res.ok) {
-                const post = await res.json();
-                setSharedPostDetail(post);
-            }
-        } catch (e) {
-            console.error("게시물 로드 실패:", e);
-        } finally {
-            setLoadingPost(false);
-        }
-    };
-    
-    // 공유된 아이템 클릭 핸들러
+    // 📤 공유된 아이템 클릭 → 탐색 탭으로 이동
     const handleSharedItemClick = (item: any) => {
-        setSharedItemModal(item);
         if (item.type === "post" && item.post_id) {
-            fetchSharedPostDetail(item.post_id);
+            // 탐색 탭으로 이동하는 커스텀 이벤트 발생
+            window.dispatchEvent(new CustomEvent("navigateToPost", {
+                detail: { postId: item.post_id, fromTab: "chat" }
+            }));
+        } else {
+            // 장소인 경우 알림만 표시 (나중에 장소 상세 페이지 구현 가능)
+            alert(`장소: ${item.name || "알 수 없음"}`);
         }
     };
 
@@ -764,122 +747,6 @@ export function ChatTab() {
                     <Button size="icon" className="h-8 w-8 rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] shadow-sm" onClick={handleSend}><Send className="w-4 h-4 text-white" /></Button>
                 </div>
             </div>
-            
-            {/* 📤 공유된 게시물 상세 모달 */}
-            <Dialog open={!!sharedItemModal} onOpenChange={(open) => { if (!open) { setSharedItemModal(null); setSharedPostDetail(null); } }}>
-                <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto p-0">
-                    {sharedItemModal && (
-                        <>
-                            {/* 헤더 */}
-                            <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between z-10">
-                                <div className="font-bold text-gray-800">
-                                    {sharedItemModal.type === "post" ? "공유된 게시물" : "공유된 장소"}
-                                </div>
-                                <button 
-                                    onClick={() => { setSharedItemModal(null); setSharedPostDetail(null); }}
-                                    className="p-1 hover:bg-gray-100 rounded-full"
-                                >
-                                    <X className="w-5 h-5 text-gray-500" />
-                                </button>
-                            </div>
-                            
-                            {loadingPost ? (
-                                <div className="p-8 text-center">
-                                    <Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-500 mb-2" />
-                                    <p className="text-sm text-gray-400">불러오는 중...</p>
-                                </div>
-                            ) : sharedPostDetail ? (
-                                <>
-                                    {/* 이미지 */}
-                                    {sharedPostDetail.image_urls && sharedPostDetail.image_urls.length > 0 && (
-                                        <div className="aspect-square bg-gray-100">
-                                            <img 
-                                                src={sharedPostDetail.image_urls[0]} 
-                                                alt="" 
-                                                className="w-full h-full object-cover"
-                                            />
-                                        </div>
-                                    )}
-                                    
-                                    {/* 게시물 정보 */}
-                                    <div className="p-4 space-y-4">
-                                        {/* 작성자 정보 */}
-                                        <div className="flex items-center gap-3">
-                                            <Avatar className="w-10 h-10 border">
-                                                <AvatarFallback className="bg-purple-100 text-purple-600 font-bold">
-                                                    {sharedPostDetail.user_name?.[0] || "U"}
-                                                </AvatarFallback>
-                                            </Avatar>
-                                            <div>
-                                                <div className="font-bold text-gray-800">{sharedPostDetail.user_name || "사용자"}</div>
-                                                <div className="text-xs text-gray-400">
-                                                    {sharedPostDetail.created_at ? new Date(sharedPostDetail.created_at).toLocaleDateString() : ""}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        {/* 내용 */}
-                                        {sharedPostDetail.content && (
-                                            <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                                                {sharedPostDetail.content}
-                                            </p>
-                                        )}
-                                        
-                                        {/* 장소 정보 */}
-                                        {sharedPostDetail.place_name && (
-                                            <div className="flex items-center gap-2 text-sm text-gray-500 bg-gray-50 p-3 rounded-xl">
-                                                <MapPin className="w-4 h-4 text-purple-500" />
-                                                <span>{sharedPostDetail.place_name}</span>
-                                            </div>
-                                        )}
-                                        
-                                        {/* 통계 */}
-                                        <div className="flex items-center gap-4 pt-2 border-t text-gray-500">
-                                            <div className="flex items-center gap-1 text-sm">
-                                                <Heart className="w-4 h-4" />
-                                                <span>{sharedPostDetail.likes_count || 0}</span>
-                                            </div>
-                                            <div className="flex items-center gap-1 text-sm">
-                                                <MessageSquare className="w-4 h-4" />
-                                                <span>{sharedPostDetail.comments_count || 0}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </>
-                            ) : sharedItemModal.image ? (
-                                // API에서 못 불러왔지만 공유 메시지에 이미지가 있는 경우
-                                <>
-                                    <div className="aspect-square bg-gray-100">
-                                        <img 
-                                            src={sharedItemModal.image} 
-                                            alt="" 
-                                            className="w-full h-full object-cover"
-                                        />
-                                    </div>
-                                    <div className="p-4">
-                                        <p className="text-gray-700 text-sm whitespace-pre-wrap">
-                                            {sharedItemModal.content || sharedItemModal.name || ""}
-                                        </p>
-                                    </div>
-                                </>
-                            ) : (
-                                // 장소인 경우 또는 정보가 없는 경우
-                                <div className="p-6">
-                                    <div className="text-center mb-4">
-                                        <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                            <MapPin className="w-8 h-8 text-purple-500" />
-                                        </div>
-                                        <h3 className="font-bold text-lg text-gray-800">{sharedItemModal.name || "장소"}</h3>
-                                        {sharedItemModal.content && (
-                                            <p className="text-sm text-gray-500 mt-2">{sharedItemModal.content}</p>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </>
-                    )}
-                </DialogContent>
-            </Dialog>
         </div>
     )
 }

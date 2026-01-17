@@ -163,12 +163,21 @@ const getGridClass = (index: number) => {
     return "col-span-1 row-span-1";
 };
 
-export function DiscoveryTab() {
+// Props 타입 정의
+interface DiscoveryTabProps {
+    sharedPostId?: string | null;
+    onBackFromShared?: () => void;
+}
+
+export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabProps = {}) {
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedFeed, setSelectedFeed] = useState<any>(null);
     const [isPlaceModalOpen, setIsPlaceModalOpen] = useState(false);
     const [feeds, setFeeds] = useState(MOCK_FEEDS);
     const [isLoading, setIsLoading] = useState(false);
+    
+    // 📤 공유된 게시물로 진입했는지 여부
+    const [isFromSharedPost, setIsFromSharedPost] = useState(false);
     
     // 게시물 작성 관련 상태
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
@@ -206,6 +215,53 @@ export function DiscoveryTab() {
     const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
     const [shareMessage, setShareMessage] = useState("");
     const [cartItems, setCartItems] = useState<any[]>([]);
+    
+    // 📤 공유된 게시물 열기 (채팅에서 온 경우)
+    useEffect(() => {
+        if (sharedPostId) {
+            const fetchSharedPost = async () => {
+                try {
+                    const token = localStorage.getItem("token");
+                    const res = await fetch(`${API_URL}/api/posts/${sharedPostId}`, {
+                        headers: token ? { Authorization: `Bearer ${token}` } : {}
+                    });
+                    
+                    if (res.ok) {
+                        const post = await res.json();
+                        // 피드 형식으로 변환
+                        const formattedPost = {
+                            id: post.id,
+                            type: "image",
+                            images: post.image_urls || [],
+                            author: {
+                                id: post.user_id,
+                                name: post.user_name || "사용자",
+                                avatar: post.user_name?.slice(0, 2) || "US",
+                                profileImage: ""
+                            },
+                            content: post.content || "",
+                            likes: post.likes_count || 0,
+                            comments: post.comments_count || 0,
+                            isLiked: post.is_liked || false,
+                            isSaved: post.is_saved || false,
+                            place: post.place_name ? {
+                                name: post.place_name,
+                                category: post.place_category || "장소",
+                                rating: 4.5
+                            } : null
+                        };
+                        
+                        setSelectedFeed(formattedPost);
+                        setIsFromSharedPost(true);
+                    }
+                } catch (e) {
+                    console.error("공유된 게시물 로드 실패:", e);
+                }
+            };
+            
+            fetchSharedPost();
+        }
+    }, [sharedPostId]);
     
     // 🤖 AI 추천 불러오기
     useEffect(() => {
@@ -635,6 +691,12 @@ export function DiscoveryTab() {
         setIsPlaceModalOpen(false);
         setCommentText("");
         setShowComments(false);
+        
+        // 공유된 게시물에서 온 경우 채팅으로 돌아가기
+        if (isFromSharedPost && onBackFromShared) {
+            setIsFromSharedPost(false);
+            onBackFromShared();
+        }
     };
     
     // 댓글 관련 상태
@@ -1121,6 +1183,21 @@ export function DiscoveryTab() {
                             {/* 헤더 */}
                             <div className="flex items-center justify-between p-3 border-b">
                                 <div className="flex items-center gap-3">
+                                    {/* 공유된 게시물에서 온 경우 뒤로가기 버튼 */}
+                                    {isFromSharedPost && onBackFromShared && (
+                                        <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            onClick={() => {
+                                                setSelectedFeed(null);
+                                                setIsFromSharedPost(false);
+                                                onBackFromShared();
+                                            }}
+                                            className="mr-1"
+                                        >
+                                            <ChevronLeft className="w-5 h-5" />
+                                        </Button>
+                                    )}
                                     <Avatar className="w-8 h-8">
                                         <AvatarFallback className="text-xs bg-gradient-to-r from-purple-400 to-pink-400 text-white">
                                             {selectedFeed.author.avatar}
@@ -1133,7 +1210,13 @@ export function DiscoveryTab() {
                                         )}
                                     </div>
                                 </div>
-                                <Button variant="ghost" size="icon" onClick={closeDetail}>
+                                <Button variant="ghost" size="icon" onClick={() => {
+                                    setSelectedFeed(null);
+                                    if (isFromSharedPost && onBackFromShared) {
+                                        setIsFromSharedPost(false);
+                                        onBackFromShared();
+                                    }
+                                }}>
                                     <X className="w-5 h-5" />
                                 </Button>
                             </div>

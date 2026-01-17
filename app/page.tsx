@@ -18,12 +18,31 @@ export default function Page() {
   const [activeTab, setActiveTab] = useState("home")
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
+  
+  // 📤 공유된 게시물로 이동 (채팅에서 탐색탭으로)
+  const [sharedPostId, setSharedPostId] = useState<string | null>(null)
+  const [previousTab, setPreviousTab] = useState<string | null>(null)
 
   // 초기 로그인 상태 확인
   useEffect(() => {
     const token = localStorage.getItem("token")
     setIsLoggedIn(!!token)
   }, [])
+  
+  // 📤 공유된 게시물 이동 이벤트 리스너
+  useEffect(() => {
+    const handleNavigateToPost = (e: CustomEvent) => {
+      const { postId, fromTab } = e.detail;
+      if (postId) {
+        setPreviousTab(fromTab || activeTab);
+        setSharedPostId(postId);
+        setActiveTab("discovery");
+      }
+    };
+    
+    window.addEventListener("navigateToPost" as any, handleNavigateToPost);
+    return () => window.removeEventListener("navigateToPost" as any, handleNavigateToPost);
+  }, [activeTab])
 
   // 🌟 탭 변경 핸들러 (접근 제어 로직)
   const handleTabChange = (tab: string) => {
@@ -57,7 +76,18 @@ export default function Page() {
         {activeTab === "community" && <CommunityTab />}
         {activeTab === "chat" && <ChatTab />}
         {/* 🌟 [수정 3] activeTab이 'discovery'일 때 DiscoveryTab 렌더링 */}
-        {activeTab === "discovery" && <DiscoveryTab />}
+        {activeTab === "discovery" && (
+          <DiscoveryTab 
+            sharedPostId={sharedPostId} 
+            onBackFromShared={() => {
+              setSharedPostId(null);
+              if (previousTab) {
+                setActiveTab(previousTab);
+                setPreviousTab(null);
+              }
+            }}
+          />
+        )}
         {activeTab === "mypage" && <MyPageTab />}
       </main>
 
