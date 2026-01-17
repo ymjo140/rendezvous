@@ -264,6 +264,15 @@ class PostComment(Base):
     user = relationship("User")
 
 
+class PostSave(Base):
+    """게시물 저장/찜"""
+    __tablename__ = "post_saves"
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(String, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 # === AI 추천 시스템 모델 ===
 
 class ActionType(str, enum.Enum):

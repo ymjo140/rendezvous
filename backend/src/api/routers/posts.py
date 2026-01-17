@@ -157,13 +157,21 @@ def get_posts(
     
     result = []
     for post in posts:
-        # 좋아요 여부 확인
         is_liked = False
+        is_saved = False
+        
         if current_user:
+            # 좋아요 여부 확인
             like = db.query(models.PostLike)\
                 .filter(models.PostLike.post_id == post.id, models.PostLike.user_id == current_user.id)\
                 .first()
             is_liked = like is not None
+            
+            # 저장 여부 확인
+            save = db.query(models.PostSave)\
+                .filter(models.PostSave.post_id == post.id, models.PostSave.user_id == current_user.id)\
+                .first()
+            is_saved = save is not None
         
         # 작성자 정보
         user = db.query(models.User).filter(models.User.id == post.user_id).first()
@@ -179,7 +187,7 @@ def get_posts(
             likes_count=post.likes_count,
             comments_count=post.comments_count,
             is_liked=is_liked,
-            is_saved=False,
+            is_saved=is_saved,
             created_at=format_time_ago(post.created_at)
         ))
     
@@ -231,13 +239,21 @@ def get_post(
     if not post:
         raise HTTPException(status_code=404, detail="게시물을 찾을 수 없습니다.")
     
-    # 좋아요 여부
     is_liked = False
+    is_saved = False
+    
     if current_user:
+        # 좋아요 여부
         like = db.query(models.PostLike)\
             .filter(models.PostLike.post_id == post.id, models.PostLike.user_id == current_user.id)\
             .first()
         is_liked = like is not None
+        
+        # 저장 여부
+        save = db.query(models.PostSave)\
+            .filter(models.PostSave.post_id == post.id, models.PostSave.user_id == current_user.id)\
+            .first()
+        is_saved = save is not None
     
     user = db.query(models.User).filter(models.User.id == post.user_id).first()
     
@@ -252,7 +268,7 @@ def get_post(
         likes_count=post.likes_count,
         comments_count=post.comments_count,
         is_liked=is_liked,
-        is_saved=False,
+        is_saved=is_saved,
         created_at=format_time_ago(post.created_at)
     )
 
@@ -314,6 +330,40 @@ def toggle_like(
     db.commit()
     
     return {"is_liked": is_liked, "likes_count": post.likes_count}
+
+
+@router.post("/api/posts/{post_id}/save")
+def toggle_save(
+    post_id: str,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """저장/찜 토글"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    
+    post = db.query(models.Post).filter(models.Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="게시물을 찾을 수 없습니다.")
+    
+    # 기존 저장 확인
+    existing_save = db.query(models.PostSave)\
+        .filter(models.PostSave.post_id == post_id, models.PostSave.user_id == current_user.id)\
+        .first()
+    
+    if existing_save:
+        # 저장 취소
+        db.delete(existing_save)
+        is_saved = False
+    else:
+        # 저장 추가
+        new_save = models.PostSave(post_id=post_id, user_id=current_user.id)
+        db.add(new_save)
+        is_saved = True
+    
+    db.commit()
+    
+    return {"is_saved": is_saved}
 
 
 @router.get("/api/posts/{post_id}/comments", response_model=List[CommentResponse])

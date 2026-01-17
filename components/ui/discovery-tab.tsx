@@ -273,22 +273,200 @@ export function DiscoveryTab() {
         fetchPosts();
     }, []);
 
-    // 게시물 클릭 시 상세 뷰
+    // 게시물 클릭 시 상세 뷰 + AI 조회 기록
     const handleFeedClick = (feed: any) => {
         setSelectedFeed(feed);
+        // AI: 게시물 조회 기록
+        if (feed.place?.id) {
+            recordAiAction("view", feed.place.id);
+        }
     };
 
     const closeDetail = () => {
         setSelectedFeed(null);
         setIsPlaceModalOpen(false);
+        setCommentText("");
+        setShowComments(false);
+    };
+    
+    // 댓글 관련 상태
+    const [commentText, setCommentText] = useState("");
+    const [showComments, setShowComments] = useState(false);
+    const [comments, setComments] = useState<any[]>([]);
+    const [commentsLoading, setCommentsLoading] = useState(false);
+
+    // 🔥 좋아요 토글 + AI 학습 기록
+    const handleLike = async (feedId: string | number, e: React.MouseEvent, placeId?: number) => {
+        e.stopPropagation();
+        const feed = feeds.find(f => f.id === feedId);
+        const newIsLiked = !feed?.isLiked;
+        
+        // UI 즉시 업데이트
+        setFeeds(feeds.map(f => 
+            f.id === feedId 
+                ? { ...f, isLiked: newIsLiked, likes: newIsLiked ? f.likes + 1 : f.likes - 1 }
+                : f
+        ));
+        
+        // 선택된 피드도 업데이트
+        if (selectedFeed?.id === feedId) {
+            setSelectedFeed((prev: any) => prev ? {
+                ...prev,
+                isLiked: newIsLiked,
+                likes: newIsLiked ? prev.likes + 1 : prev.likes - 1
+            } : null);
+        }
+        
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        
+        try {
+            // API 게시물인 경우 좋아요 API 호출
+            if (typeof feedId === "string" && !feedId.startsWith("local_")) {
+                await fetch(`${API_URL}/api/posts/${feedId}/like`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+            }
+            
+            // 🤖 AI: 좋아요 행동 기록 (장소가 있는 경우에만)
+            if (newIsLiked && placeId) {
+                recordAiAction("like", placeId);
+            }
+        } catch (error) {
+            console.error("좋아요 오류:", error);
+        }
     };
 
-    // 저장 토글
-    const handleSave = (feedId: number | string, e: React.MouseEvent) => {
+    // 🔥 저장/찜 토글 + AI 학습 기록
+    const handleSave = async (feedId: number | string, e: React.MouseEvent, placeId?: number) => {
         e.stopPropagation();
+        const feed = feeds.find(f => f.id === feedId);
+        const newIsSaved = !feed?.isSaved;
+        
+        // UI 즉시 업데이트
         setFeeds(feeds.map(f => 
-            f.id === feedId ? { ...f, isSaved: !f.isSaved } : f
+            f.id === feedId ? { ...f, isSaved: newIsSaved } : f
         ));
+        
+        // 선택된 피드도 업데이트
+        if (selectedFeed?.id === feedId) {
+            setSelectedFeed((prev: any) => prev ? { ...prev, isSaved: newIsSaved } : null);
+        }
+        
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        
+        try {
+            // API 게시물인 경우 저장 API 호출
+            if (typeof feedId === "string" && !feedId.startsWith("local_")) {
+                await fetch(`${API_URL}/api/posts/${feedId}/save`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+            }
+            
+            // 🤖 AI: 저장 행동 기록 (장소가 있는 경우에만)
+            if (newIsSaved && placeId) {
+                recordAiAction("save", placeId);
+            }
+        } catch (error) {
+            console.error("저장 오류:", error);
+        }
+    };
+    
+    // 🔥 댓글 불러오기
+    const loadComments = async (postId: string | number) => {
+        if (typeof postId !== "string" || postId.startsWith("local_")) {
+            setComments([]);
+            return;
+        }
+        
+        setCommentsLoading(true);
+        try {
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${API_URL}/api/posts/${postId}/comments`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {}
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setComments(data);
+            }
+        } catch (error) {
+            console.error("댓글 로드 오류:", error);
+        } finally {
+            setCommentsLoading(false);
+        }
+    };
+    
+    // 🔥 댓글 작성 + AI 학습 기록
+    const handleAddComment = async (feedId: string | number, placeId?: number) => {
+        if (!commentText.trim()) return;
+        
+        const token = localStorage.getItem("token");
+        if (!token) {
+            alert("로그인이 필요합니다.");
+            return;
+        }
+        
+        try {
+            if (typeof feedId === "string" && !feedId.startsWith("local_")) {
+                const res = await fetch(`${API_URL}/api/posts/${feedId}/comments`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ content: commentText })
+                });
+                
+                if (res.ok) {
+                    const newComment = await res.json();
+                    setComments(prev => [...prev, newComment]);
+                    
+                    // 댓글 수 업데이트
+                    setFeeds(feeds.map(f => 
+                        f.id === feedId ? { ...f, comments: f.comments + 1 } : f
+                    ));
+                    if (selectedFeed?.id === feedId) {
+                        setSelectedFeed((prev: any) => prev ? { ...prev, comments: prev.comments + 1 } : null);
+                    }
+                    
+                    // 🤖 AI: 댓글 행동 기록
+                    if (placeId) {
+                        recordAiAction("review", placeId);
+                    }
+                }
+            }
+            setCommentText("");
+        } catch (error) {
+            console.error("댓글 작성 오류:", error);
+        }
+    };
+    
+    // 🔥 공유 기능
+    const handleShare = async (feed: any) => {
+        const shareData = {
+            title: feed.place?.name || "WeMeet 게시물",
+            text: feed.content || "이 장소를 확인해보세요!",
+            url: window.location.href
+        };
+        
+        try {
+            if (navigator.share) {
+                await navigator.share(shareData);
+                // 🤖 AI: 공유 행동 기록
+                if (feed.place?.id) {
+                    recordAiAction("share", feed.place.id);
+                }
+            } else {
+                // Web Share API 미지원 시 클립보드 복사
+                await navigator.clipboard.writeText(window.location.href);
+                alert("링크가 클립보드에 복사되었습니다!");
+            }
+        } catch (error) {
+            console.log("공유 취소 또는 오류:", error);
+        }
     };
 
     // 이미지 선택
@@ -427,33 +605,6 @@ export function DiscoveryTab() {
             place: null as any
         };
         setFeeds([newPost as any, ...feeds]);
-    };
-    
-    // 좋아요 토글 (API 연동)
-    const handleLikeApi = async (feedId: string | number, e: React.MouseEvent) => {
-        e.stopPropagation();
-        
-        // 우선 UI 즉시 업데이트
-        setFeeds(feeds.map(f => 
-            f.id === feedId 
-                ? { ...f, isLiked: !f.isLiked, likes: f.isLiked ? f.likes - 1 : f.likes + 1 }
-                : f
-        ));
-        
-        // API 호출 (문자열 ID인 경우에만 - API 게시물)
-        if (typeof feedId === "string" && !feedId.startsWith("local_")) {
-            try {
-                const token = localStorage.getItem("token");
-                if (token) {
-                    await fetch(`${API_URL}/api/posts/${feedId}/like`, {
-                        method: "POST",
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                }
-            } catch (error) {
-                console.error("좋아요 오류:", error);
-            }
-        }
     };
 
     // 필터된 피드
@@ -693,20 +844,29 @@ export function DiscoveryTab() {
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-4">
                                         <button 
-                                            onClick={(e) => handleLikeApi(selectedFeed.id, e)}
+                                            onClick={(e) => handleLike(selectedFeed.id, e, selectedFeed.place?.id)}
                                             className="hover:opacity-60 transition-opacity"
                                         >
                                             <Heart className={`w-6 h-6 ${selectedFeed.isLiked ? 'fill-red-500 text-red-500' : ''}`} />
                                         </button>
-                                        <button className="hover:opacity-60 transition-opacity">
-                                            <MessageCircle className="w-6 h-6" />
+                                        <button 
+                                            onClick={() => {
+                                                setShowComments(!showComments);
+                                                if (!showComments) loadComments(selectedFeed.id);
+                                            }}
+                                            className="hover:opacity-60 transition-opacity"
+                                        >
+                                            <MessageCircle className={`w-6 h-6 ${showComments ? 'text-purple-500' : ''}`} />
                                         </button>
-                                        <button className="hover:opacity-60 transition-opacity">
+                                        <button 
+                                            onClick={() => handleShare(selectedFeed)}
+                                            className="hover:opacity-60 transition-opacity"
+                                        >
                                             <Send className="w-6 h-6" />
                                         </button>
                                     </div>
                                     <button 
-                                        onClick={(e) => handleSave(selectedFeed.id, e)}
+                                        onClick={(e) => handleSave(selectedFeed.id, e, selectedFeed.place?.id)}
                                         className="hover:opacity-60 transition-opacity"
                                     >
                                         <Bookmark className={`w-6 h-6 ${selectedFeed.isSaved ? 'fill-black' : ''}`} />
@@ -728,7 +888,13 @@ export function DiscoveryTab() {
                                 {/* 가게 정보 버튼 */}
                                 {selectedFeed.place && (
                                     <button 
-                                        onClick={() => setIsPlaceModalOpen(true)}
+                                        onClick={() => {
+                                            setIsPlaceModalOpen(true);
+                                            // 🤖 AI: 장소 상세 조회 기록
+                                            if (selectedFeed.place?.id) {
+                                                recordAiAction("click", selectedFeed.place.id);
+                                            }
+                                        }}
                                         className="mt-3 w-full bg-gray-100 hover:bg-gray-200 rounded-xl p-3 flex items-center gap-3 transition-colors"
                                     >
                                         <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
@@ -743,6 +909,66 @@ export function DiscoveryTab() {
                                         </div>
                                         <ChevronRight className="w-5 h-5 text-gray-400" />
                                     </button>
+                                )}
+                                
+                                {/* 🔥 댓글 섹션 */}
+                                {showComments && (
+                                    <div className="mt-4 border-t pt-4">
+                                        <h4 className="font-semibold text-sm mb-3">
+                                            댓글 {selectedFeed.comments}개
+                                        </h4>
+                                        
+                                        {/* 댓글 목록 */}
+                                        <div className="space-y-3 max-h-40 overflow-y-auto mb-3">
+                                            {commentsLoading ? (
+                                                <p className="text-xs text-gray-400 text-center py-2">로딩 중...</p>
+                                            ) : comments.length > 0 ? (
+                                                comments.map((comment: any) => (
+                                                    <div key={comment.id} className="flex gap-2">
+                                                        <Avatar className="w-6 h-6">
+                                                            <AvatarFallback className="text-[10px] bg-gray-200">
+                                                                {comment.user_name?.slice(0, 2) || "??"}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                        <div className="flex-1">
+                                                            <p className="text-xs">
+                                                                <span className="font-semibold">{comment.user_name}</span>{" "}
+                                                                {comment.content}
+                                                            </p>
+                                                            <p className="text-[10px] text-gray-400">{comment.created_at}</p>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <p className="text-xs text-gray-400 text-center py-2">
+                                                    첫 번째 댓글을 남겨보세요!
+                                                </p>
+                                            )}
+                                        </div>
+                                        
+                                        {/* 댓글 입력 */}
+                                        <div className="flex gap-2">
+                                            <Input
+                                                placeholder="댓글 달기..."
+                                                value={commentText}
+                                                onChange={(e) => setCommentText(e.target.value)}
+                                                className="flex-1 h-9 text-sm"
+                                                onKeyPress={(e) => {
+                                                    if (e.key === "Enter") {
+                                                        handleAddComment(selectedFeed.id, selectedFeed.place?.id);
+                                                    }
+                                                }}
+                                            />
+                                            <Button
+                                                size="sm"
+                                                onClick={() => handleAddComment(selectedFeed.id, selectedFeed.place?.id)}
+                                                disabled={!commentText.trim()}
+                                                className="bg-purple-500 hover:bg-purple-600 h-9"
+                                            >
+                                                게시
+                                            </Button>
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         </motion.div>

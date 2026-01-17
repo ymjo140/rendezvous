@@ -47,6 +47,19 @@ CREATE TABLE IF NOT EXISTS post_comments (
 CREATE INDEX IF NOT EXISTS idx_post_comments_post_id ON post_comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_post_comments_user_id ON post_comments(user_id);
 
+-- 4. post_saves 테이블 (저장/찜)
+CREATE TABLE IF NOT EXISTS post_saves (
+    id SERIAL PRIMARY KEY,
+    post_id VARCHAR(36) NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(post_id, user_id)
+);
+
+-- 인덱스
+CREATE INDEX IF NOT EXISTS idx_post_saves_post_id ON post_saves(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_saves_user_id ON post_saves(user_id);
+
 -- 업데이트 트리거 (updated_at 자동 갱신)
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
