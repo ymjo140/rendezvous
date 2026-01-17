@@ -298,18 +298,19 @@ export function DiscoveryTab() {
     // 🔥 좋아요 토글 + AI 학습 기록
     const handleLike = async (feedId: string | number, e: React.MouseEvent, placeId?: number) => {
         e.stopPropagation();
-        const feed = feeds.find(f => f.id === feedId);
+        const feedIdStr = String(feedId);
+        const feed = feeds.find(f => String(f.id) === feedIdStr);
         const newIsLiked = !feed?.isLiked;
         
         // UI 즉시 업데이트
         setFeeds(feeds.map(f => 
-            f.id === feedId 
+            String(f.id) === feedIdStr 
                 ? { ...f, isLiked: newIsLiked, likes: newIsLiked ? f.likes + 1 : f.likes - 1 }
                 : f
         ));
         
         // 선택된 피드도 업데이트
-        if (selectedFeed?.id === feedId) {
+        if (String(selectedFeed?.id) === feedIdStr) {
             setSelectedFeed((prev: any) => prev ? {
                 ...prev,
                 isLiked: newIsLiked,
@@ -341,16 +342,17 @@ export function DiscoveryTab() {
     // 🔥 저장/찜 토글 + AI 학습 기록
     const handleSave = async (feedId: number | string, e: React.MouseEvent, placeId?: number) => {
         e.stopPropagation();
-        const feed = feeds.find(f => f.id === feedId);
+        const feedIdStr = String(feedId);
+        const feed = feeds.find(f => String(f.id) === feedIdStr);
         const newIsSaved = !feed?.isSaved;
         
         // UI 즉시 업데이트
         setFeeds(feeds.map(f => 
-            f.id === feedId ? { ...f, isSaved: newIsSaved } : f
+            String(f.id) === feedIdStr ? { ...f, isSaved: newIsSaved } : f
         ));
         
         // 선택된 피드도 업데이트
-        if (selectedFeed?.id === feedId) {
+        if (String(selectedFeed?.id) === feedIdStr) {
             setSelectedFeed((prev: any) => prev ? { ...prev, isSaved: newIsSaved } : null);
         }
         
@@ -425,10 +427,11 @@ export function DiscoveryTab() {
                     setComments(prev => [...prev, newComment]);
                     
                     // 댓글 수 업데이트
+                    const feedIdStr = String(feedId);
                     setFeeds(feeds.map(f => 
-                        f.id === feedId ? { ...f, comments: f.comments + 1 } : f
+                        String(f.id) === feedIdStr ? { ...f, comments: f.comments + 1 } : f
                     ));
-                    if (selectedFeed?.id === feedId) {
+                    if (String(selectedFeed?.id) === feedIdStr) {
                         setSelectedFeed((prev: any) => prev ? { ...prev, comments: prev.comments + 1 } : null);
                     }
                     
