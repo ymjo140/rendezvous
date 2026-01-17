@@ -57,6 +57,14 @@ app.include_router(community.router, tags=["community"])
 # 📸 SNS 게시물 라우터 (Instagram 스타일)
 app.include_router(posts.router, tags=["posts"])
 
+# 💾 저장/공유 시스템 라우터
+try:
+    from api.routers import saves
+    app.include_router(saves.router, tags=["saves"])
+    print("✅ 저장/공유 라우터 연결 성공")
+except Exception as e:
+    print(f"⚠️ 저장/공유 라우터 로드 실패: {e}")
+
 # 🤖 AI 추천 시스템 라우터
 try:
     from api.routers import ai_recommendations

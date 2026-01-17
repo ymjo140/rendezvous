@@ -4,16 +4,35 @@ import React, { useState, useRef, useEffect } from "react"
 import { 
     Search, MapPin, Heart, MessageCircle, Share2, Star, ChevronLeft, 
     MoreHorizontal, Utensils, X, Phone, Clock, ChevronRight, Plus,
-    Image as ImageIcon, Camera, Send, Bookmark, Grid3X3, Play, Wand2
+    Image as ImageIcon, Camera, Send, Bookmark, Grid3X3, Play, Wand2,
+    FolderPlus, Check, MessageSquare, Users, ShoppingBag, Trash2
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { motion, AnimatePresence } from "framer-motion"
 import { PhotoEditor } from "@/components/ui/photo-editor"
+
+// 폴더 타입
+interface SaveFolder {
+    id: number;
+    name: string;
+    icon: string;
+    color: string;
+    is_default: boolean;
+    item_count: number;
+}
+
+// 채팅방 타입
+interface ChatRoom {
+    id: string;
+    title: string;
+    is_group: boolean;
+    member_count: number;
+}
 
 // --- API URL ---
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
@@ -169,6 +188,25 @@ export function DiscoveryTab() {
     const [aiLoading, setAiLoading] = useState(false);
     const [showAiSection, setShowAiSection] = useState(true);
     
+    // 💾 저장 폴더 관련 상태
+    const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+    const [savingItem, setSavingItem] = useState<{type: string, postId?: string, placeId?: number} | null>(null);
+    const [folders, setFolders] = useState<SaveFolder[]>([]);
+    const [foldersLoading, setFoldersLoading] = useState(false);
+    const [newFolderName, setNewFolderName] = useState("");
+    const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+    const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
+    
+    // 📤 공유 관련 상태
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+    const [sharingItem, setSharingItem] = useState<any>(null);
+    const [shareMode, setShareMode] = useState<"direct" | "cart">("direct");
+    const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+    const [roomsLoading, setRoomsLoading] = useState(false);
+    const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+    const [shareMessage, setShareMessage] = useState("");
+    const [cartItems, setCartItems] = useState<any[]>([]);
+    
     // 🤖 AI 추천 불러오기
     useEffect(() => {
         const fetchAiRecommendations = async () => {
@@ -216,6 +254,237 @@ export function DiscoveryTab() {
         } catch (error) {
             // 실패해도 무시 (사용자 경험에 영향 없음)
         }
+    };
+    
+    // 💾 폴더 목록 불러오기
+    const fetchFolders = async () => {
+        try {
+            setFoldersLoading(true);
+            const token = localStorage.getItem("token");
+            if (!token) return;
+            
+            const res = await fetch(`${API_URL}/api/folders`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                setFolders(data);
+            }
+        } catch (error) {
+            console.error("폴더 로드 오류:", error);
+        } finally {
+            setFoldersLoading(false);
+        }
+    };
+    
+    // 💾 새 폴더 생성
+    const createFolder = async () => {
+        if (!newFolderName.trim()) return;
+        
+        try {
+            setIsCreatingFolder(true);
+            const token = localStorage.getItem("token");
+            if (!token) return;
+            
+            const res = await fetch(`${API_URL}/api/folders`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ name: newFolderName.trim() })
+            });
+            
+            if (res.ok) {
+                const newFolder = await res.json();
+                setFolders(prev => [...prev, newFolder]);
+                setNewFolderName("");
+                setSelectedFolderId(newFolder.id);
+            }
+        } catch (error) {
+            console.error("폴더 생성 오류:", error);
+        } finally {
+            setIsCreatingFolder(false);
+        }
+    };
+    
+    // 💾 아이템 저장
+    const saveToFolder = async () => {
+        if (!selectedFolderId || !savingItem) return;
+        
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) {
+                alert("로그인이 필요합니다.");
+                return;
+            }
+            
+            const res = await fetch(`${API_URL}/api/saves`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    folder_id: selectedFolderId,
+                    item_type: savingItem.type,
+                    post_id: savingItem.postId,
+                    place_id: savingItem.placeId
+                })
+            });
+            
+            if (res.ok) {
+                // UI 업데이트
+                if (savingItem.postId) {
+                    const feedIdStr = savingItem.postId;
+                    setFeeds(feeds.map(f => 
+                        String(f.id) === feedIdStr ? { ...f, isSaved: true } : f
+                    ));
+                    if (selectedFeed && String(selectedFeed.id) === feedIdStr) {
+                        setSelectedFeed((prev: any) => prev ? { ...prev, isSaved: true } : null);
+                    }
+                }
+                
+                setIsSaveModalOpen(false);
+                setSavingItem(null);
+                setSelectedFolderId(null);
+                
+                // AI 학습 기록
+                if (savingItem.placeId) {
+                    recordAiAction("save", savingItem.placeId);
+                }
+            }
+        } catch (error) {
+            console.error("저장 오류:", error);
+            alert("저장 중 오류가 발생했습니다.");
+        }
+    };
+    
+    // 📤 채팅방 목록 불러오기
+    const fetchChatRooms = async () => {
+        try {
+            setRoomsLoading(true);
+            const token = localStorage.getItem("token");
+            if (!token) return;
+            
+            const res = await fetch(`${API_URL}/api/share/rooms`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                setChatRooms(data.rooms || []);
+            }
+        } catch (error) {
+            console.error("채팅방 로드 오류:", error);
+        } finally {
+            setRoomsLoading(false);
+        }
+    };
+    
+    // 📤 담기에 추가
+    const addToCart = async (item: any) => {
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) {
+                alert("로그인이 필요합니다.");
+                return;
+            }
+            
+            const res = await fetch(`${API_URL}/api/share-cart`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    item_type: item.type,
+                    post_id: item.postId,
+                    place_id: item.placeId
+                })
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                if (data.already_added) {
+                    alert("이미 담겨있습니다.");
+                } else {
+                    alert("담기에 추가되었습니다!");
+                    setIsShareModalOpen(false);
+                }
+            }
+        } catch (error) {
+            console.error("담기 오류:", error);
+        }
+    };
+    
+    // 📤 바로 공유
+    const shareDirectly = async () => {
+        if (!selectedRoomId || !sharingItem) return;
+        
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) {
+                alert("로그인이 필요합니다.");
+                return;
+            }
+            
+            const res = await fetch(`${API_URL}/api/share/direct`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    room_id: selectedRoomId,
+                    item_type: sharingItem.type,
+                    post_id: sharingItem.postId,
+                    place_id: sharingItem.placeId,
+                    message: shareMessage
+                })
+            });
+            
+            if (res.ok) {
+                alert("공유되었습니다!");
+                setIsShareModalOpen(false);
+                setSharingItem(null);
+                setSelectedRoomId(null);
+                setShareMessage("");
+                
+                // AI 학습 기록
+                if (sharingItem.placeId) {
+                    recordAiAction("share", sharingItem.placeId);
+                }
+            }
+        } catch (error) {
+            console.error("공유 오류:", error);
+            alert("공유 중 오류가 발생했습니다.");
+        }
+    };
+    
+    // 💾 저장 모달 열기
+    const openSaveModal = (postId?: string, placeId?: number) => {
+        setSavingItem({
+            type: postId ? "post" : "place",
+            postId,
+            placeId
+        });
+        fetchFolders();
+        setIsSaveModalOpen(true);
+    };
+    
+    // 📤 공유 모달 열기
+    const openShareModal = (item: any) => {
+        setSharingItem({
+            type: item.postId ? "post" : "place",
+            postId: item.postId,
+            placeId: item.placeId,
+            name: item.name
+        });
+        fetchChatRooms();
+        setShareMode("direct");
+        setIsShareModalOpen(true);
     };
     
     // API에서 게시물 불러오기
@@ -339,10 +608,19 @@ export function DiscoveryTab() {
         }
     };
 
-    // 🔥 저장/찜 토글 + AI 학습 기록
-    const handleSave = async (feedId: number | string, e: React.MouseEvent, placeId?: number) => {
+    // 🔥 저장/찜 - 폴더 선택 모달 열기
+    const handleSave = (feedId: number | string, e: React.MouseEvent, placeId?: number) => {
         e.stopPropagation();
         const feedIdStr = String(feedId);
+        
+        // 폴더 선택 모달 열기
+        openSaveModal(
+            typeof feedId === "string" ? feedId : undefined,
+            placeId
+        );
+        return; // 아래 로직은 더 이상 실행 안 함
+        
+        // 아래는 레거시 코드 (폴더 없이 바로 저장)
         const feed = feeds.find(f => String(f.id) === feedIdStr);
         const newIsSaved = !feed?.isSaved;
         
@@ -447,29 +725,13 @@ export function DiscoveryTab() {
         }
     };
     
-    // 🔥 공유 기능
-    const handleShare = async (feed: any) => {
-        const shareData = {
-            title: feed.place?.name || "WeMeet 게시물",
-            text: feed.content || "이 장소를 확인해보세요!",
-            url: window.location.href
-        };
-        
-        try {
-            if (navigator.share) {
-                await navigator.share(shareData);
-                // 🤖 AI: 공유 행동 기록
-                if (feed.place?.id) {
-                    recordAiAction("share", feed.place.id);
-                }
-            } else {
-                // Web Share API 미지원 시 클립보드 복사
-                await navigator.clipboard.writeText(window.location.href);
-                alert("링크가 클립보드에 복사되었습니다!");
-            }
-        } catch (error) {
-            console.log("공유 취소 또는 오류:", error);
-        }
+    // 🔥 공유 기능 - 모달 열기
+    const handleShare = (feed: any) => {
+        openShareModal({
+            postId: typeof feed.id === "string" ? feed.id : undefined,
+            placeId: feed.place?.id,
+            name: feed.place?.name || feed.content?.slice(0, 20) || "게시물"
+        });
     };
 
     // 이미지 선택
@@ -1220,6 +1482,214 @@ export function DiscoveryTab() {
                 imageSrc={tempImageForEdit}
                 onSave={handlePhotoEditorSave}
             />
+            
+            {/* 7. 저장 폴더 선택 모달 */}
+            <Dialog open={isSaveModalOpen} onOpenChange={setIsSaveModalOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Bookmark className="w-5 h-5 text-purple-500" />
+                            폴더에 저장
+                        </DialogTitle>
+                        <DialogDescription>
+                            저장할 폴더를 선택하세요
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="py-4">
+                        {/* 폴더 목록 */}
+                        {foldersLoading ? (
+                            <div className="text-center py-4 text-gray-400">로딩 중...</div>
+                        ) : (
+                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                                {folders.map((folder) => (
+                                    <button
+                                        key={folder.id}
+                                        onClick={() => setSelectedFolderId(folder.id)}
+                                        className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
+                                            selectedFolderId === folder.id
+                                                ? "bg-purple-100 border-2 border-purple-500"
+                                                : "bg-gray-50 hover:bg-gray-100 border-2 border-transparent"
+                                        }`}
+                                    >
+                                        <span className="text-xl">{folder.icon}</span>
+                                        <div className="flex-1 text-left">
+                                            <div className="font-medium">{folder.name}</div>
+                                            <div className="text-xs text-gray-500">{folder.item_count}개 저장됨</div>
+                                        </div>
+                                        {selectedFolderId === folder.id && (
+                                            <Check className="w-5 h-5 text-purple-500" />
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        
+                        {/* 새 폴더 만들기 */}
+                        <div className="mt-4 pt-4 border-t">
+                            <div className="flex gap-2">
+                                <Input
+                                    placeholder="새 폴더 이름"
+                                    value={newFolderName}
+                                    onChange={(e) => setNewFolderName(e.target.value)}
+                                    className="flex-1"
+                                />
+                                <Button
+                                    onClick={createFolder}
+                                    disabled={!newFolderName.trim() || isCreatingFolder}
+                                    size="icon"
+                                    className="bg-purple-500 hover:bg-purple-600"
+                                >
+                                    <FolderPlus className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsSaveModalOpen(false)}>
+                            취소
+                        </Button>
+                        <Button
+                            onClick={saveToFolder}
+                            disabled={!selectedFolderId}
+                            className="bg-purple-500 hover:bg-purple-600"
+                        >
+                            저장하기
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+            
+            {/* 8. 공유 모달 */}
+            <Dialog open={isShareModalOpen} onOpenChange={setIsShareModalOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Send className="w-5 h-5 text-purple-500" />
+                            공유하기
+                        </DialogTitle>
+                        <DialogDescription>
+                            {sharingItem?.name || "아이템"}
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="py-4">
+                        {/* 공유 방식 선택 */}
+                        <div className="flex gap-2 mb-4">
+                            <button
+                                onClick={() => setShareMode("direct")}
+                                className={`flex-1 p-3 rounded-xl text-center transition-all ${
+                                    shareMode === "direct"
+                                        ? "bg-purple-100 border-2 border-purple-500 text-purple-700"
+                                        : "bg-gray-50 border-2 border-transparent text-gray-600"
+                                }`}
+                            >
+                                <MessageSquare className="w-5 h-5 mx-auto mb-1" />
+                                <div className="text-sm font-medium">바로 공유</div>
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShareMode("cart");
+                                    if (sharingItem) {
+                                        addToCart(sharingItem);
+                                    }
+                                }}
+                                className={`flex-1 p-3 rounded-xl text-center transition-all ${
+                                    shareMode === "cart"
+                                        ? "bg-purple-100 border-2 border-purple-500 text-purple-700"
+                                        : "bg-gray-50 border-2 border-transparent text-gray-600"
+                                }`}
+                            >
+                                <ShoppingBag className="w-5 h-5 mx-auto mb-1" />
+                                <div className="text-sm font-medium">담기</div>
+                            </button>
+                        </div>
+                        
+                        {shareMode === "direct" && (
+                            <>
+                                {/* 채팅방 선택 */}
+                                <div className="mb-4">
+                                    <div className="text-sm font-medium text-gray-700 mb-2">채팅방 선택</div>
+                                    {roomsLoading ? (
+                                        <div className="text-center py-4 text-gray-400">로딩 중...</div>
+                                    ) : chatRooms.length > 0 ? (
+                                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                                            {chatRooms.map((room) => (
+                                                <button
+                                                    key={room.id}
+                                                    onClick={() => setSelectedRoomId(room.id)}
+                                                    className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
+                                                        selectedRoomId === room.id
+                                                            ? "bg-purple-100 border-2 border-purple-500"
+                                                            : "bg-gray-50 hover:bg-gray-100 border-2 border-transparent"
+                                                    }`}
+                                                >
+                                                    <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
+                                                        {room.is_group ? (
+                                                            <Users className="w-5 h-5 text-white" />
+                                                        ) : (
+                                                            <MessageSquare className="w-5 h-5 text-white" />
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 text-left">
+                                                        <div className="font-medium">{room.title}</div>
+                                                        <div className="text-xs text-gray-500">
+                                                            {room.is_group ? `${room.member_count}명` : "1:1 채팅"}
+                                                        </div>
+                                                    </div>
+                                                    {selectedRoomId === room.id && (
+                                                        <Check className="w-5 h-5 text-purple-500" />
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-4 text-gray-400">
+                                            채팅방이 없습니다
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                {/* 메시지 입력 */}
+                                <div>
+                                    <div className="text-sm font-medium text-gray-700 mb-2">메시지 (선택)</div>
+                                    <Textarea
+                                        placeholder="함께 보낼 메시지를 입력하세요"
+                                        value={shareMessage}
+                                        onChange={(e) => setShareMessage(e.target.value)}
+                                        className="resize-none"
+                                        rows={2}
+                                    />
+                                </div>
+                            </>
+                        )}
+                        
+                        {shareMode === "cart" && (
+                            <div className="text-center py-8 text-gray-500">
+                                <ShoppingBag className="w-12 h-12 mx-auto mb-3 text-purple-300" />
+                                <p className="font-medium">담기에 추가되었습니다!</p>
+                                <p className="text-sm mt-1">나중에 여러 장소를 모아서 공유할 수 있어요</p>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsShareModalOpen(false)}>
+                            {shareMode === "cart" ? "확인" : "취소"}
+                        </Button>
+                        {shareMode === "direct" && (
+                            <Button
+                                onClick={shareDirectly}
+                                disabled={!selectedRoomId}
+                                className="bg-purple-500 hover:bg-purple-600"
+                            >
+                                공유하기
+                            </Button>
+                        )}
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

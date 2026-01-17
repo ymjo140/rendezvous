@@ -265,11 +265,78 @@ class PostComment(Base):
 
 
 class PostSave(Base):
-    """게시물 저장/찜"""
+    """게시물 저장/찜 (레거시 - SavedItem으로 마이그레이션)"""
     __tablename__ = "post_saves"
     id = Column(Integer, primary_key=True, index=True)
     post_id = Column(String, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+# === 저장 폴더 시스템 ===
+
+class SaveFolder(Base):
+    """저장 폴더 - 비즈니스 미팅, 데이트 등으로 분류"""
+    __tablename__ = "save_folders"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)  # 폴더 이름
+    icon = Column(String, default="📁")    # 이모지 아이콘
+    color = Column(String, default="#7C3AED")  # 색상 코드
+    is_default = Column(Boolean, default=False)  # 기본 폴더 여부
+    item_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    
+    items = relationship("SavedItem", back_populates="folder", cascade="all, delete-orphan")
+
+
+class SavedItem(Base):
+    """폴더 내 저장된 아이템 (게시물 또는 장소)"""
+    __tablename__ = "saved_items"
+    id = Column(Integer, primary_key=True, index=True)
+    folder_id = Column(Integer, ForeignKey("save_folders.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # 저장 대상 (게시물 또는 장소 중 하나)
+    item_type = Column(String, nullable=False)  # "post" 또는 "place"
+    post_id = Column(String, ForeignKey("posts.id", ondelete="CASCADE"), nullable=True)
+    place_id = Column(Integer, ForeignKey("places.id", ondelete="CASCADE"), nullable=True)
+    
+    # 메모/태그
+    memo = Column(String, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.now)
+    
+    folder = relationship("SaveFolder", back_populates="items")
+
+
+# === 공유 담기 시스템 ===
+
+class ShareCart(Base):
+    """공유 담기 장바구니 - 여러 아이템을 모아서 공유"""
+    __tablename__ = "share_carts"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    item_type = Column(String, nullable=False)  # "post" 또는 "place"
+    post_id = Column(String, ForeignKey("posts.id", ondelete="CASCADE"), nullable=True)
+    place_id = Column(Integer, ForeignKey("places.id", ondelete="CASCADE"), nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class SharedMessage(Base):
+    """공유된 메시지 - 채팅방으로 공유된 내역"""
+    __tablename__ = "shared_messages"
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    room_id = Column(String, ForeignKey("chat_rooms.id"), nullable=False, index=True)
+    
+    # 공유 내용 (JSON으로 여러 아이템 포함 가능)
+    shared_items = Column(JSON, default=[])  # [{type: "post", id: "..."}, {type: "place", id: 123}]
+    message = Column(String, nullable=True)  # 함께 보내는 메시지
+    
     created_at = Column(DateTime, default=datetime.now)
 
 
