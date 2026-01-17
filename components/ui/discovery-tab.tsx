@@ -221,7 +221,7 @@ export function DiscoveryTab() {
         
         const newPost = {
             id: Date.now(),
-            type: "image",
+            type: "image" as const,
             images: newPostImages,
             author: { id: 999, name: "나", avatar: "ME", profileImage: "" },
             content: newPostContent,
@@ -230,10 +230,10 @@ export function DiscoveryTab() {
             isLiked: false,
             isSaved: false,
             createdAt: "방금 전",
-            place: null
+            place: null as any
         };
         
-        setFeeds([newPost, ...feeds]);
+        setFeeds([newPost as any, ...feeds]);
         setNewPostImages([]);
         setNewPostContent("");
         setIsCreatePostOpen(false);
