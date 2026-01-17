@@ -411,10 +411,11 @@ export function DiscoveryTab() {
             if (res.ok) {
                 const data = await res.json();
                 if (data.already_added) {
-                    alert("이미 담겨있습니다.");
+                    // 이미 담긴 경우에도 목록 새로고침
+                    fetchCartItems();
                 } else {
-                    alert("담기에 추가되었습니다!");
-                    setIsShareModalOpen(false);
+                    // 새로 담긴 경우 목록 새로고침
+                    fetchCartItems();
                 }
             }
         } catch (error) {
@@ -486,8 +487,83 @@ export function DiscoveryTab() {
             name: item.name
         });
         fetchChatRooms();
+        fetchCartItems(); // 담기 목록도 미리 로드
         setShareMode("direct");
         setIsShareModalOpen(true);
+    };
+    
+    // 📤 담기 목록 불러오기
+    const fetchCartItems = async () => {
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) return;
+            
+            const res = await fetch(`${API_URL}/api/share-cart`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                setCartItems(data.items || []);
+            }
+        } catch (error) {
+            console.error("담기 목록 로드 오류:", error);
+        }
+    };
+    
+    // 📤 담기에서 제거
+    const removeFromCart = async (itemId: number) => {
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) return;
+            
+            const res = await fetch(`${API_URL}/api/share-cart/${itemId}`, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (res.ok) {
+                setCartItems(prev => prev.filter(item => item.id !== itemId));
+            }
+        } catch (error) {
+            console.error("담기 제거 오류:", error);
+        }
+    };
+    
+    // 📤 담기 전체 공유
+    const shareCart = async () => {
+        if (!selectedRoomId || cartItems.length === 0) return;
+        
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) {
+                alert("로그인이 필요합니다.");
+                return;
+            }
+            
+            const res = await fetch(`${API_URL}/api/share/cart`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    room_id: selectedRoomId,
+                    message: shareMessage
+                })
+            });
+            
+            if (res.ok) {
+                alert(`${cartItems.length}개 아이템이 공유되었습니다!`);
+                setCartItems([]);
+                setIsShareModalOpen(false);
+                setSelectedRoomId(null);
+                setShareMessage("");
+            }
+        } catch (error) {
+            console.error("담기 공유 오류:", error);
+            alert("공유 중 오류가 발생했습니다.");
+        }
     };
     
     // API에서 게시물 불러오기
@@ -1633,17 +1709,133 @@ export function DiscoveryTab() {
                         )}
                         
                         {shareMode === "cart" && (
-                            <div className="text-center py-8 text-gray-500">
-                                <ShoppingBag className="w-12 h-12 mx-auto mb-3 text-purple-300" />
-                                <p className="font-medium">담기에 추가되었습니다!</p>
-                                <p className="text-sm mt-1">나중에 여러 장소를 모아서 공유할 수 있어요</p>
+                            <div className="space-y-4">
+                                {/* 담긴 아이템 목록 */}
+                                <div>
+                                    <div className="text-sm font-medium text-gray-700 mb-2 flex items-center justify-between">
+                                        <span>담긴 항목 ({cartItems.length}개)</span>
+                                        {sharingItem && (
+                                            <button
+                                                onClick={() => addToCart(sharingItem)}
+                                                className="text-xs text-purple-500 hover:text-purple-600 font-medium"
+                                            >
+                                                + 현재 아이템 추가
+                                            </button>
+                                        )}
+                                    </div>
+                                    
+                                    {cartItems.length > 0 ? (
+                                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                                            {cartItems.map((item) => (
+                                                <div
+                                                    key={item.id}
+                                                    className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl group"
+                                                >
+                                                    {/* 썸네일 */}
+                                                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                        {item.image ? (
+                                                            <img src={item.image} alt="" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <MapPin className="w-5 h-5 text-purple-400" />
+                                                        )}
+                                                    </div>
+                                                    {/* 정보 */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="font-medium text-sm text-gray-800 truncate">
+                                                            {item.name || "저장된 항목"}
+                                                        </div>
+                                                        <div className="text-xs text-gray-400">
+                                                            {item.item_type === "post" ? "게시물" : "장소"}
+                                                        </div>
+                                                    </div>
+                                                    {/* 삭제 버튼 */}
+                                                    <button
+                                                        onClick={() => removeFromCart(item.id)}
+                                                        className="p-1.5 hover:bg-red-100 rounded-full transition-colors"
+                                                    >
+                                                        <X className="w-4 h-4 text-gray-400 hover:text-red-500" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-xl">
+                                            <ShoppingBag className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                                            <p className="text-sm">담긴 항목이 없습니다</p>
+                                            {sharingItem && (
+                                                <button
+                                                    onClick={() => addToCart(sharingItem)}
+                                                    className="mt-2 text-sm text-purple-500 hover:text-purple-600 font-medium"
+                                                >
+                                                    + 현재 아이템 담기
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                {/* 공유할 채팅방 선택 (담긴 아이템이 있을 때만) */}
+                                {cartItems.length > 0 && (
+                                    <>
+                                        <div className="border-t pt-4">
+                                            <div className="text-sm font-medium text-gray-700 mb-2">공유할 채팅방</div>
+                                            {roomsLoading ? (
+                                                <div className="text-center py-4 text-gray-400">로딩 중...</div>
+                                            ) : chatRooms.length > 0 ? (
+                                                <div className="space-y-2 max-h-32 overflow-y-auto">
+                                                    {chatRooms.map((room) => (
+                                                        <button
+                                                            key={room.id}
+                                                            onClick={() => setSelectedRoomId(room.id)}
+                                                            className={`w-full flex items-center gap-3 p-2 rounded-xl transition-all ${
+                                                                selectedRoomId === room.id
+                                                                    ? "bg-purple-100 border-2 border-purple-500"
+                                                                    : "bg-gray-50 hover:bg-gray-100 border-2 border-transparent"
+                                                            }`}
+                                                        >
+                                                            <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
+                                                                {room.is_group ? (
+                                                                    <Users className="w-4 h-4 text-white" />
+                                                                ) : (
+                                                                    <MessageSquare className="w-4 h-4 text-white" />
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1 text-left">
+                                                                <div className="font-medium text-sm">{room.title}</div>
+                                                            </div>
+                                                            {selectedRoomId === room.id && (
+                                                                <Check className="w-4 h-4 text-purple-500" />
+                                                            )}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-4 text-gray-400 text-sm">
+                                                    채팅방이 없습니다
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        {/* 메시지 입력 */}
+                                        <div>
+                                            <div className="text-sm font-medium text-gray-700 mb-2">메시지 (선택)</div>
+                                            <Textarea
+                                                placeholder="함께 보낼 메시지를 입력하세요"
+                                                value={shareMessage}
+                                                onChange={(e) => setShareMessage(e.target.value)}
+                                                className="resize-none"
+                                                rows={2}
+                                            />
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         )}
                     </div>
                     
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setIsShareModalOpen(false)}>
-                            {shareMode === "cart" ? "확인" : "취소"}
+                            취소
                         </Button>
                         {shareMode === "direct" && (
                             <Button
@@ -1652,6 +1844,15 @@ export function DiscoveryTab() {
                                 className="bg-purple-500 hover:bg-purple-600"
                             >
                                 공유하기
+                            </Button>
+                        )}
+                        {shareMode === "cart" && cartItems.length > 0 && (
+                            <Button
+                                onClick={shareCart}
+                                disabled={!selectedRoomId}
+                                className="bg-purple-500 hover:bg-purple-600"
+                            >
+                                {cartItems.length}개 공유하기
                             </Button>
                         )}
                     </DialogFooter>
