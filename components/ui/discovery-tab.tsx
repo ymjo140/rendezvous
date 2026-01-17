@@ -261,7 +261,10 @@ export function DiscoveryTab() {
         try {
             setFoldersLoading(true);
             const token = localStorage.getItem("token");
-            if (!token) return;
+            if (!token) {
+                setFoldersLoading(false);
+                return;
+            }
             
             const res = await fetch(`${API_URL}/api/folders`, {
                 headers: { Authorization: `Bearer ${token}` }
@@ -611,48 +614,12 @@ export function DiscoveryTab() {
     // 🔥 저장/찜 - 폴더 선택 모달 열기
     const handleSave = (feedId: number | string, e: React.MouseEvent, placeId?: number) => {
         e.stopPropagation();
-        const feedIdStr = String(feedId);
         
         // 폴더 선택 모달 열기
         openSaveModal(
             typeof feedId === "string" ? feedId : undefined,
             placeId
         );
-        return; // 아래 로직은 더 이상 실행 안 함
-        
-        // 아래는 레거시 코드 (폴더 없이 바로 저장)
-        const feed = feeds.find(f => String(f.id) === feedIdStr);
-        const newIsSaved = !feed?.isSaved;
-        
-        // UI 즉시 업데이트
-        setFeeds(feeds.map(f => 
-            String(f.id) === feedIdStr ? { ...f, isSaved: newIsSaved } : f
-        ));
-        
-        // 선택된 피드도 업데이트
-        if (String(selectedFeed?.id) === feedIdStr) {
-            setSelectedFeed((prev: any) => prev ? { ...prev, isSaved: newIsSaved } : null);
-        }
-        
-        const token = localStorage.getItem("token");
-        if (!token) return;
-        
-        try {
-            // API 게시물인 경우 저장 API 호출
-            if (typeof feedId === "string" && !feedId.startsWith("local_")) {
-                await fetch(`${API_URL}/api/posts/${feedId}/save`, {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-            }
-            
-            // 🤖 AI: 저장 행동 기록 (장소가 있는 경우에만)
-            if (newIsSaved && placeId) {
-                recordAiAction("save", placeId);
-            }
-        } catch (error) {
-            console.error("저장 오류:", error);
-        }
     };
     
     // 🔥 댓글 불러오기
