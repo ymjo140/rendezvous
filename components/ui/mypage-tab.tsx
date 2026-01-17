@@ -143,6 +143,31 @@ export function MyPageTab() {
   const [selectedPost, setSelectedPost] = useState<PostItem | null>(null);
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
 
+  // 💾 저장 폴더 관련 상태
+  interface SaveFolder {
+      id: number;
+      name: string;
+      icon: string;
+      color: string;
+      item_count: number;
+      is_default: boolean;
+  }
+  interface SavedItem {
+      id: number;
+      item_type: string;
+      post_id?: string;
+      place_id?: number;
+      memo?: string;
+      created_at: string;
+      post?: { id: string; image_urls: string[]; content?: string };
+      place?: { id: number; name: string; address?: string };
+  }
+  const [saveFolders, setSaveFolders] = useState<SaveFolder[]>([]);
+  const [foldersLoading, setFoldersLoading] = useState(false);
+  const [selectedFolder, setSelectedFolder] = useState<SaveFolder | null>(null);
+  const [folderItems, setFolderItems] = useState<SavedItem[]>([]);
+  const [folderItemsLoading, setFolderItemsLoading] = useState(false);
+
   // --- Data Fetching Logic ---
   const fetchMyInfo = async () => {
       const token = localStorage.getItem("token");
@@ -205,7 +230,73 @@ export function MyPageTab() {
       }
   };
 
-  useEffect(() => { fetchMyInfo(); }, []);
+  // 💾 저장 폴더 목록 불러오기
+  const fetchSaveFolders = async () => {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      
+      setFoldersLoading(true);
+      try {
+          const res = await fetch(`${API_URL}/api/folders`, {
+              headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (res.ok) {
+              const folders = await res.json();
+              setSaveFolders(folders);
+          }
+      } catch (e) {
+          console.error("폴더 로드 오류:", e);
+      } finally {
+          setFoldersLoading(false);
+      }
+  };
+
+  // 💾 폴더 내 아이템 불러오기
+  const fetchFolderItems = async (folderId: number) => {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      
+      setFolderItemsLoading(true);
+      try {
+          const res = await fetch(`${API_URL}/api/folders/${folderId}/items`, {
+              headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (res.ok) {
+              const items = await res.json();
+              setFolderItems(items);
+          }
+      } catch (e) {
+          console.error("폴더 아이템 로드 오류:", e);
+      } finally {
+          setFolderItemsLoading(false);
+      }
+  };
+
+  // 💾 저장 아이템 삭제
+  const handleUnsaveItem = async (itemId: number) => {
+      if (!confirm("저장을 취소하시겠습니까?")) return;
+      
+      const token = localStorage.getItem("token");
+      try {
+          const res = await fetch(`${API_URL}/api/saves/${itemId}`, {
+              method: "DELETE",
+              headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (res.ok) {
+              setFolderItems(prev => prev.filter(item => item.id !== itemId));
+              // 폴더 아이템 개수 업데이트
+              if (selectedFolder) {
+                  setSaveFolders(prev => prev.map(f => 
+                      f.id === selectedFolder.id ? { ...f, item_count: f.item_count - 1 } : f
+                  ));
+              }
+          }
+      } catch (e) {
+          alert("삭제 실패");
+      }
+  };
+
+  useEffect(() => { fetchMyInfo(); fetchSaveFolders(); }, []);
   useEffect(() => { if (isEditorOpen) fetchShopItems(); }, [isEditorOpen]);
   useEffect(() => { if (user && !isGuest) fetchMyPosts(); }, [user, isGuest]);
 
@@ -533,25 +624,118 @@ export function MyPageTab() {
             </TabsContent>
             
             <TabsContent value="favorites" className="space-y-4">
-                  {user.favorites && user.favorites.length > 0 ? user.favorites.map((fav: any, i: number) => (
-                    <div key={i} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:border-[#14B8A6] transition-colors cursor-pointer">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-500">
-                                <Heart className="w-5 h-5 fill-red-500"/>
-                            </div>
-                            <div>
-                                <div className="font-bold text-gray-800">{fav.name}</div>
-                                <div className="text-xs text-gray-400">자세히 보기</div>
+                  {/* 폴더 상세 보기 모드 */}
+                  {selectedFolder ? (
+                    <div className="space-y-4">
+                        {/* 뒤로가기 헤더 */}
+                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-3">
+                            <button 
+                                onClick={() => { setSelectedFolder(null); setFolderItems([]); }}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                            >
+                                <ChevronRight className="w-5 h-5 text-gray-500 rotate-180" />
+                            </button>
+                            <div className="text-2xl">{selectedFolder.icon}</div>
+                            <div className="flex-1">
+                                <div className="font-bold text-gray-800">{selectedFolder.name}</div>
+                                <div className="text-xs text-gray-400">{selectedFolder.item_count}개 저장됨</div>
                             </div>
                         </div>
-                        <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-[#14B8A6] transition-colors" />
+                        
+                        {/* 폴더 아이템 목록 */}
+                        {folderItemsLoading ? (
+                            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
+                                <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-500 mb-2" />
+                                <p className="text-sm text-gray-400">불러오는 중...</p>
+                            </div>
+                        ) : folderItems.length > 0 ? (
+                            <div className="grid grid-cols-2 gap-3">
+                                {folderItems.map((item) => (
+                                    <div 
+                                        key={item.id} 
+                                        className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group"
+                                    >
+                                        {/* 이미지 */}
+                                        <div className="aspect-square bg-gray-100 relative">
+                                            {item.post?.image_urls?.[0] ? (
+                                                <img 
+                                                    src={item.post.image_urls[0]} 
+                                                    alt="" 
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100">
+                                                    <Heart className="w-8 h-8 text-purple-300" />
+                                                </div>
+                                            )}
+                                            {/* 삭제 버튼 */}
+                                            <button
+                                                onClick={() => handleUnsaveItem(item.id)}
+                                                className="absolute top-2 right-2 p-1.5 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <X className="w-3 h-3 text-white" />
+                                            </button>
+                                        </div>
+                                        {/* 정보 */}
+                                        <div className="p-3">
+                                            <div className="text-sm font-medium text-gray-800 line-clamp-1">
+                                                {item.place?.name || item.post?.content?.slice(0, 20) || "저장된 항목"}
+                                            </div>
+                                            {item.memo && (
+                                                <div className="text-xs text-gray-400 mt-1 line-clamp-1">{item.memo}</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center space-y-2">
+                                <div className="text-4xl mb-2">{selectedFolder.icon}</div>
+                                <div className="text-gray-800 font-bold">폴더가 비어있어요</div>
+                                <div className="text-gray-400 text-sm">탐색 탭에서 마음에 드는 장소를 저장해보세요!</div>
+                            </div>
+                        )}
                     </div>
-                  )) : (
-                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center space-y-2">
-                        <div className="text-4xl mb-2">❤️</div>
-                        <div className="text-gray-800 font-bold">즐겨찾는 장소가 없습니다</div>
-                        <div className="text-gray-400 text-sm">마음에 드는 장소를 찜해보세요.</div>
-                    </div>
+                  ) : (
+                    /* 폴더 목록 모드 */
+                    <>
+                        {foldersLoading ? (
+                            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
+                                <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-500 mb-2" />
+                                <p className="text-sm text-gray-400">폴더 불러오는 중...</p>
+                            </div>
+                        ) : saveFolders.length > 0 ? (
+                            <div className="space-y-3">
+                                {saveFolders.map((folder) => (
+                                    <div 
+                                        key={folder.id} 
+                                        onClick={() => { setSelectedFolder(folder); fetchFolderItems(folder.id); }}
+                                        className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:border-[#14B8A6] transition-colors cursor-pointer"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div 
+                                                className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                                                style={{ backgroundColor: `${folder.color}20` }}
+                                            >
+                                                {folder.icon}
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-gray-800">{folder.name}</div>
+                                                <div className="text-xs text-gray-400">{folder.item_count}개 저장됨</div>
+                                            </div>
+                                        </div>
+                                        <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-[#14B8A6] transition-colors" />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center space-y-2">
+                                <div className="text-4xl mb-2">📁</div>
+                                <div className="text-gray-800 font-bold">저장된 폴더가 없어요</div>
+                                <div className="text-gray-400 text-sm">탐색 탭에서 마음에 드는 장소를 저장하면<br/>여기에 폴더가 생성됩니다!</div>
+                            </div>
+                        )}
+                    </>
                   )}
             </TabsContent>
         </Tabs>
