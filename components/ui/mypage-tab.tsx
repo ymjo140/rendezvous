@@ -13,7 +13,7 @@ import { Slider } from "@/components/ui/slider"
 import { 
     Settings, Bell, LogOut, Palette, Coins, ShoppingBag, 
     Heart, Star, MessageSquare, Pencil, Check, X, Utensils, 
-    ChevronRight, MapPin, Search, Loader2, Calendar // 🌟 Calendar 아이콘 추가
+    ChevronRight, MapPin, Search, Loader2, Calendar, Grid3X3, Trash2
 } from "lucide-react"
 
 // 🌟 [추가] 캘린더 탭 컴포넌트 가져오기
@@ -43,7 +43,17 @@ interface UserInfo {
     preferences?: any;
 }
 
-const API_URL = "https://wemeet-backend-xqlo.onrender.com";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://wemeet-backend-xqlo.onrender.com";
+
+// 게시물 타입 정의
+interface PostItem {
+    id: string;
+    image_urls: string[];
+    content?: string;
+    likes_count: number;
+    comments_count: number;
+    created_at: string;
+}
 
 // 장소 검색 컴포넌트
 function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
@@ -127,6 +137,12 @@ export function MyPageTab() {
 
   const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
 
+  // 내 게시물 관련 상태
+  const [myPosts, setMyPosts] = useState<PostItem[]>([]);
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<PostItem | null>(null);
+  const [isPostModalOpen, setIsPostModalOpen] = useState(false);
+
   // --- Data Fetching Logic ---
   const fetchMyInfo = async () => {
       const token = localStorage.getItem("token");
@@ -150,8 +166,48 @@ export function MyPageTab() {
       try { const res = await fetch(`${API_URL}/api/shop/items`); if (res.ok) setShopItems(await res.json()); } catch (e) {}
   };
 
+  const fetchMyPosts = async () => {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      
+      setPostsLoading(true);
+      try {
+          const res = await fetch(`${API_URL}/api/posts/me`, {
+              headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (res.ok) {
+              const posts = await res.json();
+              setMyPosts(posts);
+          }
+      } catch (e) {
+          console.error("게시물 로드 오류:", e);
+      } finally {
+          setPostsLoading(false);
+      }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+      if (!confirm("이 게시물을 삭제하시겠습니까?")) return;
+      
+      const token = localStorage.getItem("token");
+      try {
+          const res = await fetch(`${API_URL}/api/posts/${postId}`, {
+              method: "DELETE",
+              headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (res.ok) {
+              setMyPosts(prev => prev.filter(p => p.id !== postId));
+              setIsPostModalOpen(false);
+              setSelectedPost(null);
+          }
+      } catch (e) {
+          alert("삭제 실패");
+      }
+  };
+
   useEffect(() => { fetchMyInfo(); }, []);
   useEffect(() => { if (isEditorOpen) fetchShopItems(); }, [isEditorOpen]);
+  useEffect(() => { if (user && !isGuest) fetchMyPosts(); }, [user, isGuest]);
 
   // --- Handlers ---
   const handleBuy = async (item: AvatarItem) => {
@@ -335,29 +391,112 @@ export function MyPageTab() {
 
       {/* 2. 탭 영역 (캘린더 추가됨) */}
       <div className="px-5">
-        <Tabs defaultValue="calendar" className="w-full">
-            {/* 🌟 grid-cols-3으로 변경 */}
-            <TabsList className="w-full h-14 bg-white rounded-2xl p-1.5 shadow-sm mb-6 grid grid-cols-3 border border-gray-100">
+        <Tabs defaultValue="posts" className="w-full">
+            {/* 🌟 grid-cols-4으로 변경 - 게시물 탭 추가 */}
+            <TabsList className="w-full h-14 bg-white rounded-2xl p-1.5 shadow-sm mb-6 grid grid-cols-4 border border-gray-100">
+                <TabsTrigger 
+                    value="posts" 
+                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-500 data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
+                >
+                   <Grid3X3 className="w-4 h-4 mr-1"/> 게시물
+                </TabsTrigger>
                 <TabsTrigger 
                     value="calendar" 
                     className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#7C3AED] data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
                 >
-                   <Calendar className="w-4 h-4 mr-1"/> 내 일정
+                   <Calendar className="w-4 h-4 mr-1"/> 일정
                 </TabsTrigger>
                 <TabsTrigger 
                     value="reviews" 
                     className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#7C3AED] data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
                 >
-                    내 활동
+                    활동
                 </TabsTrigger>
                 <TabsTrigger 
                     value="favorites" 
                     className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#14B8A6] data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
                 >
-                    즐겨찾기
+                    <Heart className="w-4 h-4 mr-1"/> 찜
                 </TabsTrigger>
             </TabsList>
             
+            {/* 📸 [신규] 내 게시물 탭 - 인스타그램 스타일 그리드 */}
+            <TabsContent value="posts" className="space-y-4">
+                {postsLoading ? (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+                        <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-500 mb-2" />
+                        <p className="text-sm text-gray-400">게시물 불러오는 중...</p>
+                    </div>
+                ) : myPosts.length > 0 ? (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        {/* 통계 헤더 */}
+                        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Grid3X3 className="w-5 h-5 text-purple-500" />
+                                <span className="font-bold text-gray-800">내 게시물</span>
+                            </div>
+                            <Badge className="bg-purple-100 text-purple-600 font-bold">{myPosts.length}개</Badge>
+                        </div>
+                        
+                        {/* 그리드 */}
+                        <div className="grid grid-cols-3 gap-0.5 p-0.5">
+                            {myPosts.map((post) => (
+                                <div 
+                                    key={post.id}
+                                    onClick={() => { setSelectedPost(post); setIsPostModalOpen(true); }}
+                                    className="relative aspect-square cursor-pointer group overflow-hidden bg-gray-100"
+                                >
+                                    {post.image_urls && post.image_urls[0] ? (
+                                        <img 
+                                            src={post.image_urls[0]} 
+                                            alt="" 
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                                            <Grid3X3 className="w-8 h-8 text-gray-400" />
+                                        </div>
+                                    )}
+                                    
+                                    {/* 여러 장 아이콘 */}
+                                    {post.image_urls && post.image_urls.length > 1 && (
+                                        <div className="absolute top-2 right-2">
+                                            <Grid3X3 className="w-4 h-4 text-white drop-shadow-lg" />
+                                        </div>
+                                    )}
+                                    
+                                    {/* 호버 오버레이 */}
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white text-sm font-semibold">
+                                        <div className="flex items-center gap-1">
+                                            <Heart className="w-4 h-4 fill-white" />
+                                            {post.likes_count}
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <MessageSquare className="w-4 h-4 fill-white" />
+                                            {post.comments_count}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center space-y-3">
+                        <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <Grid3X3 className="w-8 h-8 text-purple-500" />
+                        </div>
+                        <div className="text-gray-800 font-bold">아직 게시물이 없어요</div>
+                        <div className="text-gray-400 text-sm">탐색 탭에서 첫 게시물을 올려보세요!</div>
+                        <Button 
+                            className="mt-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold rounded-xl"
+                            onClick={() => {/* 탐색 탭으로 이동하는 로직 추가 가능 */}}
+                        >
+                            게시물 올리기
+                        </Button>
+                    </div>
+                )}
+            </TabsContent>
+
             {/* 🌟 [신규] 캘린더 탭 컨텐츠 */}
             <TabsContent value="calendar" className="space-y-4">
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden min-h-[500px]">
@@ -594,6 +733,75 @@ export function MyPageTab() {
               fetchMyInfo(); 
           }} 
       />
+
+      {/* 8. 게시물 상세 모달 */}
+      <Dialog open={isPostModalOpen} onOpenChange={setIsPostModalOpen}>
+          <DialogContent className="sm:max-w-md rounded-3xl p-0 gap-0 overflow-hidden font-['Pretendard']">
+              {selectedPost && (
+                  <>
+                      {/* 이미지 */}
+                      <div className="relative aspect-square bg-black">
+                          {selectedPost.image_urls && selectedPost.image_urls[0] ? (
+                              <img 
+                                  src={selectedPost.image_urls[0]} 
+                                  alt="" 
+                                  className="w-full h-full object-contain"
+                              />
+                          ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-gray-800">
+                                  <Grid3X3 className="w-12 h-12 text-gray-600" />
+                              </div>
+                          )}
+                          
+                          {/* 여러 장 인디케이터 */}
+                          {selectedPost.image_urls && selectedPost.image_urls.length > 1 && (
+                              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1">
+                                  {selectedPost.image_urls.map((_, i) => (
+                                      <div 
+                                          key={i} 
+                                          className={`w-2 h-2 rounded-full ${i === 0 ? 'bg-white' : 'bg-white/50'}`}
+                                      />
+                                  ))}
+                              </div>
+                          )}
+                      </div>
+                      
+                      {/* 정보 */}
+                      <div className="p-4 space-y-4">
+                          {/* 통계 */}
+                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                              <div className="flex items-center gap-1">
+                                  <Heart className="w-5 h-5 text-red-500 fill-red-500" />
+                                  <span className="font-bold">{selectedPost.likes_count}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                  <MessageSquare className="w-5 h-5 text-gray-400" />
+                                  <span className="font-bold">{selectedPost.comments_count}</span>
+                              </div>
+                              <span className="text-gray-400 text-xs ml-auto">{selectedPost.created_at}</span>
+                          </div>
+                          
+                          {/* 내용 */}
+                          {selectedPost.content && (
+                              <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 p-3 rounded-xl">
+                                  {selectedPost.content}
+                              </p>
+                          )}
+                          
+                          {/* 삭제 버튼 */}
+                          <Button 
+                              variant="outline" 
+                              className="w-full border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-xl h-11 font-bold"
+                              onClick={() => handleDeletePost(selectedPost.id)}
+                          >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              게시물 삭제
+                          </Button>
+                      </div>
+                  </>
+              )}
+          </DialogContent>
+      </Dialog>
     </div>
   )
 }

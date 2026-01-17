@@ -207,3 +207,58 @@ class Campaign(Base):
     max_applicants = Column(Integer)
     status = Column(String, default="open")
     created_at = Column(DateTime, default=datetime.now)
+
+
+# --- SNS 게시물 (Instagram 스타일) ---
+class Post(Base):
+    __tablename__ = "posts"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # 이미지 (JSON 배열 - 여러 장 지원)
+    image_urls = Column(JSON, default=[])
+    
+    # 내용
+    content = Column(String, nullable=True)
+    
+    # 위치/장소 태그
+    location_name = Column(String, nullable=True)
+    place_id = Column(Integer, ForeignKey("places.id"), nullable=True)
+    
+    # 통계
+    likes_count = Column(Integer, default=0)
+    comments_count = Column(Integer, default=0)
+    
+    # 메타데이터
+    is_public = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    
+    # Relationships
+    user = relationship("User", backref="posts")
+    place = relationship("Place", backref="posts")
+    likes = relationship("PostLike", back_populates="post", cascade="all, delete-orphan")
+    comments = relationship("PostComment", back_populates="post", cascade="all, delete-orphan")
+
+
+class PostLike(Base):
+    __tablename__ = "post_likes"
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(String, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+    
+    post = relationship("Post", back_populates="likes")
+    user = relationship("User")
+
+
+class PostComment(Base):
+    __tablename__ = "post_comments"
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(String, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    
+    post = relationship("Post", back_populates="comments")
+    user = relationship("User")

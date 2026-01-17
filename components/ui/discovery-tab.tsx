@@ -1,10 +1,10 @@
 "use client"
 
-import React, { useState, useRef } from "react"
+import React, { useState, useRef, useEffect } from "react"
 import { 
     Search, MapPin, Heart, MessageCircle, Share2, Star, ChevronLeft, 
     MoreHorizontal, Utensils, X, Phone, Clock, ChevronRight, Plus,
-    Image as ImageIcon, Camera, Send, Bookmark, Grid3X3, Play
+    Image as ImageIcon, Camera, Send, Bookmark, Grid3X3, Play, Wand2
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -13,9 +13,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { motion, AnimatePresence } from "framer-motion"
+import { PhotoEditor } from "@/components/ui/photo-editor"
 
 // --- API URL ---
-const API_URL = "https://wemeet-backend-xqlo.onrender.com";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://wemeet-backend-xqlo.onrender.com";
 
 // --- 더미 데이터 (SNS 게시물 + 가게 정보 연동) ---
 const MOCK_FEEDS = [
@@ -148,6 +149,7 @@ export function DiscoveryTab() {
     const [selectedFeed, setSelectedFeed] = useState<any>(null);
     const [isPlaceModalOpen, setIsPlaceModalOpen] = useState(false);
     const [feeds, setFeeds] = useState(MOCK_FEEDS);
+    const [isLoading, setIsLoading] = useState(false);
     
     // 게시물 작성 관련 상태
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
@@ -156,6 +158,66 @@ export function DiscoveryTab() {
     const [isPosting, setIsPosting] = useState(false);
     const [selectedFilter, setSelectedFilter] = useState("all");
     const fileInputRef = useRef<HTMLInputElement>(null);
+    
+    // 사진 편집 관련 상태
+    const [isPhotoEditorOpen, setIsPhotoEditorOpen] = useState(false);
+    const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
+    const [tempImageForEdit, setTempImageForEdit] = useState<string>("");
+    
+    // API에서 게시물 불러오기
+    useEffect(() => {
+        const fetchPosts = async () => {
+            try {
+                setIsLoading(true);
+                const token = localStorage.getItem("token");
+                const res = await fetch(`${API_URL}/api/posts?limit=20`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {}
+                });
+                
+                if (res.ok) {
+                    const apiPosts = await res.json();
+                    // API 게시물과 더미 데이터 병합 (API 데이터 우선)
+                    if (apiPosts.length > 0) {
+                        const formattedPosts = apiPosts.map((post: any) => ({
+                            id: post.id,
+                            type: "image",
+                            images: post.image_urls || [],
+                            author: { 
+                                id: post.user_id, 
+                                name: post.user_name || "사용자", 
+                                avatar: post.user_avatar || post.user_name?.slice(0, 2) || "US",
+                                profileImage: ""
+                            },
+                            content: post.content || "",
+                            likes: post.likes_count || 0,
+                            comments: post.comments_count || 0,
+                            isLiked: post.is_liked || false,
+                            isSaved: post.is_saved || false,
+                            createdAt: post.created_at || "방금 전",
+                            place: post.location_name ? {
+                                id: null,
+                                name: post.location_name,
+                                category: "",
+                                score: 0,
+                                address: "",
+                                phone: "",
+                                openTime: "",
+                                menu: [],
+                                tags: []
+                            } : null
+                        }));
+                        setFeeds([...formattedPosts, ...MOCK_FEEDS]);
+                    }
+                }
+            } catch (error) {
+                console.log("게시물 로드 중 오류:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        
+        fetchPosts();
+    }, []);
 
     // 게시물 클릭 시 상세 뷰
     const handleFeedClick = (feed: any) => {
@@ -167,18 +229,8 @@ export function DiscoveryTab() {
         setIsPlaceModalOpen(false);
     };
 
-    // 좋아요 토글
-    const handleLike = (feedId: number, e: React.MouseEvent) => {
-        e.stopPropagation();
-        setFeeds(feeds.map(f => 
-            f.id === feedId 
-                ? { ...f, isLiked: !f.isLiked, likes: f.isLiked ? f.likes - 1 : f.likes + 1 }
-                : f
-        ));
-    };
-
     // 저장 토글
-    const handleSave = (feedId: number, e: React.MouseEvent) => {
+    const handleSave = (feedId: number | string, e: React.MouseEvent) => {
         e.stopPropagation();
         setFeeds(feeds.map(f => 
             f.id === feedId ? { ...f, isSaved: !f.isSaved } : f
@@ -188,21 +240,51 @@ export function DiscoveryTab() {
     // 이미지 선택
     const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
-        if (files) {
-            const newImages: string[] = [];
-            Array.from(files).forEach(file => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    if (e.target?.result) {
-                        newImages.push(e.target.result as string);
-                        if (newImages.length === files.length) {
-                            setNewPostImages(prev => [...prev, ...newImages]);
-                        }
+        if (files && files.length > 0) {
+            const file = files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                if (e.target?.result) {
+                    const imageData = e.target.result as string;
+                    // 첫 번째 이미지는 바로 편집기 열기
+                    if (newPostImages.length === 0) {
+                        setTempImageForEdit(imageData);
+                        setEditingImageIndex(null);
+                        setIsPhotoEditorOpen(true);
+                    } else {
+                        // 추가 이미지는 바로 추가
+                        setNewPostImages(prev => [...prev, imageData]);
                     }
-                };
-                reader.readAsDataURL(file);
-            });
+                }
+            };
+            reader.readAsDataURL(file);
         }
+        // input 초기화
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+    };
+    
+    // 기존 이미지 편집하기
+    const handleEditImage = (index: number) => {
+        setTempImageForEdit(newPostImages[index]);
+        setEditingImageIndex(index);
+        setIsPhotoEditorOpen(true);
+    };
+    
+    // 편집 완료 후 이미지 저장
+    const handlePhotoEditorSave = (editedImage: string) => {
+        if (editingImageIndex !== null) {
+            // 기존 이미지 교체
+            setNewPostImages(prev => prev.map((img, i) => 
+                i === editingImageIndex ? editedImage : img
+            ));
+        } else {
+            // 새 이미지 추가
+            setNewPostImages(prev => [...prev, editedImage]);
+        }
+        setEditingImageIndex(null);
+        setTempImageForEdit("");
     };
 
     // 이미지 제거
@@ -210,17 +292,75 @@ export function DiscoveryTab() {
         setNewPostImages(prev => prev.filter((_, i) => i !== index));
     };
 
-    // 게시물 업로드
+    // 게시물 업로드 (API 연동)
     const handlePost = async () => {
         if (newPostImages.length === 0) return;
         
         setIsPosting(true);
         
-        // 실제로는 API 호출
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        try {
+            const token = localStorage.getItem("token");
+            
+            if (token) {
+                // API로 게시물 생성
+                const res = await fetch(`${API_URL}/api/posts`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        image_urls: newPostImages,
+                        content: newPostContent,
+                        location_name: null,
+                        place_id: null
+                    })
+                });
+                
+                if (res.ok) {
+                    const createdPost = await res.json();
+                    const newPost = {
+                        id: createdPost.id,
+                        type: "image" as const,
+                        images: createdPost.image_urls || newPostImages,
+                        author: { 
+                            id: createdPost.user_id, 
+                            name: createdPost.user_name || "나", 
+                            avatar: createdPost.user_avatar || "ME",
+                            profileImage: ""
+                        },
+                        content: createdPost.content || newPostContent,
+                        likes: 0,
+                        comments: 0,
+                        isLiked: false,
+                        isSaved: false,
+                        createdAt: createdPost.created_at || "방금 전",
+                        place: null as any
+                    };
+                    setFeeds([newPost as any, ...feeds]);
+                } else {
+                    // 실패 시 로컬에만 추가
+                    addLocalPost();
+                }
+            } else {
+                // 토큰 없으면 로컬에만 추가
+                addLocalPost();
+            }
+        } catch (error) {
+            console.error("게시물 업로드 오류:", error);
+            addLocalPost();
+        }
         
+        setNewPostImages([]);
+        setNewPostContent("");
+        setIsCreatePostOpen(false);
+        setIsPosting(false);
+    };
+    
+    // 로컬에만 게시물 추가 (비로그인 또는 API 실패 시)
+    const addLocalPost = () => {
         const newPost = {
-            id: Date.now(),
+            id: `local_${Date.now()}`,
             type: "image" as const,
             images: newPostImages,
             author: { id: 999, name: "나", avatar: "ME", profileImage: "" },
@@ -232,12 +372,34 @@ export function DiscoveryTab() {
             createdAt: "방금 전",
             place: null as any
         };
-        
         setFeeds([newPost as any, ...feeds]);
-        setNewPostImages([]);
-        setNewPostContent("");
-        setIsCreatePostOpen(false);
-        setIsPosting(false);
+    };
+    
+    // 좋아요 토글 (API 연동)
+    const handleLikeApi = async (feedId: string | number, e: React.MouseEvent) => {
+        e.stopPropagation();
+        
+        // 우선 UI 즉시 업데이트
+        setFeeds(feeds.map(f => 
+            f.id === feedId 
+                ? { ...f, isLiked: !f.isLiked, likes: f.isLiked ? f.likes - 1 : f.likes + 1 }
+                : f
+        ));
+        
+        // API 호출 (문자열 ID인 경우에만 - API 게시물)
+        if (typeof feedId === "string" && !feedId.startsWith("local_")) {
+            try {
+                const token = localStorage.getItem("token");
+                if (token) {
+                    await fetch(`${API_URL}/api/posts/${feedId}/like`, {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                }
+            } catch (error) {
+                console.error("좋아요 오류:", error);
+            }
+        }
     };
 
     // 필터된 피드
@@ -423,7 +585,7 @@ export function DiscoveryTab() {
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-4">
                                         <button 
-                                            onClick={(e) => handleLike(selectedFeed.id, e)}
+                                            onClick={(e) => handleLikeApi(selectedFeed.id, e)}
                                             className="hover:opacity-60 transition-opacity"
                                         >
                                             <Heart className={`w-6 h-6 ${selectedFeed.isLiked ? 'fill-red-500 text-red-500' : ''}`} />
@@ -529,10 +691,18 @@ export function DiscoveryTab() {
                                         ))}
                                     </div>
                                 )}
+                                {/* 편집 버튼 */}
+                                <button 
+                                    onClick={() => handleEditImage(0)}
+                                    className="absolute top-2 left-2 bg-black/60 text-white p-1.5 rounded-full hover:bg-black/80 transition-colors"
+                                    title="사진 편집"
+                                >
+                                    <Wand2 className="w-4 h-4" />
+                                </button>
                                 {/* 삭제 버튼 */}
                                 <button 
                                     onClick={() => removeImage(0)}
-                                    className="absolute top-2 right-2 bg-black/60 text-white p-1 rounded-full"
+                                    className="absolute top-2 right-2 bg-black/60 text-white p-1 rounded-full hover:bg-black/80 transition-colors"
                                 >
                                     <X className="w-4 h-4" />
                                 </button>
@@ -563,15 +733,23 @@ export function DiscoveryTab() {
                         {newPostImages.length > 0 && newPostImages.length < 10 && (
                             <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
                                 {newPostImages.map((img, i) => (
-                                    <div key={i} className="relative flex-shrink-0">
+                                    <div key={i} className="relative flex-shrink-0 group">
                                         <img 
                                             src={img} 
                                             alt="" 
-                                            className="w-16 h-16 rounded-lg object-cover"
+                                            className="w-16 h-16 rounded-lg object-cover cursor-pointer"
+                                            onClick={() => handleEditImage(i)}
                                         />
+                                        {/* 호버 시 편집 아이콘 */}
+                                        <div 
+                                            onClick={() => handleEditImage(i)}
+                                            className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                                        >
+                                            <Wand2 className="w-4 h-4 text-white" />
+                                        </div>
                                         <button 
                                             onClick={() => removeImage(i)}
-                                            className="absolute -top-1 -right-1 bg-black/60 text-white p-0.5 rounded-full"
+                                            className="absolute -top-1 -right-1 bg-black/60 text-white p-0.5 rounded-full hover:bg-red-500 transition-colors"
                                         >
                                             <X className="w-3 h-3" />
                                         </button>
@@ -697,6 +875,14 @@ export function DiscoveryTab() {
                     )}
                 </DialogContent>
             </Dialog>
+            
+            {/* 6. 사진 편집 모달 */}
+            <PhotoEditor
+                open={isPhotoEditorOpen}
+                onOpenChange={setIsPhotoEditorOpen}
+                imageSrc={tempImageForEdit}
+                onSave={handlePhotoEditorSave}
+            />
         </div>
     )
 }

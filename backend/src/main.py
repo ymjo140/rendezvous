@@ -44,7 +44,7 @@ async def root():
 #     print("⚠️ Events 라우터 없음")
 
 # 2. Routers 폴더 연결
-from api.routers import sync, auth, users, coins, meetings, community,chat
+from api.routers import sync, auth, users, coins, meetings, community, chat, posts
 
 # ✅ [수정] 파일 안에 이미 '/api/...' 경로가 있는 애들은 prefix를 뺍니다.
 app.include_router(auth.router, tags=["auth"])
@@ -54,6 +54,8 @@ app.include_router(chat.router, tags=["chat"])
 # 🌟 중요: 이제 meetings.py가 '/api/events' 요청을 처리하게 됩니다.
 app.include_router(meetings.router, tags=["meetings"]) 
 app.include_router(community.router, tags=["community"])
+# 📸 SNS 게시물 라우터 (Instagram 스타일)
+app.include_router(posts.router, tags=["posts"])
 
 # ✅ [유지] 파일 안에 경로가 짧은 애들은 prefix를 붙여줍니다.
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
