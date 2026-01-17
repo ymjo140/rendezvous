@@ -469,8 +469,14 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     )
 }
 
+// Props 타입 정의
+interface ChatTabProps {
+    openRoomId?: string | null;
+    onRoomOpened?: () => void;
+}
+
 // 🌟 [ChatTab] 메인 컴포넌트
-export function ChatTab() {
+export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     const [view, setView] = useState<'list' | 'room'>('list')
     const [rooms, setRooms] = useState<any[]>([])
     const [activeRoom, setActiveRoom] = useState<any>(null)
@@ -485,9 +491,9 @@ export function ChatTab() {
     // 📤 공유된 아이템 클릭 → 탐색 탭으로 이동
     const handleSharedItemClick = (item: any) => {
         if (item.type === "post" && item.post_id) {
-            // 탐색 탭으로 이동하는 커스텀 이벤트 발생
+            // 탐색 탭으로 이동하는 커스텀 이벤트 발생 (현재 채팅방 ID 포함)
             window.dispatchEvent(new CustomEvent("navigateToPost", {
-                detail: { postId: item.post_id, fromTab: "chat" }
+                detail: { postId: item.post_id, roomId: activeRoom?.id }
             }));
         } else {
             // 장소인 경우 알림만 표시 (나중에 장소 상세 페이지 구현 가능)
@@ -508,6 +514,18 @@ export function ChatTab() {
         }
         init()
     }, [])
+    
+    // 📤 특정 채팅방 직접 열기 (공유 게시물에서 돌아올 때)
+    useEffect(() => {
+        if (openRoomId && rooms.length > 0) {
+            const room = rooms.find(r => r.id === openRoomId);
+            if (room) {
+                setActiveRoom(room);
+                setView('room');
+                onRoomOpened?.();
+            }
+        }
+    }, [openRoomId, rooms])
 
     const fetchRooms = async () => {
         try {

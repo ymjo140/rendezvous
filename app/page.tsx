@@ -21,7 +21,10 @@ export default function Page() {
   
   // 📤 공유된 게시물로 이동 (채팅에서 탐색탭으로)
   const [sharedPostId, setSharedPostId] = useState<string | null>(null)
-  const [previousTab, setPreviousTab] = useState<string | null>(null)
+  const [returnToRoomId, setReturnToRoomId] = useState<string | null>(null)
+  
+  // 채팅방 직접 열기용
+  const [openRoomId, setOpenRoomId] = useState<string | null>(null)
 
   // 초기 로그인 상태 확인
   useEffect(() => {
@@ -32,9 +35,9 @@ export default function Page() {
   // 📤 공유된 게시물 이동 이벤트 리스너
   useEffect(() => {
     const handleNavigateToPost = (e: CustomEvent) => {
-      const { postId, fromTab } = e.detail;
+      const { postId, roomId } = e.detail;
       if (postId) {
-        setPreviousTab(fromTab || activeTab);
+        setReturnToRoomId(roomId); // 돌아갈 채팅방 ID 저장
         setSharedPostId(postId);
         setActiveTab("discovery");
       }
@@ -42,7 +45,7 @@ export default function Page() {
     
     window.addEventListener("navigateToPost" as any, handleNavigateToPost);
     return () => window.removeEventListener("navigateToPost" as any, handleNavigateToPost);
-  }, [activeTab])
+  }, [])
 
   // 🌟 탭 변경 핸들러 (접근 제어 로직)
   const handleTabChange = (tab: string) => {
@@ -74,16 +77,22 @@ export default function Page() {
       <main className="flex-1 overflow-hidden relative">
         {activeTab === "home" && <HomeTab />}
         {activeTab === "community" && <CommunityTab />}
-        {activeTab === "chat" && <ChatTab />}
+        {activeTab === "chat" && (
+          <ChatTab 
+            openRoomId={openRoomId} 
+            onRoomOpened={() => setOpenRoomId(null)} 
+          />
+        )}
         {/* 🌟 [수정 3] activeTab이 'discovery'일 때 DiscoveryTab 렌더링 */}
         {activeTab === "discovery" && (
           <DiscoveryTab 
             sharedPostId={sharedPostId} 
             onBackFromShared={() => {
               setSharedPostId(null);
-              if (previousTab) {
-                setActiveTab(previousTab);
-                setPreviousTab(null);
+              if (returnToRoomId) {
+                setOpenRoomId(returnToRoomId);
+                setReturnToRoomId(null);
+                setActiveTab("chat");
               }
             }}
           />

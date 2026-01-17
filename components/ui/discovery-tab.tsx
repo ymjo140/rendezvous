@@ -216,9 +216,15 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [shareMessage, setShareMessage] = useState("");
     const [cartItems, setCartItems] = useState<any[]>([]);
     
-    // 📤 공유된 게시물 열기 (채팅에서 온 경우)
+    // 📤 공유된 게시물 로딩 상태
+    const [sharedPostLoading, setSharedPostLoading] = useState(false);
+    
+    // 📤 공유된 게시물 열기 (채팅에서 온 경우) - 전체 피드 로드 안 함
     useEffect(() => {
         if (sharedPostId) {
+            setSharedPostLoading(true);
+            setIsFromSharedPost(true);
+            
             const fetchSharedPost = async () => {
                 try {
                     const token = localStorage.getItem("token");
@@ -252,10 +258,16 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                         };
                         
                         setSelectedFeed(formattedPost);
-                        setIsFromSharedPost(true);
+                    } else {
+                        // 게시물 로드 실패 시 채팅으로 돌아가기
+                        alert("게시물을 찾을 수 없습니다.");
+                        onBackFromShared?.();
                     }
                 } catch (e) {
                     console.error("공유된 게시물 로드 실패:", e);
+                    onBackFromShared?.();
+                } finally {
+                    setSharedPostLoading(false);
                 }
             };
             
@@ -263,8 +275,11 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     }, [sharedPostId]);
     
-    // 🤖 AI 추천 불러오기
+    // 🤖 AI 추천 불러오기 (공유된 게시물로 온 경우는 스킵)
     useEffect(() => {
+        // 공유된 게시물로 접근한 경우 AI 추천 로드 안 함
+        if (sharedPostId) return;
+        
         const fetchAiRecommendations = async () => {
             try {
                 setAiLoading(true);
@@ -622,8 +637,11 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // API에서 게시물 불러오기
+    // API에서 게시물 불러오기 (공유된 게시물로 온 경우는 스킵)
     useEffect(() => {
+        // 공유된 게시물로 접근한 경우 전체 피드 로드 안 함 (성능 최적화)
+        if (sharedPostId) return;
+        
         const fetchPosts = async () => {
             try {
                 setIsLoading(true);
@@ -675,7 +693,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         };
         
         fetchPosts();
-    }, []);
+    }, [sharedPostId]);
 
     // 게시물 클릭 시 상세 뷰 + AI 조회 기록
     const handleFeedClick = (feed: any) => {
@@ -985,6 +1003,16 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         if (selectedFilter === "cafe") return feed.place?.category === "카페";
         return true;
     });
+
+    // 📤 공유된 게시물 로딩 중일 때 로딩 UI만 표시
+    if (sharedPostLoading) {
+        return (
+            <div className="h-full bg-white flex flex-col items-center justify-center font-['Pretendard']">
+                <div className="animate-spin rounded-full h-10 w-10 border-4 border-purple-500 border-t-transparent mb-4"></div>
+                <p className="text-gray-500 text-sm">게시물 불러오는 중...</p>
+            </div>
+        );
+    }
 
     return (
         <div className="h-full bg-white flex flex-col font-['Pretendard'] relative">
