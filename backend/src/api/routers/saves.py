@@ -556,6 +556,8 @@ def share_direct(
     db: Session = Depends(get_db)
 ):
     """바로 공유 (단일 아이템)"""
+    import json
+    
     if not current_user:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     
@@ -568,36 +570,45 @@ def share_direct(
     if not membership:
         raise HTTPException(status_code=403, detail="해당 채팅방에 접근할 수 없습니다.")
     
-    # 공유 내역 저장
-    shared_items = [{
+    # 아이템 상세 정보 조회
+    item_detail = {
         "type": req.item_type,
         "post_id": req.post_id,
-        "place_id": req.place_id
-    }]
+        "place_id": req.place_id,
+        "name": "아이템",
+        "image": None,
+        "content": None
+    }
     
+    if req.item_type == "post" and req.post_id:
+        post = db.query(models.Post).filter(models.Post.id == req.post_id).first()
+        if post:
+            item_detail["name"] = post.content[:30] if post.content else "게시물"
+            item_detail["content"] = post.content[:100] if post.content else ""
+            item_detail["image"] = post.image_urls[0] if post.image_urls else None
+    elif req.item_type == "place" and req.place_id:
+        place = db.query(models.Place).filter(models.Place.id == req.place_id).first()
+        if place:
+            item_detail["name"] = place.name
+            item_detail["content"] = place.address if hasattr(place, 'address') else ""
+    
+    # 공유 내역 저장
     shared_msg = models.SharedMessage(
         sender_id=current_user.id,
         room_id=req.room_id,
-        shared_items=shared_items,
+        shared_items=[item_detail],
         message=req.message
     )
     
     db.add(shared_msg)
     
-    # 채팅 메시지도 생성 (공유 알림)
-    item_name = "아이템"
-    if req.item_type == "post" and req.post_id:
-        post = db.query(models.Post).filter(models.Post.id == req.post_id).first()
-        if post:
-            item_name = post.content[:20] if post.content else "게시물"
-    elif req.item_type == "place" and req.place_id:
-        place = db.query(models.Place).filter(models.Place.id == req.place_id).first()
-        if place:
-            item_name = place.name
-    
-    chat_content = f"📍 {item_name}을(를) 공유했습니다."
-    if req.message:
-        chat_content += f"\n💬 {req.message}"
+    # 채팅 메시지 생성 (JSON 형식으로 카드 렌더링용)
+    chat_content = json.dumps({
+        "type": "shared_items",
+        "items": [item_detail],
+        "message": req.message,
+        "sender_name": current_user.name
+    }, ensure_ascii=False)
     
     chat_msg = models.Message(
         room_id=req.room_id,
@@ -618,6 +629,8 @@ def share_cart(
     db: Session = Depends(get_db)
 ):
     """담기 공유 (여러 아이템)"""
+    import json
+    
     if not current_user:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     
@@ -644,28 +657,49 @@ def share_cart(
     if not cart_items:
         raise HTTPException(status_code=400, detail="담기에 아이템이 없습니다.")
     
-    # 공유 내역 저장
-    shared_items = []
+    # 아이템 상세 정보 조회
+    item_details = []
     for item in cart_items:
-        shared_items.append({
+        item_detail = {
             "type": item.item_type,
             "post_id": item.post_id,
-            "place_id": item.place_id
-        })
+            "place_id": item.place_id,
+            "name": "아이템",
+            "image": None,
+            "content": None
+        }
+        
+        if item.item_type == "post" and item.post_id:
+            post = db.query(models.Post).filter(models.Post.id == item.post_id).first()
+            if post:
+                item_detail["name"] = post.content[:30] if post.content else "게시물"
+                item_detail["content"] = post.content[:100] if post.content else ""
+                item_detail["image"] = post.image_urls[0] if post.image_urls else None
+        elif item.item_type == "place" and item.place_id:
+            place = db.query(models.Place).filter(models.Place.id == item.place_id).first()
+            if place:
+                item_detail["name"] = place.name
+                item_detail["content"] = place.address if hasattr(place, 'address') else ""
+        
+        item_details.append(item_detail)
     
+    # 공유 내역 저장
     shared_msg = models.SharedMessage(
         sender_id=current_user.id,
         room_id=req.room_id,
-        shared_items=shared_items,
+        shared_items=item_details,
         message=req.message
     )
     
     db.add(shared_msg)
     
-    # 채팅 메시지 생성
-    chat_content = f"📍 {len(cart_items)}개의 장소/게시물을 공유했습니다."
-    if req.message:
-        chat_content += f"\n💬 {req.message}"
+    # 채팅 메시지 생성 (JSON 형식으로 카드 렌더링용)
+    chat_content = json.dumps({
+        "type": "shared_items",
+        "items": item_details,
+        "message": req.message,
+        "sender_name": current_user.name
+    }, ensure_ascii=False)
     
     chat_msg = models.Message(
         room_id=req.room_id,

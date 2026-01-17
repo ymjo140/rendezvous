@@ -649,6 +649,65 @@ export function ChatTab() {
                                         </div>
                                     </div>
                                 )
+                            } else if (jsonContent.type === "shared_items") {
+                                // 📤 공유된 아이템 카드 렌더링
+                                content = (
+                                    <div className="space-y-2 max-w-[280px]">
+                                        {jsonContent.message && (
+                                            <div className={`px-3 py-2 rounded-xl text-sm ${isMe ? 'bg-[#7C3AED] text-white' : 'bg-white text-gray-800 border'}`}>
+                                                💬 {jsonContent.message}
+                                            </div>
+                                        )}
+                                        <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-3 border border-purple-100 shadow-sm">
+                                            <div className="text-[10px] text-purple-600 font-bold mb-2 flex items-center gap-1">
+                                                <MapPin className="w-3 h-3" /> 공유된 장소/게시물
+                                            </div>
+                                            <div className="space-y-2">
+                                                {jsonContent.items?.map((item: any, idx: number) => (
+                                                    <div 
+                                                        key={idx} 
+                                                        className="bg-white rounded-xl overflow-hidden border border-gray-100 hover:border-purple-200 transition-colors cursor-pointer"
+                                                        onClick={() => {
+                                                            // TODO: 게시물/장소 상세 페이지로 이동
+                                                            console.log("Navigate to:", item);
+                                                        }}
+                                                    >
+                                                        <div className="flex gap-3">
+                                                            {/* 이미지 */}
+                                                            <div className="w-16 h-16 flex-shrink-0 bg-gray-100">
+                                                                {item.image ? (
+                                                                    <img 
+                                                                        src={item.image} 
+                                                                        alt="" 
+                                                                        className="w-full h-full object-cover"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100">
+                                                                        <MapPin className="w-5 h-5 text-purple-300" />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            {/* 정보 */}
+                                                            <div className="flex-1 py-2 pr-2">
+                                                                <div className="font-bold text-sm text-gray-800 line-clamp-1">
+                                                                    {item.name || "게시물"}
+                                                                </div>
+                                                                {item.content && (
+                                                                    <div className="text-xs text-gray-500 line-clamp-2 mt-0.5">
+                                                                        {item.content}
+                                                                    </div>
+                                                                )}
+                                                                <div className="text-[10px] text-purple-500 mt-1 flex items-center gap-1">
+                                                                    {item.type === "post" ? "📷 게시물" : "📍 장소"}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
                             } else if (jsonContent.text) {
                                 content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{jsonContent.text}</div>;
                             } else {
