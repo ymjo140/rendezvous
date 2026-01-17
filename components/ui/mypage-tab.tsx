@@ -154,13 +154,14 @@ export function MyPageTab() {
   }
   interface SavedItem {
       id: number;
+      folder_id: number;
       item_type: string;
       post_id?: string;
       place_id?: number;
       memo?: string;
       created_at: string;
-      post?: { id: string; image_urls: string[]; content?: string };
-      place?: { id: number; name: string; address?: string };
+      item_name?: string;
+      item_image?: string;
   }
   const [saveFolders, setSaveFolders] = useState<SaveFolder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(false);
@@ -657,9 +658,9 @@ export function MyPageTab() {
                                     >
                                         {/* 이미지 */}
                                         <div className="aspect-square bg-gray-100 relative">
-                                            {item.post?.image_urls?.[0] ? (
+                                            {item.item_image ? (
                                                 <img 
-                                                    src={item.post.image_urls[0]} 
+                                                    src={item.item_image} 
                                                     alt="" 
                                                     className="w-full h-full object-cover"
                                                 />
@@ -679,7 +680,7 @@ export function MyPageTab() {
                                         {/* 정보 */}
                                         <div className="p-3">
                                             <div className="text-sm font-medium text-gray-800 line-clamp-1">
-                                                {item.place?.name || item.post?.content?.slice(0, 20) || "저장된 항목"}
+                                                {item.item_name || "저장된 항목"}
                                             </div>
                                             {item.memo && (
                                                 <div className="text-xs text-gray-400 mt-1 line-clamp-1">{item.memo}</div>
