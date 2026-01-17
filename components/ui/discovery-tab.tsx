@@ -16,7 +16,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { PhotoEditor } from "@/components/ui/photo-editor"
 
 // --- API URL ---
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://wemeet-backend-xqlo.onrender.com";
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 // --- 더미 데이터 (SNS 게시물 + 가게 정보 연동) ---
 const MOCK_FEEDS = [

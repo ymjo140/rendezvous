@@ -43,7 +43,7 @@ interface UserInfo {
     preferences?: any;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://wemeet-backend-xqlo.onrender.com";
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 // 게시물 타입 정의
 interface PostItem {
