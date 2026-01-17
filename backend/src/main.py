@@ -57,6 +57,14 @@ app.include_router(community.router, tags=["community"])
 # 📸 SNS 게시물 라우터 (Instagram 스타일)
 app.include_router(posts.router, tags=["posts"])
 
+# 🤖 AI 추천 시스템 라우터
+try:
+    from api.routers import ai_recommendations
+    app.include_router(ai_recommendations.router, tags=["ai"])
+    print("✅ AI 추천 라우터 연결 성공")
+except Exception as e:
+    print(f"⚠️ AI 추천 라우터 로드 실패 (서비스는 계속 동작): {e}")
+
 # ✅ [유지] 파일 안에 경로가 짧은 애들은 prefix를 붙여줍니다.
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 

@@ -164,6 +164,60 @@ export function DiscoveryTab() {
     const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
     const [tempImageForEdit, setTempImageForEdit] = useState<string>("");
     
+    // 🤖 AI 추천 관련 상태
+    const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+    const [aiLoading, setAiLoading] = useState(false);
+    const [showAiSection, setShowAiSection] = useState(true);
+    
+    // 🤖 AI 추천 불러오기
+    useEffect(() => {
+        const fetchAiRecommendations = async () => {
+            try {
+                setAiLoading(true);
+                const token = localStorage.getItem("token");
+                const res = await fetch(`${API_URL}/api/ai/recommendations?limit=6`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {}
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.recommendations && data.recommendations.length > 0) {
+                        setAiRecommendations(data.recommendations);
+                    }
+                }
+            } catch (error) {
+                console.log("AI 추천 로드 오류:", error);
+            } finally {
+                setAiLoading(false);
+            }
+        };
+        
+        fetchAiRecommendations();
+    }, []);
+    
+    // 🤖 AI 행동 기록 함수
+    const recordAiAction = async (actionType: string, placeId?: number) => {
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) return;
+            
+            await fetch(`${API_URL}/api/ai/actions`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    action_type: actionType,
+                    place_id: placeId,
+                    context: { source: "discovery_tab" }
+                })
+            });
+        } catch (error) {
+            // 실패해도 무시 (사용자 경험에 영향 없음)
+        }
+    };
+    
     // API에서 게시물 불러오기
     useEffect(() => {
         const fetchPosts = async () => {
@@ -488,7 +542,61 @@ export function DiscoveryTab() {
                 </div>
             </div>
 
-            {/* 2. 인스타그램 탐색탭 스타일 그리드 */}
+            {/* 2. AI 맞춤 추천 섹션 */}
+            {showAiSection && aiRecommendations.length > 0 && (
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 border-b border-gray-100">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                                <Wand2 className="w-3.5 h-3.5 text-white" />
+                            </div>
+                            <span className="font-bold text-gray-800 text-sm">AI 맞춤 추천</span>
+                            <Badge className="bg-purple-100 text-purple-600 text-[10px] font-medium">For You</Badge>
+                        </div>
+                        <button 
+                            onClick={() => setShowAiSection(false)}
+                            className="text-gray-400 hover:text-gray-600 p-1"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                    
+                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                        {aiRecommendations.map((rec, index) => (
+                            <div 
+                                key={rec.place_id}
+                                onClick={() => {
+                                    recordAiAction("click", rec.place_id);
+                                }}
+                                className="flex-shrink-0 w-36 bg-white rounded-xl p-3 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all"
+                            >
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-8 h-8 bg-gradient-to-br from-purple-100 to-pink-100 rounded-lg flex items-center justify-center">
+                                        <Utensils className="w-4 h-4 text-purple-600" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-xs text-gray-800 truncate">{rec.place_name}</div>
+                                        <div className="text-[10px] text-gray-500">{rec.category || "맛집"}</div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1">
+                                        <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                                        <span className="text-[10px] font-bold text-gray-700">
+                                            {rec.avg_rating ? rec.avg_rating.toFixed(1) : (rec.score * 5).toFixed(1)}
+                                        </span>
+                                    </div>
+                                    <Badge className="text-[8px] bg-gray-100 text-gray-600 px-1.5 py-0.5">
+                                        {rec.reason}
+                                    </Badge>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* 3. 인스타그램 탐색탭 스타일 그리드 */}
             <div className="flex-1 overflow-y-auto bg-white">
                 <div className="grid grid-cols-3 gap-0.5 p-0.5">
                     {filteredFeeds.map((feed, index) => (

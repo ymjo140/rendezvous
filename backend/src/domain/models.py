@@ -262,3 +262,128 @@ class PostComment(Base):
     
     post = relationship("Post", back_populates="comments")
     user = relationship("User")
+
+
+# === AI 추천 시스템 모델 ===
+
+class ActionType(str, enum.Enum):
+    """사용자 행동 유형"""
+    VIEW = "view"           # 장소 조회
+    CLICK = "click"         # 장소 클릭
+    LIKE = "like"           # 좋아요
+    SAVE = "save"           # 저장/찜
+    REVIEW = "review"       # 리뷰 작성
+    VISIT = "visit"         # 실제 방문
+    SHARE = "share"         # 공유
+    SEARCH = "search"       # 검색
+
+
+class UserAction(Base):
+    """사용자 행동 기록 - AI 추천에 활용"""
+    __tablename__ = "user_actions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    place_id = Column(Integer, ForeignKey("places.id"), nullable=True, index=True)
+    
+    action_type = Column(String, nullable=False, index=True)  # ActionType enum 값
+    action_value = Column(Float, default=1.0)  # 행동 가중치 (리뷰 점수 등)
+    
+    # 컨텍스트 정보
+    context = Column(JSON, default={})  # 시간대, 날씨, 동행자 수 등
+    session_id = Column(String, nullable=True)  # 세션 추적
+    
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class PlaceVector(Base):
+    """장소 특성 벡터 - 콘텐츠 기반 추천용"""
+    __tablename__ = "place_vectors"
+    id = Column(Integer, primary_key=True, index=True)
+    place_id = Column(Integer, ForeignKey("places.id"), unique=True, nullable=False)
+    
+    # 특성 벡터 (정규화된 0~1 값)
+    price_level = Column(Float, default=0.5)      # 가격대 (0=저렴, 1=고급)
+    noise_level = Column(Float, default=0.5)      # 소음 (0=조용, 1=시끄러움)
+    group_friendly = Column(Float, default=0.5)   # 단체 적합도
+    date_friendly = Column(Float, default=0.5)    # 데이트 적합도
+    family_friendly = Column(Float, default=0.5)  # 가족 적합도
+    solo_friendly = Column(Float, default=0.5)    # 혼밥/혼술 적합도
+    
+    # 음식 카테고리 점수
+    korean_score = Column(Float, default=0.0)
+    western_score = Column(Float, default=0.0)
+    japanese_score = Column(Float, default=0.0)
+    chinese_score = Column(Float, default=0.0)
+    cafe_score = Column(Float, default=0.0)
+    bar_score = Column(Float, default=0.0)
+    
+    # 분위기 점수
+    trendy_score = Column(Float, default=0.0)     # 트렌디/힙한
+    traditional_score = Column(Float, default=0.0) # 전통적/클래식
+    cozy_score = Column(Float, default=0.0)       # 아늑한
+    
+    # 메타데이터
+    embedding = Column(JSON, default=[])  # 추가 임베딩 벡터
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class UserPreferenceVector(Base):
+    """사용자 선호도 벡터 - 개인화 추천용"""
+    __tablename__ = "user_preference_vectors"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    
+    # PlaceVector와 동일한 차원의 선호도
+    price_preference = Column(Float, default=0.5)
+    noise_preference = Column(Float, default=0.5)
+    group_preference = Column(Float, default=0.5)
+    date_preference = Column(Float, default=0.5)
+    family_preference = Column(Float, default=0.5)
+    solo_preference = Column(Float, default=0.5)
+    
+    korean_preference = Column(Float, default=0.0)
+    western_preference = Column(Float, default=0.0)
+    japanese_preference = Column(Float, default=0.0)
+    chinese_preference = Column(Float, default=0.0)
+    cafe_preference = Column(Float, default=0.0)
+    bar_preference = Column(Float, default=0.0)
+    
+    trendy_preference = Column(Float, default=0.0)
+    traditional_preference = Column(Float, default=0.0)
+    cozy_preference = Column(Float, default=0.0)
+    
+    # 학습 정보
+    action_count = Column(Integer, default=0)  # 총 행동 수
+    last_updated = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class RecommendationLog(Base):
+    """추천 로그 - A/B 테스트 및 성능 측정용"""
+    __tablename__ = "recommendation_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # 추천 정보
+    algorithm = Column(String, nullable=False)  # "content", "collaborative", "hybrid", "popular"
+    recommended_place_ids = Column(JSON, default=[])
+    scores = Column(JSON, default=[])  # 각 장소별 추천 점수
+    
+    # 컨텍스트
+    context = Column(JSON, default={})  # 요청 시점 컨텍스트
+    
+    # 결과 추적
+    clicked_place_id = Column(Integer, nullable=True)  # 클릭한 장소
+    converted = Column(Boolean, default=False)  # 전환 여부 (방문/예약 등)
+    
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class SimilarPlace(Base):
+    """유사 장소 캐시 - 빠른 추천을 위한 사전 계산"""
+    __tablename__ = "similar_places"
+    id = Column(Integer, primary_key=True, index=True)
+    place_id = Column(Integer, ForeignKey("places.id"), nullable=False, index=True)
+    similar_place_id = Column(Integer, ForeignKey("places.id"), nullable=False)
+    similarity_score = Column(Float, nullable=False)
+    
+    updated_at = Column(DateTime, default=datetime.now)
