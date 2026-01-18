@@ -337,7 +337,10 @@ export function HomeTab() {
         }
 
         // 4. 지도에 그리기
-        origins?.forEach(origin => {
+        // 🆕 transitInfo에서 travel_times 배열 가져오기 (백엔드에서 계산된 실제 소요시간)
+        const travelTimes = transitInfo?.travel_times || [];
+        
+        origins?.forEach((origin, index) => {
             const polyline = new window.naver.maps.Polyline({
                 map: mapRef.current,
                 path: [new window.naver.maps.LatLng(origin.lat, origin.lng), destLatLng],
@@ -346,8 +349,17 @@ export function HomeTab() {
             });
             polylinesRef.current.push(polyline);
 
-            const dist = calculateDistance(origin.lat, origin.lng, destLat, destLng);
-            const timeText = `약 ${Math.ceil(dist / 1000 * 5 + 10)}분`;
+            // 🆕 실제 이동 시간 사용 (없으면 거리 기반 추정)
+            let timeMinutes: number;
+            if (travelTimes[index] !== undefined && travelTimes[index] > 0) {
+                // 백엔드에서 계산된 실제 대중교통 소요시간 사용
+                timeMinutes = travelTimes[index];
+            } else {
+                // 폴백: 거리 기반 추정 (1km당 약 3분 + 대기시간 5분)
+                const dist = calculateDistance(origin.lat, origin.lng, destLat, destLng);
+                timeMinutes = Math.ceil(dist / 1000 * 3 + 5);
+            }
+            const timeText = `약 ${timeMinutes}분`;
 
             const midLat = (origin.lat + destLat) / 2;
             const midLng = (origin.lng + destLng) / 2;
@@ -372,8 +384,8 @@ export function HomeTab() {
 
     const drawRegionPaths = (region: any) => {
         if (!region || !region.center) return;
-        // 🌟 [Fix] lat, lng 인덱싱 오류 수정 (p.lat, p.lng 사용)
-        drawPathsToTarget(region.center.lat, region.center.lng, region.transit_info);
+        // 🆕 travel_times를 transitInfo로 전달 (백엔드에서 계산된 실제 대중교통 소요시간)
+        drawPathsToTarget(region.center.lat, region.center.lng, { travel_times: region.travel_times || [] });
     }
 
     useEffect(() => {

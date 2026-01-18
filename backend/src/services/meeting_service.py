@@ -109,6 +109,7 @@ class MeetingService:
                 results.append({
                     "region_name": r["name"], 
                     "center": {"lat": r["lat"], "lng": r["lng"]}, 
+                    "travel_times": r.get("travel_times", []),  # 🆕 각 출발지별 이동 시간 (분)
                     "places": [{"name": p.name, "address": p.address, "category": p.category, "lat": float(p.location[0]), "lng": float(p.location[1]), "wemeet_rating": p.avg_rating} for p in ranked]
                 })
         return results

@@ -330,10 +330,17 @@ class TransportEngine:
             
             candidates.append({
                 "spot": spot,
-                "score": score
+                "score": score,
+                "travel_times": times  # 🆕 각 출발지별 이동 시간 저장
             })
         
         # 점수가 낮은 순(시간이 적게 걸리는 순)으로 정렬
         candidates.sort(key=lambda x: x["score"])
         
-        return [c["spot"] for c in candidates[:3]]
+        # 🆕 이동 시간 정보도 함께 반환
+        return [{
+            "name": c["spot"]["name"],
+            "lat": c["spot"]["lat"],
+            "lng": c["spot"]["lng"],
+            "travel_times": [int(t) for t in c["travel_times"]]  # 각 출발지별 소요시간 (분)
+        } for c in candidates[:3]]
