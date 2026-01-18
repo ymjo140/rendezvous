@@ -1,8 +1,9 @@
+# -*- coding: utf-8 -*-
 """
-🤖 벡터 AI 추천 API
-- 임베딩 생성 및 관리
-- 벡터 유사도 기반 추천
-- 유저 상호작용 로깅
+Vector AI Recommendation API
+- Embedding generation and management
+- Vector similarity based recommendations
+- User interaction logging
 """
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
@@ -77,7 +78,7 @@ def embed_place(
     req: EmbedPlaceRequest,
     db: Session = Depends(get_db)
 ):
-    """단일 장소 임베딩 생성"""
+    """Generate embedding for a single place"""
     from services.vector_embedding_service import get_embedding_service
     
     service = get_embedding_service()
@@ -94,7 +95,7 @@ def embed_place(
     success = service.embed_place(db, req.place_id, place_data)
     
     if not success:
-        raise HTTPException(status_code=500, detail="임베딩 생성 실패")
+        raise HTTPException(status_code=500, detail="Embedding generation failed")
     
     return EmbedPlaceResponse(
         success=True,
@@ -109,20 +110,20 @@ def embed_all_places(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """모든 장소 임베딩 생성 (백그라운드)"""
+    """Generate embeddings for all places (background task)"""
     from services.vector_embedding_service import get_embedding_service
     
     service = get_embedding_service()
     
-    # 백그라운드에서 실행
+    # Run in background
     def run_embedding():
         count = service.embed_all_places(db)
-        print(f"✅ 총 {count}개 장소 임베딩 완료")
+        print(f"[OK] Total {count} place embeddings created")
     
     background_tasks.add_task(run_embedding)
     
     return {
-        "message": "임베딩 작업이 백그라운드에서 시작되었습니다.",
+        "message": "Embedding job started in background",
         "status": "processing"
     }
 
@@ -132,31 +133,31 @@ def get_similar_places(
     req: SimilarPlaceRequest,
     db: Session = Depends(get_db)
 ):
-    """유사한 장소 검색"""
+    """Search similar places"""
     from services.vector_embedding_service import get_embedding_service
     
     service = get_embedding_service()
     
-    # 쿼리 임베딩 생성
+    # Generate query embedding
     if req.place_id:
-        # 특정 장소와 유사한 장소 찾기
+        # Find similar places to a specific place
         place_embedding = db.query(models.PlaceEmbedding).filter(
             models.PlaceEmbedding.place_id == req.place_id
         ).first()
         
         if not place_embedding or not place_embedding.embedding:
-            raise HTTPException(status_code=404, detail="장소 임베딩을 찾을 수 없습니다")
+            raise HTTPException(status_code=404, detail="Place embedding not found")
         
         query_embedding = place_embedding.embedding
         exclude_ids = [req.place_id]
     elif req.query_text:
-        # 텍스트로 검색
+        # Search by text
         query_embedding = service.generate_embedding(req.query_text)
         exclude_ids = []
     else:
-        raise HTTPException(status_code=400, detail="place_id 또는 query_text가 필요합니다")
+        raise HTTPException(status_code=400, detail="place_id or query_text required")
     
-    # 유사한 장소 검색
+    # Search similar places
     similar = service.get_similar_places(
         db, 
         query_embedding, 
@@ -185,21 +186,21 @@ def get_user_recommendations(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """유저 맞춤 벡터 기반 추천"""
+    """Get personalized vector-based recommendations"""
     from services.vector_embedding_service import get_embedding_service
     
     if not current_user:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+        raise HTTPException(status_code=401, detail="Login required")
     
     service = get_embedding_service()
     
-    # 유저 임베딩 확인
+    # Check user embedding
     user_embedding = db.query(models.UserEmbedding).filter(
         models.UserEmbedding.user_id == current_user.id
     ).first()
     
     if not user_embedding or not user_embedding.preference_embedding:
-        # 임베딩이 없으면 인기 장소 반환
+        # Return popular places if no embedding
         popular_places = db.query(models.Place).order_by(
             models.Place.wemeet_rating.desc()
         ).limit(limit).all()
@@ -217,7 +218,7 @@ def get_user_recommendations(
             user_embedding_exists=False
         )
     
-    # 벡터 유사도 기반 추천
+    # Vector similarity based recommendations
     recommendations = service.get_recommendations_for_user(
         db, 
         current_user.id, 
@@ -238,16 +239,16 @@ def log_interaction(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """유저 상호작용 로깅 (AI 학습 데이터)"""
+    """Log user interaction (AI learning data)"""
     if not current_user:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+        raise HTTPException(status_code=401, detail="Login required")
     
-    # 유효성 검사
+    # Validation
     valid_actions = ["VIEW", "CLICK", "LIKE", "SAVE", "SHARE", "DISMISS", "DWELL", "REVIEW"]
     if req.action_type.upper() not in valid_actions:
-        raise HTTPException(status_code=400, detail=f"유효하지 않은 action_type. 가능한 값: {valid_actions}")
+        raise HTTPException(status_code=400, detail=f"Invalid action_type. Valid values: {valid_actions}")
     
-    # 로그 저장
+    # Save log
     log = models.UserInteractionLog(
         user_id=current_user.id,
         place_id=req.place_id,
@@ -264,20 +265,20 @@ def log_interaction(
     db.commit()
     db.refresh(log)
     
-    # 백그라운드에서 유저 임베딩 업데이트
+    # Update user embedding in background
     def update_embedding():
         from services.vector_embedding_service import get_embedding_service
         service = get_embedding_service()
         service.update_user_embedding(db, current_user.id)
     
-    # 중요한 행동일 때만 업데이트
+    # Only update on important actions
     if req.action_type.upper() in ["LIKE", "SAVE", "SHARE", "REVIEW"]:
         background_tasks.add_task(update_embedding)
     
     return InteractionLogResponse(
         success=True,
         log_id=log.id,
-        message="상호작용이 기록되었습니다."
+        message="Interaction logged successfully"
     )
 
 
@@ -286,31 +287,31 @@ def update_user_embedding(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """유저 임베딩 수동 업데이트"""
+    """Manually update user embedding"""
     from services.vector_embedding_service import get_embedding_service
     
     if not current_user:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+        raise HTTPException(status_code=401, detail="Login required")
     
     service = get_embedding_service()
     success = service.update_user_embedding(db, current_user.id)
     
     if success:
-        return {"message": "유저 임베딩이 업데이트되었습니다.", "success": True}
+        return {"message": "User embedding updated", "success": True}
     else:
-        return {"message": "업데이트할 행동 데이터가 없습니다.", "success": False}
+        return {"message": "No action data to update", "success": False}
 
 
 @router.get("/api/vector/stats")
 def get_vector_stats(
     db: Session = Depends(get_db)
 ):
-    """벡터 AI 시스템 통계"""
+    """Get vector AI system statistics"""
     place_count = db.query(models.PlaceEmbedding).count()
     user_count = db.query(models.UserEmbedding).count()
     log_count = db.query(models.UserInteractionLog).count()
     
-    # 최근 로그 통계
+    # Action stats
     from sqlalchemy import func
     action_stats = db.query(
         models.UserInteractionLog.action_type,
@@ -322,27 +323,27 @@ def get_vector_stats(
         "user_embeddings": user_count,
         "interaction_logs": log_count,
         "action_breakdown": {action: count for action, count in action_stats},
-        "model": "ko-sbert-nli (768 dim)",
+        "model": "ko-sbert-nli (768 dim) or Gemini",
         "status": "operational"
     }
 
 
 @router.get("/api/vector/health")
 def health_check():
-    """벡터 AI 서비스 헬스체크"""
+    """Vector AI service health check"""
     from services.vector_embedding_service import get_embedding_service
     
     try:
         service = get_embedding_service()
-        # 테스트 임베딩 생성
-        test_embedding = service.generate_embedding("테스트 텍스트")
+        # Test embedding generation
+        test_embedding = service.generate_embedding("test text")
         embedding_works = len(test_embedding) == service.EMBEDDING_DIM
         
         return {
             "status": "healthy" if embedding_works else "degraded",
             "embedding_service": "operational" if embedding_works else "error",
             "embedding_dim": service.EMBEDDING_DIM,
-            "backend": "OpenAI" if service.use_openai else "Korean SBERT"
+            "backend": "Gemini" if service.use_gemini else "Korean SBERT"
         }
     except Exception as e:
         return {

@@ -1,8 +1,9 @@
+# -*- coding: utf-8 -*-
 """
-🤖 벡터 임베딩 서비스
-- OpenAI Embedding API 또는 한국어 SBERT 모델 사용
-- 장소/유저 텍스트를 벡터로 변환
-- 벡터 유사도 기반 추천
+Vector Embedding Service
+- Google Gemini Embedding API or Korean SBERT model
+- Convert place/user text to vectors
+- Vector similarity based recommendations
 """
 
 import os
@@ -11,78 +12,89 @@ import numpy as np
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
-# 환경 변수
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-USE_OPENAI = bool(OPENAI_API_KEY)
+# Environment variables
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+USE_GEMINI = bool(GEMINI_API_KEY)
 
-# 한국어 SBERT 모델 (로컬 실행 시)
+# Korean SBERT model (local)
 _sbert_model = None
 
 def get_sbert_model():
-    """한국어 SBERT 모델 로드 (Lazy Loading)"""
+    """Load Korean SBERT model (Lazy Loading)"""
     global _sbert_model
     if _sbert_model is None:
         try:
             from sentence_transformers import SentenceTransformer
-            # 한국어에 최적화된 모델
+            # Korean optimized model
             _sbert_model = SentenceTransformer('jhgan/ko-sbert-nli')
-            print("✅ 한국어 SBERT 모델 로드 완료")
+            print("[OK] Korean SBERT model loaded")
         except ImportError:
-            print("⚠️ sentence-transformers 미설치. pip install sentence-transformers")
+            print("[WARN] sentence-transformers not installed")
             return None
         except Exception as e:
-            print(f"⚠️ SBERT 모델 로드 실패: {e}")
+            print(f"[WARN] SBERT model load failed: {e}")
             return None
     return _sbert_model
 
 
 class VectorEmbeddingService:
-    """벡터 임베딩 생성 및 관리 서비스"""
+    """Vector embedding generation and management service"""
     
-    EMBEDDING_DIM = 768  # ko-sbert-nli 차원
+    EMBEDDING_DIM = 768  # ko-sbert-nli dimension
     
     def __init__(self):
-        self.use_openai = USE_OPENAI
-        if self.use_openai:
+        self.use_gemini = USE_GEMINI
+        self.gemini_model = None
+        
+        if self.use_gemini:
             try:
-                import openai
-                openai.api_key = OPENAI_API_KEY
-                self.openai = openai
-                print("✅ OpenAI Embedding API 사용")
+                import google.generativeai as genai
+                genai.configure(api_key=GEMINI_API_KEY)
+                self.gemini_model = genai
+                print("[OK] Gemini Embedding API ready")
             except ImportError:
-                self.use_openai = False
-                print("⚠️ openai 패키지 미설치, 로컬 SBERT 사용")
+                self.use_gemini = False
+                print("[WARN] google-generativeai not installed, using local SBERT")
+            except Exception as e:
+                self.use_gemini = False
+                print(f"[WARN] Gemini setup failed: {e}")
     
     def generate_embedding(self, text: str) -> List[float]:
-        """텍스트를 임베딩 벡터로 변환"""
+        """Convert text to embedding vector"""
         if not text or not text.strip():
             return [0.0] * self.EMBEDDING_DIM
         
-        text = text.strip()[:500]  # 최대 500자
+        text = text.strip()[:500]  # Max 500 chars
         
-        if self.use_openai:
-            return self._openai_embedding(text)
+        if self.use_gemini and self.gemini_model:
+            return self._gemini_embedding(text)
         else:
             return self._sbert_embedding(text)
     
-    def _openai_embedding(self, text: str) -> List[float]:
-        """OpenAI Embedding API 사용"""
+    def _gemini_embedding(self, text: str) -> List[float]:
+        """Use Google Gemini Embedding API"""
         try:
-            response = self.openai.embeddings.create(
-                model="text-embedding-3-small",
-                input=text
+            result = self.gemini_model.embed_content(
+                model="models/text-embedding-004",
+                content=text,
+                task_type="SEMANTIC_SIMILARITY"
             )
-            embedding = response.data[0].embedding
-            # OpenAI는 1536차원, 768로 축소
-            return embedding[:768] if len(embedding) > 768 else embedding + [0.0] * (768 - len(embedding))
+            embedding = result['embedding']
+            
+            # Gemini returns 768 dim, same as ko-sbert
+            if len(embedding) > self.EMBEDDING_DIM:
+                return embedding[:self.EMBEDDING_DIM]
+            elif len(embedding) < self.EMBEDDING_DIM:
+                return embedding + [0.0] * (self.EMBEDDING_DIM - len(embedding))
+            return embedding
         except Exception as e:
-            print(f"OpenAI 임베딩 오류: {e}")
-            return [0.0] * self.EMBEDDING_DIM
+            print(f"Gemini embedding error: {e}")
+            # Fallback to SBERT
+            return self._sbert_embedding(text)
     
     def _sbert_embedding(self, text: str) -> List[float]:
-        """한국어 SBERT 모델 사용"""
+        """Use Korean SBERT model"""
         model = get_sbert_model()
         if model is None:
             return [0.0] * self.EMBEDDING_DIM
@@ -91,11 +103,11 @@ class VectorEmbeddingService:
             embedding = model.encode(text, convert_to_numpy=True)
             return embedding.tolist()
         except Exception as e:
-            print(f"SBERT 임베딩 오류: {e}")
+            print(f"SBERT embedding error: {e}")
             return [0.0] * self.EMBEDDING_DIM
     
     def generate_place_text(self, place: Dict) -> str:
-        """장소 정보를 임베딩용 텍스트로 변환"""
+        """Convert place info to text for embedding"""
         parts = []
         
         if place.get("category"):
@@ -105,42 +117,46 @@ class VectorEmbeddingService:
             parts.append(place["name"])
         
         if place.get("address"):
-            # 주소에서 지역명 추출
+            # Extract area name from address
             address = place["address"]
-            for keyword in ["강남", "홍대", "신촌", "이태원", "명동", "건대", "성수", "압구정"]:
-                if keyword in address:
-                    parts.append(keyword)
+            keywords = ["gangnam", "hongdae", "sinchon", "itaewon", "myeongdong", 
+                       "kondae", "seongsu", "apgujeong", "jamsil", "yeouido"]
+            korean_keywords = ["강남", "홍대", "신촌", "이태원", "명동", 
+                             "건대", "성수", "압구정", "잠실", "여의도"]
+            for kw in korean_keywords:
+                if kw in address:
+                    parts.append(kw)
                     break
         
         if place.get("tags"):
             tags = place["tags"]
             if isinstance(tags, list):
-                parts.extend(tags[:5])  # 최대 5개 태그
+                parts.extend(tags[:5])  # Max 5 tags
             elif isinstance(tags, str):
                 parts.append(tags)
         
-        return " | ".join(parts) if parts else "장소"
+        return " | ".join(parts) if parts else "place"
     
     def generate_user_preference_text(self, preferences: Dict) -> str:
-        """유저 선호도를 임베딩용 텍스트로 변환"""
+        """Convert user preferences to text for embedding"""
         parts = []
         
-        # 음식 선호도
+        # Food preferences
         if preferences.get("foods"):
             parts.extend(preferences["foods"][:3])
         
-        # 분위기 선호도
+        # Vibe preferences
         if preferences.get("vibes"):
             parts.extend(preferences["vibes"][:3])
         
-        # 목적
+        # Purpose
         if preferences.get("purposes"):
             parts.extend(preferences["purposes"][:2])
         
-        return " | ".join(parts) if parts else "일반"
+        return " | ".join(parts) if parts else "general"
     
     def cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
-        """코사인 유사도 계산"""
+        """Calculate cosine similarity"""
         if not vec1 or not vec2:
             return 0.0
         
@@ -157,18 +173,18 @@ class VectorEmbeddingService:
         return float(dot_product / (norm1 * norm2))
     
     # ========================================
-    # 데이터베이스 연동 메서드
+    # Database integration methods
     # ========================================
     
     def embed_place(self, db: Session, place_id: int, place_data: Dict) -> bool:
-        """장소 임베딩 생성 및 저장"""
+        """Generate and save place embedding"""
         try:
             from domain.models import PlaceEmbedding
             
             source_text = self.generate_place_text(place_data)
             embedding = self.generate_embedding(source_text)
             
-            # 기존 임베딩 확인
+            # Check existing embedding
             existing = db.query(PlaceEmbedding).filter(
                 PlaceEmbedding.place_id == place_id
             ).first()
@@ -188,12 +204,12 @@ class VectorEmbeddingService:
             db.commit()
             return True
         except Exception as e:
-            print(f"장소 임베딩 저장 오류: {e}")
+            print(f"Place embedding save error: {e}")
             db.rollback()
             return False
     
     def embed_all_places(self, db: Session) -> int:
-        """모든 장소 임베딩 생성"""
+        """Generate embeddings for all places"""
         from domain.models import Place
         
         places = db.query(Place).all()
@@ -209,18 +225,18 @@ class VectorEmbeddingService:
             
             if self.embed_place(db, place.id, place_data):
                 success_count += 1
-                print(f"✅ 임베딩 생성: {place.name}")
+                print(f"[OK] Embedding created: {place.name}")
             else:
-                print(f"❌ 임베딩 실패: {place.name}")
+                print(f"[FAIL] Embedding failed: {place.name}")
         
         return success_count
     
     def update_user_embedding(self, db: Session, user_id: int) -> bool:
-        """유저 행동 기반 임베딩 업데이트"""
+        """Update user embedding based on actions"""
         try:
             from domain.models import UserEmbedding, UserInteractionLog, PlaceEmbedding
             
-            # 최근 행동 가져오기 (최근 50개)
+            # Get recent actions (last 50)
             recent_actions = db.query(UserInteractionLog).filter(
                 UserInteractionLog.user_id == user_id,
                 UserInteractionLog.place_id.isnot(None)
@@ -229,7 +245,7 @@ class VectorEmbeddingService:
             if not recent_actions:
                 return False
             
-            # 행동 가중치
+            # Action weights
             action_weights = {
                 "LIKE": 3.0,
                 "SAVE": 2.5,
@@ -239,7 +255,7 @@ class VectorEmbeddingService:
                 "DISMISS": -1.0
             }
             
-            # 장소 임베딩 가중 평균 계산
+            # Calculate weighted average of place embeddings
             weighted_sum = np.zeros(self.EMBEDDING_DIM)
             total_weight = 0.0
             
@@ -259,7 +275,7 @@ class VectorEmbeddingService:
             
             preference_embedding = (weighted_sum / total_weight).tolist()
             
-            # 최근 10개 행동으로 recent_embedding 계산
+            # Calculate recent_embedding from last 10 actions
             recent_sum = np.zeros(self.EMBEDDING_DIM)
             recent_count = 0
             
@@ -274,7 +290,7 @@ class VectorEmbeddingService:
             
             recent_embedding = (recent_sum / max(recent_count, 1)).tolist()
             
-            # 저장
+            # Save
             existing = db.query(UserEmbedding).filter(
                 UserEmbedding.user_id == user_id
             ).first()
@@ -298,7 +314,7 @@ class VectorEmbeddingService:
             db.commit()
             return True
         except Exception as e:
-            print(f"유저 임베딩 업데이트 오류: {e}")
+            print(f"User embedding update error: {e}")
             db.rollback()
             return False
     
@@ -309,10 +325,10 @@ class VectorEmbeddingService:
         limit: int = 10,
         exclude_place_ids: List[int] = None
     ) -> List[Tuple[int, float]]:
-        """벡터 유사도로 유사한 장소 검색"""
+        """Search similar places by vector similarity"""
         from domain.models import PlaceEmbedding
         
-        # 모든 장소 임베딩 가져오기
+        # Get all place embeddings
         embeddings = db.query(PlaceEmbedding).all()
         
         results = []
@@ -326,7 +342,7 @@ class VectorEmbeddingService:
             similarity = self.cosine_similarity(query_embedding, pe.embedding)
             results.append((pe.place_id, similarity))
         
-        # 유사도 높은 순으로 정렬
+        # Sort by similarity (descending)
         results.sort(key=lambda x: x[1], reverse=True)
         
         return results[:limit]
@@ -337,10 +353,10 @@ class VectorEmbeddingService:
         user_id: int, 
         limit: int = 10
     ) -> List[Dict]:
-        """유저 맞춤 추천 (벡터 유사도 기반)"""
+        """Get personalized recommendations for user (vector similarity based)"""
         from domain.models import UserEmbedding, Place
         
-        # 유저 임베딩 가져오기
+        # Get user embedding
         user_embedding = db.query(UserEmbedding).filter(
             UserEmbedding.user_id == user_id
         ).first()
@@ -348,7 +364,7 @@ class VectorEmbeddingService:
         if not user_embedding or not user_embedding.preference_embedding:
             return []
         
-        # 유사한 장소 검색
+        # Search similar places
         similar = self.get_similar_places(
             db, 
             user_embedding.preference_embedding, 
@@ -371,11 +387,11 @@ class VectorEmbeddingService:
         return results
 
 
-# 싱글톤 인스턴스
+# Singleton instance
 _embedding_service = None
 
 def get_embedding_service() -> VectorEmbeddingService:
-    """임베딩 서비스 싱글톤"""
+    """Get embedding service singleton"""
     global _embedding_service
     if _embedding_service is None:
         _embedding_service = VectorEmbeddingService()

@@ -1,24 +1,23 @@
 -- ============================================
--- WeMeet AI 벡터 추천 시스템 테이블 생성
--- Supabase SQL Editor에서 실행하세요
+-- WeMeet AI Vector Recommendation System Tables
+-- Run this in Supabase SQL Editor
 -- ============================================
 
--- 1. pgvector 확장 활성화 (필수!)
+-- 1. Enable pgvector extension (REQUIRED!)
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. 장소 임베딩 테이블 (진짜 AI 벡터 저장)
+-- 2. Place embeddings table (real AI vectors)
 CREATE TABLE IF NOT EXISTS place_embeddings (
     id SERIAL PRIMARY KEY,
     place_id INTEGER REFERENCES places(id) ON DELETE CASCADE,
     
-    -- 텍스트 임베딩 (OpenAI text-embedding-3-small: 1536차원)
-    -- 또는 한국어 모델 (ko-sbert: 768차원)
-    embedding vector(768),  -- 한국어 모델 기준 (나중에 조정 가능)
+    -- Text embedding (ko-sbert: 768 dim, Gemini: 768 dim)
+    embedding vector(768),
     
-    -- 임베딩 소스 텍스트
-    source_text TEXT,  -- "카페 | 강남역 | 조용한, 작업하기좋은, 디저트맛집"
+    -- Embedding source text
+    source_text TEXT,
     
-    -- 메타데이터
+    -- Metadata
     model_name VARCHAR(100) DEFAULT 'ko-sbert-nli',
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
@@ -26,18 +25,18 @@ CREATE TABLE IF NOT EXISTS place_embeddings (
     UNIQUE(place_id)
 );
 
--- 3. 유저 취향 임베딩 테이블
+-- 3. User preference embeddings table
 CREATE TABLE IF NOT EXISTS user_embeddings (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     
-    -- 유저 취향 벡터 (행동 기반으로 학습)
+    -- User preference vector (learned from actions)
     preference_embedding vector(768),
     
-    -- 최근 관심사 벡터 (최근 N개 행동 기반)
+    -- Recent interest vector (based on recent N actions)
     recent_embedding vector(768),
     
-    -- 학습 정보
+    -- Learning info
     action_count INTEGER DEFAULT 0,
     last_action_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
@@ -46,56 +45,56 @@ CREATE TABLE IF NOT EXISTS user_embeddings (
     UNIQUE(user_id)
 );
 
--- 4. 유저 상호작용 로그 테이블 (AI 학습 데이터)
+-- 4. User interaction logs table (AI learning data)
 CREATE TABLE IF NOT EXISTS user_interaction_logs (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
-    -- 상호작용 대상
+    -- Interaction target
     place_id INTEGER REFERENCES places(id) ON DELETE SET NULL,
     post_id VARCHAR(36) REFERENCES posts(id) ON DELETE SET NULL,
     
-    -- 상호작용 유형
+    -- Interaction type
     action_type VARCHAR(50) NOT NULL,  -- VIEW, CLICK, LIKE, SAVE, SHARE, DISMISS, DWELL
-    action_value FLOAT DEFAULT 1.0,     -- 체류 시간(초), 평점 등
+    action_value FLOAT DEFAULT 1.0,     -- dwell time (sec), rating, etc
     
-    -- 컨텍스트 (AI 학습에 중요!)
+    -- Context (important for AI learning!)
     context JSONB DEFAULT '{}'::jsonb,  -- {"hour": 19, "day_of_week": 5, "weather": "clear", "companions": 2}
     
-    -- 추천 관련
-    recommendation_id INTEGER,  -- 어떤 추천에서 클릭했는지
-    position_in_list INTEGER,   -- 리스트에서 몇 번째였는지
+    -- Recommendation tracking
+    recommendation_id INTEGER,  -- which recommendation was clicked
+    position_in_list INTEGER,   -- position in the list
     
-    -- 세션 추적
+    -- Session tracking
     session_id VARCHAR(100),
     
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- 5. 추천 결과 로그 (A/B 테스트 및 성능 측정용)
+-- 5. Recommendation results log (A/B testing and performance measurement)
 CREATE TABLE IF NOT EXISTS recommendation_results (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
-    -- 추천 정보
+    -- Recommendation info
     algorithm_type VARCHAR(50) NOT NULL,  -- 'vector_similarity', 'collaborative', 'hybrid'
     model_version VARCHAR(50),
     
-    -- 추천 결과
+    -- Recommendation results
     recommended_place_ids INTEGER[] DEFAULT '{}',
     scores FLOAT[] DEFAULT '{}',
     
-    -- 성과 측정
-    clicked_place_id INTEGER,  -- 실제 클릭한 장소
-    clicked_position INTEGER,  -- 클릭한 위치
+    -- Performance measurement
+    clicked_place_id INTEGER,  -- actually clicked place
+    clicked_position INTEGER,  -- click position
     
-    -- 컨텍스트
+    -- Context
     context JSONB DEFAULT '{}'::jsonb,
     
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- 6. 인덱스 생성 (성능 최적화)
+-- 6. Create indexes (performance optimization)
 CREATE INDEX IF NOT EXISTS idx_place_embeddings_place_id ON place_embeddings(place_id);
 CREATE INDEX IF NOT EXISTS idx_user_embeddings_user_id ON user_embeddings(user_id);
 CREATE INDEX IF NOT EXISTS idx_interaction_logs_user_id ON user_interaction_logs(user_id);
@@ -104,11 +103,11 @@ CREATE INDEX IF NOT EXISTS idx_interaction_logs_action ON user_interaction_logs(
 CREATE INDEX IF NOT EXISTS idx_interaction_logs_created ON user_interaction_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_recommendation_results_user ON recommendation_results(user_id);
 
--- 7. 벡터 유사도 검색용 인덱스 (IVFFlat - 빠른 근사 검색)
--- 데이터가 1000개 이상 쌓이면 활성화 권장
+-- 7. Vector similarity search index (IVFFlat - fast approximate search)
+-- Recommended to enable after 1000+ records
 -- CREATE INDEX ON place_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
--- 8. updated_at 자동 갱신 트리거
+-- 8. Auto-update updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -117,21 +116,23 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_place_embeddings_updated_at ON place_embeddings;
 CREATE TRIGGER update_place_embeddings_updated_at
     BEFORE UPDATE ON place_embeddings
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_user_embeddings_updated_at ON user_embeddings;
 CREATE TRIGGER update_user_embeddings_updated_at
     BEFORE UPDATE ON user_embeddings
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================
--- 벡터 유사도 검색 함수 (pgvector 활용)
+-- Vector similarity search functions (pgvector)
 -- ============================================
 
--- 장소 유사도 검색 함수
+-- Place similarity search function
 CREATE OR REPLACE FUNCTION search_similar_places(
     query_embedding vector(768),
     match_threshold FLOAT DEFAULT 0.7,
@@ -155,7 +156,7 @@ BEGIN
 END;
 $$;
 
--- 유저 맞춤 추천 함수
+-- User personalized recommendation function
 CREATE OR REPLACE FUNCTION get_user_recommendations(
     target_user_id INTEGER,
     match_count INT DEFAULT 10
@@ -169,17 +170,17 @@ AS $$
 DECLARE
     user_vector vector(768);
 BEGIN
-    -- 유저 임베딩 가져오기
+    -- Get user embedding
     SELECT preference_embedding INTO user_vector
     FROM user_embeddings
     WHERE user_id = target_user_id;
     
-    -- 임베딩이 없으면 빈 결과 반환
+    -- Return empty if no embedding
     IF user_vector IS NULL THEN
         RETURN;
     END IF;
     
-    -- 유사한 장소 검색
+    -- Search similar places
     RETURN QUERY
     SELECT 
         pe.place_id,
@@ -191,11 +192,11 @@ END;
 $$;
 
 -- ============================================
--- 완료 메시지
+-- Completion message
 -- ============================================
 DO $$
 BEGIN
-    RAISE NOTICE '✅ AI 벡터 추천 시스템 테이블 생성 완료!';
-    RAISE NOTICE '📊 생성된 테이블: place_embeddings, user_embeddings, user_interaction_logs, recommendation_results';
-    RAISE NOTICE '🔍 생성된 함수: search_similar_places, get_user_recommendations';
+    RAISE NOTICE 'AI Vector Recommendation System tables created successfully!';
+    RAISE NOTICE 'Tables: place_embeddings, user_embeddings, user_interaction_logs, recommendation_results';
+    RAISE NOTICE 'Functions: search_similar_places, get_user_recommendations';
 END $$;
