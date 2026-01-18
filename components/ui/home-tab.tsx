@@ -60,10 +60,54 @@ const AI_PERSONAS = [
 ];
 
 const PURPOSE_FILTERS: Record<string, any> = {
-    "식사": { label: "🍚 식사", tabs: { "MENU": { label: "메뉴", options: ["한식", "양식", "일식", "중식", "고기"] }, "VIBE": { label: "분위기", options: ["가성비", "조용한", "웨이팅맛집"] } } },
-    "술/회식": { label: "🍺 술/회식", tabs: { "TYPE": { label: "주종", options: ["소주", "맥주", "와인", "하이볼"] }, "VIBE": { label: "분위기", options: ["시끌벅적", "조용한", "룸술집"] } } },
-    "카페": { label: "☕ 카페", tabs: { "TYPE": { label: "목적", options: ["수다", "작업", "디저트"] }, "VIBE": { label: "분위기", options: ["감성", "뷰맛집", "대형"] } } },
-    "데이트/기념일": { label: "💖 데이트", tabs: { "COURSE": { label: "코스", options: ["맛집", "카페", "산책"] }, "VIBE": { label: "분위기", options: ["로맨틱", "조용한", "야경"] } } }
+    "식사": { 
+        label: "🍚 식사", 
+        mainCategory: "RESTAURANT",
+        tabs: { 
+            "MENU": { label: "메뉴", options: ["한식", "양식", "일식", "중식", "고기/구이", "해산물", "치킨", "피자", "분식", "아시아음식"] }, 
+            "VIBE": { label: "분위기", options: ["가성비", "조용한", "웨이팅맛집", "혼밥", "단체", "가족모임"] } 
+        } 
+    },
+    "술/회식": { 
+        label: "🍺 술/회식", 
+        mainCategory: "PUB",
+        tabs: { 
+            "TYPE": { label: "주종", options: ["소주", "맥주", "와인", "하이볼", "칵테일", "막걸리", "사케"] }, 
+            "VIBE": { label: "분위기", options: ["시끌벅적", "조용한", "룸술집", "루프탑", "스탠딩", "이자카야"] } 
+        } 
+    },
+    "카페": { 
+        label: "☕ 카페", 
+        mainCategory: "CAFE",
+        tabs: { 
+            "TYPE": { label: "목적", options: ["수다", "작업", "디저트", "브런치", "베이커리"] }, 
+            "VIBE": { label: "분위기", options: ["감성", "뷰맛집", "대형", "조용한", "루프탑", "펫카페"] } 
+        } 
+    },
+    "데이트": { 
+        label: "💖 데이트", 
+        mainCategory: "RESTAURANT",
+        tabs: { 
+            "COURSE": { label: "코스", options: ["맛집", "카페", "산책", "영화", "전시"] }, 
+            "VIBE": { label: "분위기", options: ["로맨틱", "조용한", "야경", "프라이빗", "핫플"] } 
+        } 
+    },
+    "비즈니스": { 
+        label: "💼 비즈니스", 
+        mainCategory: "BUSINESS",
+        tabs: { 
+            "TYPE": { label: "유형", options: ["회의실", "식사미팅", "스터디카페", "코워킹스페이스", "세미나실"] }, 
+            "VIBE": { label: "분위기", options: ["조용한", "프라이빗", "대형", "빔프로젝터", "화이트보드"] } 
+        } 
+    },
+    "문화생활": { 
+        label: "🎬 문화생활", 
+        mainCategory: "CULTURE",
+        tabs: { 
+            "TYPE": { label: "유형", options: ["영화관", "공연/뮤지컬", "전시/미술관", "콘서트", "축제/이벤트", "스포츠관람"] }, 
+            "VIBE": { label: "분위기", options: ["데이트", "친구", "가족", "혼자", "야외", "실내"] } 
+        } 
+    }
 };
 
 // --- 2. 메인 컴포넌트 ---
@@ -405,7 +449,10 @@ export function HomeTab() {
 
         setLoading(true);
         try {
-            const res = await fetch(`${API_URL}/api/places/search?query=${searchQuery}`);
+            // 선택된 목적에 따른 main_category 필터 적용
+            const mainCategory = PURPOSE_FILTERS[selectedPurpose]?.mainCategory || "";
+            const categoryParam = mainCategory ? `&main_category=${mainCategory}` : "";
+            const res = await fetch(`${API_URL}/api/places/search?query=${searchQuery}${categoryParam}`);
             if (res.ok) {
                 const data = await res.json();
 

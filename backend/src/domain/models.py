@@ -65,18 +65,63 @@ class AvatarItem(Base):
     metadata_json = Column(JSON, default={})
 
 # --- 장소 & 모임 & 기록 ---
+class PlaceCategory(str, enum.Enum):
+    """장소 메인 카테고리"""
+    RESTAURANT = "RESTAURANT"  # 식당/맛집
+    CAFE = "CAFE"              # 카페/디저트
+    PUB = "PUB"                # 술집/바
+    BUSINESS = "BUSINESS"      # 비즈니스 (회의실, 스터디카페, 코워킹)
+    CULTURE = "CULTURE"        # 문화생활 (영화관, 극장, 공연장, 전시)
+    ACTIVITY = "ACTIVITY"      # 액티비티 (볼링, 방탈출, 노래방)
+
+
 class Place(Base):
+    """
+    장소 모델 - 3단계 계층 구조
+    L1: main_category (RESTAURANT, CAFE, PUB, BUSINESS, CULTURE, ACTIVITY)
+    L2: cuisine_type (한식, 양식, 일식, 카페, 바, 회의실, 영화관...)
+    L3: vibe_tags (분위기/목적 태그)
+    L4: features (시설 정보 JSON)
+    """
     __tablename__ = "places"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
+    
+    # L1: Main Category (대분류)
+    main_category = Column(String, index=True, default="RESTAURANT")  # PlaceCategory enum
+    
+    # L2: Cuisine/Sub Category (음식 장르)
+    cuisine_type = Column(String, index=True)  # 한식, 양식, 일식, 중식, 카페, 바...
+    
+    # Legacy category (원본 카테고리 보존)
     category = Column(String)
+    
+    # 위치 정보
     address = Column(String, nullable=True)
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
+    
+    # L3: Vibe/Theme Tags (분위기 태그만)
+    vibe_tags = Column(JSON, default=[])  # ["데이트", "회식", "조용한", "혼밥"]
+    
+    # L4: Facilities (시설 정보 - 인덱싱 가능)
+    features = Column(JSON, default={})  # {"parking": true, "private_room": true, "wifi": true}
+    
+    # Legacy tags (기존 호환성)
     tags = Column(JSON, default=[])
+    
+    # 평점 & 리뷰
     wemeet_rating = Column(Float, default=0.0)
     review_count = Column(Integer, default=0)
+    
+    # 추가 정보
+    phone = Column(String, nullable=True)
+    business_hours = Column(String, nullable=True)
+    price_range = Column(String, nullable=True)  # 저렴, 보통, 고급
     external_link = Column(String, nullable=True)
+    
+    # 검색 최적화용 통합 필드
+    search_keywords = Column(JSON, default=[])  # [name, cuisine, vibe tags 통합]
 
 class MeetingLog(Base):
     __tablename__ = "meeting_logs"
