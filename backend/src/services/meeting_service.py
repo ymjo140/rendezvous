@@ -29,87 +29,122 @@ class MeetingService:
     # ============================================================
     def _format_recommendations(self, db: Session, regions: list, req: schemas.RecommendRequest) -> List[Dict[str, Any]]:
         results = []
-        user_prefs = req.user_selected_tags or [] 
-        
-        # 1. 카테고리 영문/한글 매핑
-        category_map = {
-            "식사": "restaurant",
-            "카페": "cafe",
-            "술": "bar",
-            "술/회식": "bar"
-        }
-        db_category = category_map.get(req.purpose, req.purpose)
+        raw_prefs = req.user_selected_tags or []
+        purpose = (req.purpose or "").strip()
 
-        # 2. 검색어 확장
-        search_queries = [req.purpose] + user_prefs
+        # Normalize and dedupe tags to expand matching coverage.
+        user_prefs = []
+        seen = set()
+        for t in raw_prefs:
+            if not t:
+                continue
+            t = str(t).strip()
+            if not t or t in seen:
+                continue
+            seen.add(t)
+            user_prefs.append(t)
+
+        search_terms = []
+        seen_terms = set()
+        for t in [purpose] + user_prefs:
+            if not t or t in seen_terms:
+                continue
+            seen_terms.add(t)
+            search_terms.append(t)
+
+        main_category_map = {
+            "식사": ["RESTAURANT", "FOOD"],
+            "카페": ["CAFE"],
+            "술": ["PUB"],
+            "술집": ["PUB"],
+            "주점": ["PUB"],
+        }
+        main_category_terms = main_category_map.get(purpose, [])
+
+        search_queries = search_terms
 
         for r in regions:
-            # 🌟 [Fix] tags 컬럼을 TEXT로 변환(CAST)하여 LIKE 검색 가능하게 수정
-            db_query = text("""
+            params = {
+                "lat": r["lat"],
+                "lng": r["lng"],
+            }
+            filter_clauses = []
+
+            for idx, term in enumerate(main_category_terms):
+                key = f"main_category_{idx}"
+                filter_clauses.append(f"main_category = :{key}")
+                params[key] = term
+
+            if purpose:
+                params["purpose_like"] = f"%{purpose}%"
+                filter_clauses.append("(category ILIKE :purpose_like OR cuisine_type ILIKE :purpose_like OR name ILIKE :purpose_like)")
+
+            term_clauses = []
+            for idx, term in enumerate(search_terms):
+                key = f"term_{idx}"
+                params[key] = f"%{term}%"
+                term_clauses.extend([
+                    f"tags::text ILIKE :{key}",
+                    f"vibe_tags::text ILIKE :{key}",
+                    f"category ILIKE :{key}",
+                    f"cuisine_type ILIKE :{key}",
+                    f"name ILIKE :{key}",
+                ])
+
+            if term_clauses:
+                filter_clauses.append("(" + " OR ".join(term_clauses) + ")")
+
+            filter_sql = " OR ".join(filter_clauses) if filter_clauses else "1=1"
+
+            db_query = text(f"""
                 SELECT name, category, lat, lng, address, tags, wemeet_rating
-                FROM places 
+                FROM places
                 WHERE (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) <= 2.0
-                AND (
-                    category LIKE :kor_purpose 
-                    OR category LIKE :eng_purpose 
-                    OR name LIKE :kor_purpose
-                    OR CAST(tags AS TEXT) LIKE :tag_query
-                )
+                AND ({filter_sql})
                 ORDER BY wemeet_rating DESC
                 LIMIT 30
             """)
-            
-            # 태그 검색어 설정
-            tag_search = f"%{user_prefs[0]}%" if user_prefs else f"%{req.purpose}%"
 
             try:
-                db_rows = db.execute(db_query, {
-                    "lat": r['lat'], 
-                    "lng": r['lng'], 
-                    "kor_purpose": f"%{req.purpose}%", 
-                    "eng_purpose": f"%{db_category}%",
-                    "tag_query": tag_search
-                }).fetchall()
+                db_rows = db.execute(db_query, params).fetchall()
             except Exception as e:
-                print(f"⚠️ DB Search Error: {e}")
+                print(f"[Error] DB search failed: {e}")
                 db_rows = []
+
+            if not db_rows:
+                print(f"[Debug] DB candidates empty for {r[\"name\"]}")
 
             place_candidates = []
             for row in db_rows:
-                # DB의 tags는 JSON 형식이므로 파싱 시도
                 try:
-                    # row[5]가 이미 dict/list라면 그대로, 문자열이면 loads
                     loaded_tags = row[5] if isinstance(row[5], (list, dict)) else json.loads(row[5])
                 except:
                     loaded_tags = []
 
                 place_candidates.append(POI(
-                    id=0, name=row[0], category=row[1], tags=loaded_tags, 
-                    location=np.array([row[2], row[3]]), price_level=1, 
+                    id=0, name=row[0], category=row[1], tags=loaded_tags,
+                    location=np.array([row[2], row[3]]), price_level=1,
                     avg_rating=float(row[6] or 0.0), address=row[4]
                 ))
 
-            # [데이터 부족 시 API 보충]
-            if len(place_candidates) < 5:
-                # search_queries 전체를 넘겨서 다양하게 검색
-                ext = data_provider.search_places_all_queries(search_queries, r['name'], r['lat'], r['lng'], db=db)
+            if search_queries and len(place_candidates) < 5:
+                ext = data_provider.search_places_all_queries(search_queries, r["name"], r["lat"], r["lng"], db=db)
                 for p in ext:
                     if not any(c.name == p.name for c in place_candidates):
                         place_candidates.append(POI(
-                            id=0, name=p.name, category=p.category, tags=p.tags, 
-                            location=np.array(p.location), price_level=1, 
+                            id=0, name=p.name, category=p.category, tags=p.tags,
+                            location=np.array(p.location), price_level=1,
                             avg_rating=p.wemeet_rating, address=p.address
                         ))
 
-            # [취향 가중치 랭킹 및 결과 반환]
             if place_candidates:
                 recommender = AdvancedRecommender(place_candidates)
-                ranked = recommender.recommend([{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], req.purpose, top_k=5)
-                
+                ranked = recommender.recommend([{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], purpose, top_k=5)
+
                 results.append({
-                    "region_name": r["name"], 
-                    "center": {"lat": r["lat"], "lng": r["lng"]}, 
-                    "travel_times": r.get("travel_times", []),  # 🆕 각 출발지별 이동 시간 (분)
+                    "region_name": r["name"],
+                    "center": {"lat": r["lat"], "lng": r["lng"]},
+                    "travel_times": r.get("travel_times", []),
                     "places": [{"name": p.name, "address": p.address, "category": p.category, "lat": float(p.location[0]), "lng": float(p.location[1]), "wemeet_rating": p.avg_rating} for p in ranked]
                 })
         return results
