@@ -31,27 +31,41 @@ class RealDataProvider:
             "X-Naver-Client-Secret": "aijs1MO01i"
         }
         
-        # 🌟 [Fix] Render/Linux 환경 호환을 위한 Transformer 설정
+        # [Fix] Render/Linux Transformer setup
         try:
-            self.transformer = Transformer.from_crs("epsg:2097", "epsg:4326", always_xy=True)
-            print("✅ [Init] 좌표 변환기(Transformer) 설정 완료")
+            # Naver Local Search uses TM128 (EPSG:5179) coordinates
+            self.transformers = [
+                Transformer.from_crs("epsg:5179", "epsg:4326", always_xy=True),
+                Transformer.from_crs("epsg:2097", "epsg:4326", always_xy=True),
+            ]
+            self.fallback_transformer = Transformer.from_crs("epsg:2097", "epsg:4326", always_xy=True)
+            print("[Init] Transformer setup complete")
         except Exception as e:
-            print(f"⚠️ [Warning] Transformer 설정 실패: {e}")
-            self.transformer = None
+            print(f"[Warning] Transformer setup failed: {e}")
+            self.transformers = []
+            self.fallback_transformer = None
 
     def convert_katech_to_wgs84(self, mapx, mapy):
-        """KATECH -> WGS84(위경도) 변환"""
+        """KATECH -> WGS84 conversion."""
         try:
-            if not self.transformer or not mapx or not mapy:
+            if not mapx or not mapy:
                 return 0.0, 0.0
             mx, my = float(mapx), float(mapy)
-            # transform 메서드 사용 (lng, lat 순서 반환 주의)
-            lng, lat = self.transformer.transform(mx, my)
-            
-            # 한국 좌표 범위 체크
-            if not (33 < lat < 43) or not (124 < lng < 132):
-                return 0.0, 0.0
-            return lat, lng
+
+            if 33 < my < 43 and 124 < mx < 132:
+                return my, mx
+
+            for transformer in self.transformers:
+                lng, lat = transformer.transform(mx, my)
+                if 33 < lat < 43 and 124 < lng < 132:
+                    return lat, lng
+
+            if self.fallback_transformer:
+                lng, lat = self.fallback_transformer.transform(mx, my)
+                if 33 < lat < 43 and 124 < lng < 132:
+                    return lat, lng
+
+            return 0.0, 0.0
         except:
             return 0.0, 0.0
 
