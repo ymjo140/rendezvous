@@ -112,7 +112,7 @@ class MeetingService:
                 db_rows = []
 
             if not db_rows:
-                print(f"[Debug] DB candidates empty for {r[\"name\"]}")
+                print(f"[Debug] DB candidates empty for {r['name']}")
 
             place_candidates = []
             for row in db_rows:
