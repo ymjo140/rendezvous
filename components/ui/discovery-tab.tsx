@@ -304,26 +304,34 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         fetchAiRecommendations();
     }, []);
     
-    // 🤖 AI 행동 기록 함수
-    const recordAiAction = async (actionType: string, placeId?: number) => {
+    // 🤖 AI 행동 기록 함수 (벡터 AI 시스템)
+    const recordAiAction = async (actionType: string, placeId?: number, postId?: string) => {
         try {
             const token = localStorage.getItem("token");
             if (!token) return;
             
-            await fetch(`${API_URL}/api/ai/actions`, {
+            // 새로운 벡터 AI API 호출
+            await fetch(`${API_URL}/api/vector/interaction`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    action_type: actionType,
-                    place_id: placeId,
-                    context: { source: "discovery_tab" }
+                    action_type: actionType.toUpperCase(),  // VIEW, CLICK, LIKE, SAVE, SHARE, REVIEW
+                    place_id: placeId || null,
+                    post_id: postId || null,
+                    action_value: 1.0,
+                    context: { 
+                        source: "discovery_tab",
+                        timestamp: new Date().toISOString()
+                    }
                 })
             });
+            console.log(`[AI] Logged action: ${actionType}`, { placeId, postId });
         } catch (error) {
             // 실패해도 무시 (사용자 경험에 영향 없음)
+            console.log("[AI] Action logging failed (non-critical):", error);
         }
     };
     
@@ -425,9 +433,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 setSelectedFolderId(null);
                 
                 // AI 학습 기록
-                if (savingItem.placeId) {
-                    recordAiAction("save", savingItem.placeId);
-                }
+                recordAiAction("SAVE", savingItem.placeId, savingItem.postId);
             }
         } catch (error) {
             console.error("저장 오류:", error);
@@ -528,9 +534,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 setShareMessage("");
                 
                 // AI 학습 기록
-                if (sharingItem.placeId) {
-                    recordAiAction("share", sharingItem.placeId);
-                }
+                recordAiAction("SHARE", sharingItem.placeId, sharingItem.postId);
             }
         } catch (error) {
             console.error("공유 오류:", error);
@@ -698,10 +702,9 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     // 게시물 클릭 시 상세 뷰 + AI 조회 기록
     const handleFeedClick = (feed: any) => {
         setSelectedFeed(feed);
-        // AI: 게시물 조회 기록
-        if (feed.place?.id) {
-            recordAiAction("view", feed.place.id);
-        }
+        // AI: 게시물 조회 기록 (장소 또는 게시물 ID)
+        const postId = typeof feed.id === "string" ? feed.id : undefined;
+        recordAiAction("VIEW", feed.place?.id, postId);
     };
 
     const closeDetail = () => {
@@ -758,9 +761,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 });
             }
             
-            // 🤖 AI: 좋아요 행동 기록 (장소가 있는 경우에만)
-            if (newIsLiked && placeId) {
-                recordAiAction("like", placeId);
+            // 🤖 AI: 좋아요 행동 기록
+            if (newIsLiked) {
+                const postId = typeof feedId === "string" ? feedId : undefined;
+                recordAiAction("LIKE", placeId, postId);
             }
         } catch (error) {
             console.error("좋아요 오류:", error);
@@ -837,9 +841,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                     }
                     
                     // 🤖 AI: 댓글 행동 기록
-                    if (placeId) {
-                        recordAiAction("review", placeId);
-                    }
+                    const postId = typeof feedId === "string" ? feedId : undefined;
+                    recordAiAction("REVIEW", placeId, postId);
                 }
             }
             setCommentText("");
@@ -1115,7 +1118,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             <div 
                                 key={rec.place_id}
                                 onClick={() => {
-                                    recordAiAction("click", rec.place_id);
+                                    recordAiAction("CLICK", rec.place_id);
                                 }}
                                 className="flex-shrink-0 w-36 bg-white rounded-xl p-3 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all"
                             >
@@ -1310,9 +1313,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                         onClick={() => {
                                             setIsPlaceModalOpen(true);
                                             // 🤖 AI: 장소 상세 조회 기록
-                                            if (selectedFeed.place?.id) {
-                                                recordAiAction("click", selectedFeed.place.id);
-                                            }
+                                            const postId = typeof selectedFeed.id === "string" ? selectedFeed.id : undefined;
+                                            recordAiAction("CLICK", selectedFeed.place?.id, postId);
                                         }}
                                         className="mt-3 w-full bg-gray-100 hover:bg-gray-200 rounded-xl p-3 flex items-center gap-3 transition-colors"
                                     >
