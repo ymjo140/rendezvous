@@ -1,23 +1,80 @@
 """
 AI 추천 API 라우터
 - 개인화 장소 추천
-- 사용자 행동 기록
+- 사용자 행동 기록 (비동기 BackgroundTasks 적용)
 - 유사 장소 추천
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 
-from core.database import get_db
+from core.database import get_db, SessionLocal
 from domain import models
 from api.dependencies import get_current_user
 from services.ai_recommendation_service import AIRecommendationService
 
 router = APIRouter()
 ai_service = AIRecommendationService()
+
+
+# === Background Task Functions ===
+
+def _record_action_background(
+    user_id: int,
+    action_type: str,
+    place_id: Optional[int],
+    action_value: float,
+    context: dict
+):
+    """
+    Background task for recording user actions
+    Uses separate DB session to avoid blocking the main request
+    """
+    db = SessionLocal()
+    try:
+        ai_service.record_action(
+            db=db,
+            user_id=user_id,
+            action_type=action_type,
+            place_id=place_id,
+            action_value=action_value,
+            context=context
+        )
+        print(f"[BG] Action recorded: user={user_id}, type={action_type}, place={place_id}")
+    except Exception as e:
+        print(f"[BG] Action record failed: {e}")
+    finally:
+        db.close()
+
+
+def _log_recommendation_background(
+    user_id: int,
+    algorithm: str,
+    place_ids: List[int],
+    scores: List[float],
+    context: dict
+):
+    """
+    Background task for logging recommendations
+    """
+    db = SessionLocal()
+    try:
+        ai_service._log_recommendation(
+            db=db,
+            user_id=user_id,
+            algorithm=algorithm,
+            place_ids=place_ids,
+            scores=scores,
+            context=context
+        )
+        print(f"[BG] Recommendation logged: user={user_id}, algorithm={algorithm}")
+    except Exception as e:
+        print(f"[BG] Recommendation log failed: {e}")
+    finally:
+        db.close()
 
 
 # === Pydantic Schemas ===
@@ -57,47 +114,66 @@ class SimilarPlaceResponse(BaseModel):
 # === API Endpoints ===
 
 @router.post("/api/ai/actions", response_model=ActionResponse)
-def record_user_action(
+async def record_user_action(
     req: ActionRequest,
+    background_tasks: BackgroundTasks,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    사용자 행동 기록
+    사용자 행동 기록 (비동기 처리)
     
     - **action_type**: view, click, like, save, review, visit, share
     - **place_id**: 장소 ID (선택)
     - **action_value**: 행동 가중치 (기본 1.0, 리뷰 점수 등)
     - **context**: 추가 컨텍스트 (시간대, 동행자 수 등)
+    
+    Note: 로그 저장은 BackgroundTasks로 비동기 처리되어 
+          사용자가 응답을 기다리지 않습니다.
     """
     if not current_user:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     
     valid_actions = ["view", "click", "like", "save", "review", "visit", "share", "search"]
-    if req.action_type not in valid_actions:
+    if req.action_type.lower() not in valid_actions:
         raise HTTPException(
             status_code=400, 
             detail=f"유효하지 않은 action_type입니다. 가능한 값: {valid_actions}"
         )
     
     try:
-        action = ai_service.record_action(
-            db=db,
+        # Add timestamp to context
+        context_with_time = {
+            **(req.context or {}),
+            "recorded_at": datetime.now().isoformat(),
+            "hour": datetime.now().hour,
+            "is_weekend": datetime.now().weekday() >= 5
+        }
+        
+        # Schedule background task for logging (non-blocking)
+        background_tasks.add_task(
+            _record_action_background,
             user_id=current_user.id,
-            action_type=req.action_type,
+            action_type=req.action_type.lower(),
             place_id=req.place_id,
             action_value=req.action_value,
-            context=req.context
+            context=context_with_time
         )
         
+        # Return immediately without waiting for DB write
         return ActionResponse(
             success=True,
-            action_id=action.id,
-            message="행동이 기록되었습니다."
+            action_id=0,  # ID not available since async
+            message="행동이 기록 중입니다 (비동기 처리)."
         )
     except Exception as e:
-        print(f"❌ 행동 기록 오류: {e}")
-        raise HTTPException(status_code=500, detail="행동 기록 중 오류가 발생했습니다.")
+        print(f"❌ 행동 기록 스케줄링 오류: {e}")
+        # Even on error, don't block the user
+        return ActionResponse(
+            success=False,
+            action_id=0,
+            message="행동 기록 스케줄링 실패"
+        )
 
 
 @router.get("/api/ai/recommendations", response_model=RecommendationResponse)
@@ -184,27 +260,34 @@ def get_similar_places(
 
 
 @router.post("/api/ai/recommendations/click")
-def track_recommendation_click(
+async def track_recommendation_click(
     place_id: int,
+    background_tasks: BackgroundTasks,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     추천 클릭 추적 (A/B 테스트 및 성능 측정용)
+    비동기로 처리하여 사용자 응답 지연 없음
     """
     if not current_user:
         return {"success": False, "message": "로그인이 필요합니다."}
     
     try:
+        # Track click in background
         ai_service.track_recommendation_click(db, current_user.id, place_id)
         
-        # 클릭 행동도 기록
-        ai_service.record_action(
-            db=db,
+        # Record click action in background (non-blocking)
+        background_tasks.add_task(
+            _record_action_background,
             user_id=current_user.id,
             action_type="click",
             place_id=place_id,
-            context={"source": "recommendation"}
+            action_value=1.0,
+            context={
+                "source": "recommendation",
+                "recorded_at": datetime.now().isoformat()
+            }
         )
         
         return {"success": True, "message": "클릭이 추적되었습니다."}
