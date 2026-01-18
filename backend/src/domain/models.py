@@ -463,3 +463,93 @@ class SimilarPlace(Base):
     similarity_score = Column(Float, nullable=False)
     
     updated_at = Column(DateTime, default=datetime.now)
+
+
+# ============================================
+# 🤖 AI 벡터 추천 시스템 모델 (pgvector 기반)
+# ============================================
+
+class PlaceEmbedding(Base):
+    """장소 임베딩 - 진짜 AI 벡터 저장"""
+    __tablename__ = "place_embeddings"
+    id = Column(Integer, primary_key=True, index=True)
+    place_id = Column(Integer, ForeignKey("places.id", ondelete="CASCADE"), unique=True, nullable=False)
+    
+    # 임베딩 벡터 (JSON으로 저장, pgvector는 Supabase에서 직접 처리)
+    embedding = Column(JSON, default=[])  # 768차원 벡터
+    
+    # 임베딩 소스 텍스트
+    source_text = Column(String, nullable=True)
+    
+    # 메타데이터
+    model_name = Column(String, default="ko-sbert-nli")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class UserEmbedding(Base):
+    """유저 취향 임베딩 - 행동 기반 학습"""
+    __tablename__ = "user_embeddings"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    
+    # 유저 취향 벡터
+    preference_embedding = Column(JSON, default=[])  # 768차원
+    recent_embedding = Column(JSON, default=[])  # 최근 관심사 벡터
+    
+    # 학습 정보
+    action_count = Column(Integer, default=0)
+    last_action_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class UserInteractionLog(Base):
+    """유저 상호작용 로그 - AI 학습 데이터"""
+    __tablename__ = "user_interaction_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # 상호작용 대상
+    place_id = Column(Integer, ForeignKey("places.id", ondelete="SET NULL"), nullable=True, index=True)
+    post_id = Column(String, ForeignKey("posts.id", ondelete="SET NULL"), nullable=True)
+    
+    # 상호작용 유형
+    action_type = Column(String, nullable=False, index=True)  # VIEW, CLICK, LIKE, SAVE, SHARE, DISMISS, DWELL
+    action_value = Column(Float, default=1.0)  # 체류 시간(초), 평점 등
+    
+    # 컨텍스트 (AI 학습에 중요!)
+    context = Column(JSON, default={})  # {"hour": 19, "day_of_week": 5, "weather": "clear"}
+    
+    # 추천 관련
+    recommendation_id = Column(Integer, nullable=True)
+    position_in_list = Column(Integer, nullable=True)
+    
+    # 세션 추적
+    session_id = Column(String, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class RecommendationResult(Base):
+    """추천 결과 로그 - A/B 테스트 및 성능 측정"""
+    __tablename__ = "recommendation_results"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # 추천 정보
+    algorithm_type = Column(String, nullable=False)  # 'vector_similarity', 'collaborative', 'hybrid'
+    model_version = Column(String, nullable=True)
+    
+    # 추천 결과
+    recommended_place_ids = Column(JSON, default=[])
+    scores = Column(JSON, default=[])
+    
+    # 성과 측정
+    clicked_place_id = Column(Integer, nullable=True)
+    clicked_position = Column(Integer, nullable=True)
+    
+    # 컨텍스트
+    context = Column(JSON, default={})
+    
+    created_at = Column(DateTime, default=datetime.now, index=True)

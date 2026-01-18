@@ -73,6 +73,14 @@ try:
 except Exception as e:
     print(f"⚠️ AI 추천 라우터 로드 실패 (서비스는 계속 동작): {e}")
 
+# 🧠 벡터 AI 추천 시스템 라우터 (진짜 AI!)
+try:
+    from api.routers import vector_ai
+    app.include_router(vector_ai.router, tags=["vector-ai"])
+    print("✅ 벡터 AI 라우터 연결 성공")
+except Exception as e:
+    print(f"⚠️ 벡터 AI 라우터 로드 실패: {e}")
+
 # ✅ [유지] 파일 안에 경로가 짧은 애들은 prefix를 붙여줍니다.
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 
