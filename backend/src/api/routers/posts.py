@@ -28,6 +28,21 @@ class PostCreate(BaseModel):
     location_name: Optional[str] = None
     place_id: Optional[int] = None
 
+class PlaceSummary(BaseModel):
+    id: int
+    name: str
+    category: Optional[str] = None
+    main_category: Optional[str] = None
+    address: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    rating: Optional[float] = None
+    review_count: Optional[int] = None
+    phone: Optional[str] = None
+    business_hours: Optional[str] = None
+    price_range: Optional[str] = None
+    tags: Optional[List[str]] = None
+
 class PostResponse(BaseModel):
     id: str
     user_id: int
@@ -36,6 +51,13 @@ class PostResponse(BaseModel):
     image_urls: List[str]
     content: Optional[str]
     location_name: Optional[str]
+    place_id: Optional[int] = None
+    place_name: Optional[str] = None
+    place_category: Optional[str] = None
+    place_address: Optional[str] = None
+    place_rating: Optional[float] = None
+    place_review_count: Optional[int] = None
+    place: Optional[PlaceSummary] = None
     likes_count: int
     comments_count: int
     is_liked: bool
@@ -93,6 +115,31 @@ def format_time_ago(dt: datetime) -> str:
         return dt.strftime("%Y.%m.%d")
 
 
+def build_place_summary(place: Optional[models.Place]):
+    if not place:
+        return None
+
+    tags = []
+    for tag in (place.tags or []) + (place.vibe_tags or []):
+        if tag and tag not in tags:
+            tags.append(tag)
+
+    return {
+        "id": place.id,
+        "name": place.name,
+        "category": place.cuisine_type or place.category or "",
+        "main_category": place.main_category,
+        "address": place.address or "",
+        "lat": place.lat,
+        "lng": place.lng,
+        "rating": place.wemeet_rating or 0.0,
+        "review_count": place.review_count or 0,
+        "phone": place.phone or "",
+        "business_hours": place.business_hours or "",
+        "price_range": place.price_range or "",
+        "tags": tags
+    }
+
 # --- API Endpoints ---
 
 @router.post("/api/posts", response_model=PostResponse)
@@ -110,6 +157,12 @@ def create_post(
     
     # 이미지 처리 (Base64 → URL 변환 또는 그대로 저장)
     processed_urls = [upload_base64_image(url, current_user.id) for url in req.image_urls]
+    place = None
+    if req.place_id:
+        place = db.query(models.Place).filter(models.Place.id == req.place_id).first()
+        if not place:
+            raise HTTPException(status_code=400, detail="Place not found")
+
     
     # 게시물 생성
     post = models.Post(
@@ -124,6 +177,7 @@ def create_post(
     db.commit()
     db.refresh(post)
     
+    place_summary = build_place_summary(place)
     return PostResponse(
         id=post.id,
         user_id=post.user_id,
@@ -132,6 +186,13 @@ def create_post(
         image_urls=post.image_urls,
         content=post.content,
         location_name=post.location_name,
+        place_id=place.id if place else None,
+        place_name=place.name if place else None,
+        place_category=(place.cuisine_type or place.category or "") if place else None,
+        place_address=(place.address or "") if place else None,
+        place_rating=(place.wemeet_rating or 0.0) if place else None,
+        place_review_count=(place.review_count or 0) if place else None,
+        place=place_summary,
         likes_count=0,
         comments_count=0,
         is_liked=False,
@@ -154,6 +215,12 @@ def get_posts(
         .offset(skip)\
         .limit(limit)\
         .all()
+    place_map = {}
+    place_ids = [p.place_id for p in posts if p.place_id]
+    if place_ids:
+        places = db.query(models.Place).filter(models.Place.id.in_(place_ids)).all()
+        place_map = {p.id: p for p in places}
+
     
     result = []
     for post in posts:
@@ -176,6 +243,8 @@ def get_posts(
         # 작성자 정보
         user = db.query(models.User).filter(models.User.id == post.user_id).first()
         
+        place = place_map.get(post.place_id) if post.place_id else None
+        place_summary = build_place_summary(place)
         result.append(PostResponse(
             id=post.id,
             user_id=post.user_id,
@@ -184,6 +253,13 @@ def get_posts(
             image_urls=post.image_urls or [],
             content=post.content,
             location_name=post.location_name,
+            place_id=post.place_id,
+            place_name=place.name if place else None,
+            place_category=(place.cuisine_type or place.category or "") if place else None,
+            place_address=(place.address or "") if place else None,
+            place_rating=(place.wemeet_rating or 0.0) if place else None,
+            place_review_count=(place.review_count or 0) if place else None,
+            place=place_summary,
             likes_count=post.likes_count,
             comments_count=post.comments_count,
             is_liked=is_liked,
@@ -207,9 +283,17 @@ def get_my_posts(
         .filter(models.Post.user_id == current_user.id)\
         .order_by(desc(models.Post.created_at))\
         .all()
+    place_map = {}
+    place_ids = [p.place_id for p in posts if p.place_id]
+    if place_ids:
+        places = db.query(models.Place).filter(models.Place.id.in_(place_ids)).all()
+        place_map = {p.id: p for p in places}
+
     
     result = []
     for post in posts:
+        place = place_map.get(post.place_id) if post.place_id else None
+        place_summary = build_place_summary(place)
         result.append(PostResponse(
             id=post.id,
             user_id=post.user_id,
@@ -218,6 +302,13 @@ def get_my_posts(
             image_urls=post.image_urls or [],
             content=post.content,
             location_name=post.location_name,
+            place_id=post.place_id,
+            place_name=place.name if place else None,
+            place_category=(place.cuisine_type or place.category or "") if place else None,
+            place_address=(place.address or "") if place else None,
+            place_rating=(place.wemeet_rating or 0.0) if place else None,
+            place_review_count=(place.review_count or 0) if place else None,
+            place=place_summary,
             likes_count=post.likes_count,
             comments_count=post.comments_count,
             is_liked=False,
@@ -257,6 +348,8 @@ def get_post(
     
     user = db.query(models.User).filter(models.User.id == post.user_id).first()
     
+    place = db.query(models.Place).filter(models.Place.id == post.place_id).first() if post.place_id else None
+    place_summary = build_place_summary(place)
     return PostResponse(
         id=post.id,
         user_id=post.user_id,
@@ -265,6 +358,13 @@ def get_post(
         image_urls=post.image_urls or [],
         content=post.content,
         location_name=post.location_name,
+        place_id=post.place_id,
+        place_name=place.name if place else None,
+        place_category=(place.cuisine_type or place.category or "") if place else None,
+        place_address=(place.address or "") if place else None,
+        place_rating=(place.wemeet_rating or 0.0) if place else None,
+        place_review_count=(place.review_count or 0) if place else None,
+        place=place_summary,
         likes_count=post.likes_count,
         comments_count=post.comments_count,
         is_liked=is_liked,

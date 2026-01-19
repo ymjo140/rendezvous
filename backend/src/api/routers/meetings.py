@@ -25,51 +25,158 @@ def autocomplete_hotspots(query: str = Query(..., min_length=1)):
 # 🌟 [수정] 장소 검색 API
 @router.get("/api/places/search")
 def search_places(
-    query: str = Query(..., min_length=1), 
+    query: str = Query(..., min_length=1),
     main_category: str = Query(None, description="RESTAURANT, CAFE, PUB, BUSINESS, CULTURE"),
+    db_only: bool = Query(False, description="Return DB results only when true"),
     db: Session = Depends(get_db)
 ):
-    # main_category가 있으면 DB에서 직접 검색
+    results = []
+    seen = set()
+
+    db_query = db.query(models.Place).filter(models.Place.name.ilike(f"%{query}%"))
     if main_category:
-        places = db.query(models.Place).filter(
-            models.Place.main_category == main_category.upper(),
-            models.Place.name.ilike(f"%{query}%")
-        ).limit(50).all()
-        
-        return [{
-            "id": p.id,
-            "title": p.name,
-            "address": p.address or "",
-            "category": p.cuisine_type or p.category or "",
-            "main_category": p.main_category,
-            "lat": p.lat,
-            "lng": p.lng,
-            "features": p.features or {},
-            "vibe_tags": p.vibe_tags or [],
-            "business_hours": p.business_hours or "",
-            "link": ""
-        } for p in places]
-    
-    # 기존 로직: data_provider 객체 사용
-    results = data_provider.search_places_all_queries([query], "", 0.0, 0.0, db=db)
-    
-    response = []
-    for place in results:
+        db_query = db_query.filter(models.Place.main_category == main_category.upper())
+
+    db_places = db_query.limit(50).all()
+    for p in db_places:
+        name = p.name or ""
+        if name and name not in seen:
+            seen.add(name)
+            results.append({
+                "id": p.id,
+                "name": name,
+                "title": name,
+                "address": p.address or "",
+                "category": p.cuisine_type or p.category or "",
+                "main_category": p.main_category,
+                "lat": p.lat,
+                "lng": p.lng,
+                "features": p.features or {},
+                "vibe_tags": p.vibe_tags or [],
+                "business_hours": p.business_hours or "",
+                "phone": p.phone or "",
+                "price_range": p.price_range or "",
+                "wemeet_rating": p.wemeet_rating or 0.0,
+                "review_count": p.review_count or 0,
+                "external_link": p.external_link or "",
+                "source": "db"
+            })
+
+    if db_only:
+        return results
+
+    ext_results = data_provider.search_places_all_queries([query], "", 0.0, 0.0, db=db)
+    for place in ext_results:
+        name = place.name or ""
+        if not name or name in seen:
+            continue
         lat = place.location[0] if isinstance(place.location, (list, tuple)) else place.location
         lng = place.location[1] if isinstance(place.location, (list, tuple)) else 0.0
-
-        response.append({
-            "title": place.name,
+        results.append({
+            "id": None,
+            "name": name,
+            "title": name,
             "address": place.address or "",
-            "category": place.category,
+            "category": place.category or "",
+            "main_category": "",
             "lat": lat,
             "lng": lng,
-            "link": "" 
+            "features": {},
+            "vibe_tags": [],
+            "business_hours": "",
+            "phone": "",
+            "price_range": "",
+            "wemeet_rating": 0.0,
+            "review_count": 0,
+            "external_link": "",
+            "source": "external"
         })
-    return response
+
+    return results
 
 
-# 🆕 카테고리별 장소 목록 API (비즈니스, 문화생활 등)
+@router.get("/api/places/{place_id}")
+def get_place_detail(
+    place_id: int,
+    reviews_limit: int = Query(20, le=50),
+    db: Session = Depends(get_db)
+):
+    place = db.query(models.Place).filter(models.Place.id == place_id).first()
+    if not place:
+        raise HTTPException(status_code=404, detail="Place not found")
+
+    reviews_query = db.query(models.Review).filter(models.Review.place_name == place.name)
+    total_reviews = reviews_query.count()
+    reviews = reviews_query.order_by(models.Review.created_at.desc()).limit(reviews_limit).all()
+
+    users_map = {}
+    user_ids = {r.user_id for r in reviews}
+    if user_ids:
+        users = db.query(models.User).filter(models.User.id.in_(user_ids)).all()
+        users_map = {u.id: u for u in users}
+
+    review_items = []
+    for r in reviews:
+        user = users_map.get(r.user_id)
+        review_items.append({
+            "id": r.id,
+            "user_id": r.user_id,
+            "user_name": user.name if user else "Unknown",
+            "rating": r.rating,
+            "scores": {
+                "taste": r.score_taste,
+                "service": r.score_service,
+                "price": r.score_price,
+                "vibe": r.score_vibe
+            },
+            "comment": r.comment,
+            "tags": r.tags or [],
+            "created_at": r.created_at.strftime("%Y-%m-%d")
+        })
+
+    avg_rating = place.wemeet_rating or 0.0
+    if total_reviews > 0:
+        avg_rating = sum(r.rating for r in reviews) / max(len(reviews), 1)
+
+    features = place.features or {}
+    raw_menus = features.get("menus") or features.get("menu") or []
+    menus = []
+    if isinstance(raw_menus, list):
+        for item in raw_menus:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("title") or ""
+                price = item.get("price")
+                menus.append({"name": name, "price": price})
+            elif isinstance(item, str):
+                menus.append({"name": item, "price": None})
+    elif isinstance(raw_menus, dict):
+        name = raw_menus.get("name") or raw_menus.get("title") or ""
+        menus.append({"name": name, "price": raw_menus.get("price")})
+
+    tags = []
+    for tag in (place.tags or []) + (place.vibe_tags or []):
+        if tag and tag not in tags:
+            tags.append(tag)
+
+    return {
+        "id": place.id,
+        "name": place.name,
+        "category": place.cuisine_type or place.category or "",
+        "main_category": place.main_category,
+        "address": place.address or "",
+        "lat": place.lat,
+        "lng": place.lng,
+        "rating": avg_rating,
+        "review_count": total_reviews if total_reviews > 0 else (place.review_count or 0),
+        "phone": place.phone or "",
+        "business_hours": place.business_hours or "",
+        "price_range": place.price_range or "",
+        "external_link": place.external_link or "",
+        "tags": tags,
+        "menus": menus,
+        "reviews": review_items
+    }
+
 @router.get("/api/places/by-category")
 def get_places_by_category(
     main_category: str = Query(..., description="RESTAURANT, CAFE, PUB, BUSINESS, CULTURE"),

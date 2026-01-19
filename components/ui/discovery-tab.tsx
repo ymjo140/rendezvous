@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { 
     Search, MapPin, Heart, MessageCircle, Share2, Star, ChevronLeft, 
     MoreHorizontal, Utensils, X, Phone, Clock, ChevronRight, Plus,
@@ -170,6 +171,7 @@ interface DiscoveryTabProps {
 }
 
 export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabProps = {}) {
+    const router = useRouter();
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedFeed, setSelectedFeed] = useState<any>(null);
     const [isPlaceModalOpen, setIsPlaceModalOpen] = useState(false);
@@ -183,6 +185,14 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
     const [newPostImages, setNewPostImages] = useState<string[]>([]);
     const [newPostContent, setNewPostContent] = useState("");
+    const [locationQuery, setLocationQuery] = useState("");
+    const [locationResults, setLocationResults] = useState<any[]>([]);
+    const [locationSearching, setLocationSearching] = useState(false);
+    const [selectedLocation, setSelectedLocation] = useState<any | null>(null);
+    const [placeQuery, setPlaceQuery] = useState("");
+    const [placeResults, setPlaceResults] = useState<any[]>([]);
+    const [placeSearching, setPlaceSearching] = useState(false);
+    const [selectedPlace, setSelectedPlace] = useState<any | null>(null);
     const [isPosting, setIsPosting] = useState(false);
     const [selectedFilter, setSelectedFilter] = useState("all");
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -241,7 +251,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             images: post.image_urls || [],
                             author: {
                                 id: post.user_id,
-                                name: post.user_name || "사용자",
+                                name: post.user_name || "??",
                                 avatar: post.user_name?.slice(0, 2) || "US",
                                 profileImage: ""
                             },
@@ -250,11 +260,9 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             comments: post.comments_count || 0,
                             isLiked: post.is_liked || false,
                             isSaved: post.is_saved || false,
-                            place: post.place_name ? {
-                                name: post.place_name,
-                                category: post.place_category || "장소",
-                                rating: 4.5
-                            } : null
+                            createdAt: post.created_at || "방금 전",
+                            locationName: post.location_name || null,
+                            place: formatPlaceFromPost(post)
                         };
                         
                         setSelectedFeed(formattedPost);
@@ -274,6 +282,56 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             fetchSharedPost();
         }
     }, [sharedPostId]);
+
+    useEffect(() => {
+        if (selectedLocation) {
+            setLocationResults([]);
+            return;
+        }
+        if (locationQuery.length < 2) {
+            setLocationResults([]);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            setLocationSearching(true);
+            try {
+                const res = await fetch(`${API_URL}/api/places/search?query=${encodeURIComponent(locationQuery)}`);
+                if (res.ok) {
+                    setLocationResults(await res.json());
+                }
+            } catch (error) {
+                console.error("Location search failed:", error);
+            } finally {
+                setLocationSearching(false);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [locationQuery, selectedLocation]);
+
+    useEffect(() => {
+        if (selectedPlace) {
+            setPlaceResults([]);
+            return;
+        }
+        if (placeQuery.length < 2) {
+            setPlaceResults([]);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            setPlaceSearching(true);
+            try {
+                const res = await fetch(`${API_URL}/api/places/search?query=${encodeURIComponent(placeQuery)}&db_only=true`);
+                if (res.ok) {
+                    setPlaceResults(await res.json());
+                }
+            } catch (error) {
+                console.error("Place search failed:", error);
+            } finally {
+                setPlaceSearching(false);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [placeQuery, selectedPlace]);
     
     // 🤖 AI 추천 불러오기 (공유된 게시물로 온 경우는 스킵)
     useEffect(() => {
@@ -308,6 +366,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const recordAiAction = async (actionType: string, placeId?: number, postId?: string) => {
         try {
             const token = localStorage.getItem("token");
+            const locationName = selectedLocation?.name || selectedLocation?.address || selectedPlace?.address || null;
             if (!token) return;
             
             // 새로운 벡터 AI API 호출
@@ -324,7 +383,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                     action_value: 1.0,
                     context: { 
                         source: "discovery_tab",
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date().toISOString(),
+                        location_name: locationName
                     }
                 })
             });
@@ -333,6 +393,96 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             // 실패해도 무시 (사용자 경험에 영향 없음)
             console.log("[AI] Action logging failed (non-critical):", error);
         }
+    };
+
+    const formatPlaceFromPost = (post: any) => {
+        if (post.place) {
+            const place = post.place;
+            const features = place.features || {};
+            const tags = place.tags || place.vibe_tags || features.tags || [];
+            const rawMenus = place.menus || place.menu || features.menus || features.menu || [];
+            const menus = Array.isArray(rawMenus)
+                ? rawMenus.map((item: any) => {
+                    if (typeof item === "string") return item;
+                    const name = item?.name || item?.title || "";
+                    const price = item?.price ? ` (${item.price})` : "";
+                    return `${name}${price}`.trim();
+                })
+                : [];
+            return {
+                id: place.id,
+                name: place.name,
+                category: place.category || "",
+                score: place.rating ?? place.wemeet_rating ?? place.score ?? 0,
+                address: place.address || "",
+                phone: place.phone || "",
+                openTime: place.business_hours || "",
+                menu: menus,
+                tags,
+                review_count: place.review_count || 0,
+                price_range: place.price_range || "",
+                external_link: place.external_link || ""
+            };
+        }
+        if (post.place_name) {
+            return {
+                id: post.place_id ?? null,
+                name: post.place_name,
+                category: post.place_category || "",
+                score: post.place_rating || 0,
+                address: post.place_address || "",
+                phone: "",
+                openTime: "",
+                menu: [],
+                tags: [],
+                review_count: post.place_review_count || 0,
+                price_range: "",
+                external_link: ""
+            };
+        }
+        return null;
+    };
+
+    const buildPlaceFromSelection = (place: any) => {
+        if (!place) return null;
+        return formatPlaceFromPost({ place });
+    };
+
+    const handleSelectLocation = (item: any) => {
+        setSelectedLocation(item);
+        setLocationQuery(item?.name || item?.title || item?.address || "");
+        setLocationResults([]);
+    };
+
+    const clearLocationSelection = () => {
+        setSelectedLocation(null);
+        setLocationQuery("");
+        setLocationResults([]);
+    };
+
+    const handleSelectPlace = (item: any) => {
+        setSelectedPlace(item);
+        setPlaceQuery(item?.name || item?.title || "");
+        setPlaceResults([]);
+    };
+
+    const clearPlaceSelection = () => {
+        setSelectedPlace(null);
+        setPlaceQuery("");
+        setPlaceResults([]);
+    };
+
+    const resetCreatePostDraft = () => {
+        setNewPostImages([]);
+        setNewPostContent("");
+        setLocationQuery("");
+        setLocationResults([]);
+        setLocationSearching(false);
+        setSelectedLocation(null);
+        setPlaceQuery("");
+        setPlaceResults([]);
+        setPlaceSearching(false);
+        setSelectedPlace(null);
     };
     
     // 💾 폴더 목록 불러오기
@@ -664,7 +814,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             images: post.image_urls || [],
                             author: { 
                                 id: post.user_id, 
-                                name: post.user_name || "사용자", 
+                                name: post.user_name || "??", 
                                 avatar: post.user_avatar || post.user_name?.slice(0, 2) || "US",
                                 profileImage: ""
                             },
@@ -674,19 +824,12 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             isLiked: post.is_liked || false,
                             isSaved: post.is_saved || false,
                             createdAt: post.created_at || "방금 전",
-                            place: post.location_name ? {
-                                id: null,
-                                name: post.location_name,
-                                category: "",
-                                score: 0,
-                                address: "",
-                                phone: "",
-                                openTime: "",
-                                menu: [],
-                                tags: []
-                            } : null
+                            locationName: post.location_name || null,
+                            place: formatPlaceFromPost(post)
                         }));
-                        setFeeds([...formattedPosts, ...MOCK_FEEDS]);
+                        setFeeds(formattedPosts);
+                    } else {
+                        setFeeds(MOCK_FEEDS);
                     }
                 }
             } catch (error) {
@@ -920,6 +1063,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         if (newPostImages.length === 0) return;
         
         setIsPosting(true);
+        const locationName = selectedLocation?.name || selectedLocation?.address || selectedPlace?.address || null;
+        const placePreview = buildPlaceFromSelection(selectedPlace);
         
         try {
             const token = localStorage.getItem("token");
@@ -935,13 +1080,14 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                     body: JSON.stringify({
                         image_urls: newPostImages,
                         content: newPostContent,
-                        location_name: null,
-                        place_id: null
+                        location_name: locationName,
+                        place_id: selectedPlace?.id || null
                     })
                 });
                 
                 if (res.ok) {
                     const createdPost = await res.json();
+                    const createdPlace = formatPlaceFromPost(createdPost) || placePreview;
                     const newPost = {
                         id: createdPost.id,
                         type: "image" as const,
@@ -958,30 +1104,30 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                         isLiked: false,
                         isSaved: false,
                         createdAt: createdPost.created_at || "방금 전",
-                        place: null as any
+                        locationName: createdPost.location_name || locationName,
+                        place: createdPlace as any
                     };
-                    setFeeds([newPost as any, ...feeds]);
+                    setFeeds(prev => [newPost as any, ...prev]);
                 } else {
                     // 실패 시 로컬에만 추가
-                    addLocalPost();
+                    addLocalPost(locationName, placePreview);
                 }
             } else {
                 // 토큰 없으면 로컬에만 추가
-                addLocalPost();
+                addLocalPost(locationName, placePreview);
             }
         } catch (error) {
             console.error("게시물 업로드 오류:", error);
-            addLocalPost();
+            addLocalPost(locationName, placePreview);
         }
         
-        setNewPostImages([]);
-        setNewPostContent("");
+        resetCreatePostDraft();
         setIsCreatePostOpen(false);
         setIsPosting(false);
     };
     
     // 로컬에만 게시물 추가 (비로그인 또는 API 실패 시)
-    const addLocalPost = () => {
+    const addLocalPost = (locationName: string | null, placePreview: any | null) => {
         const newPost = {
             id: `local_${Date.now()}`,
             type: "image" as const,
@@ -993,9 +1139,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             isLiked: false,
             isSaved: false,
             createdAt: "방금 전",
-            place: null as any
+            locationName,
+            place: placePreview as any
         };
-        setFeeds([newPost as any, ...feeds]);
+        setFeeds(prev => [newPost as any, ...prev]);
     };
 
     // 필터된 피드
@@ -1119,6 +1266,9 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 key={rec.place_id}
                                 onClick={() => {
                                     recordAiAction("CLICK", rec.place_id);
+                                    if (rec.place_id) {
+                                        router.push(`/places/${rec.place_id}`);
+                                    }
                                 }}
                                 className="flex-shrink-0 w-36 bg-white rounded-xl p-3 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all"
                             >
@@ -1236,9 +1386,11 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                     </Avatar>
                                     <div>
                                         <div className="font-semibold text-sm">{selectedFeed.author.name}</div>
-                                        {selectedFeed.place && (
+                                        {selectedFeed.place ? (
                                             <div className="text-xs text-gray-500">{selectedFeed.place.name}</div>
-                                        )}
+                                        ) : selectedFeed.locationName ? (
+                                            <div className="text-xs text-gray-500">{selectedFeed.locationName}</div>
+                                        ) : null}
                                     </div>
                                 </div>
                                 <Button variant="ghost" size="icon" onClick={() => {
@@ -1306,11 +1458,21 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                     {selectedFeed.content}
                                 </p>
                                 <p className="text-xs text-gray-400 mt-2">{selectedFeed.createdAt}</p>
+                                {selectedFeed.locationName && !selectedFeed.place && (
+                                    <div className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                                        <MapPin className="w-3 h-3" />
+                                        <span>{selectedFeed.locationName}</span>
+                                    </div>
+                                )}
                                 
                                 {/* 가게 정보 버튼 */}
                                 {selectedFeed.place && (
                                     <button 
                                         onClick={() => {
+                                            if (selectedFeed.place?.id) {
+                                                router.push(`/places/${selectedFeed.place.id}`);
+                                                return;
+                                            }
                                             setIsPlaceModalOpen(true);
                                             // 🤖 AI: 장소 상세 조회 기록
                                             const postId = typeof selectedFeed.id === "string" ? selectedFeed.id : undefined;
@@ -1398,16 +1560,21 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             </AnimatePresence>
 
             {/* 4. 게시물 작성 모달 */}
-            <Dialog open={isCreatePostOpen} onOpenChange={setIsCreatePostOpen}>
+            <Dialog
+                open={isCreatePostOpen}
+                onOpenChange={(open) => {
+                    if (!open) resetCreatePostDraft();
+                    setIsCreatePostOpen(open);
+                }}
+            >
                 <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden rounded-xl">
                     <DialogHeader className="p-4 border-b flex flex-row items-center justify-between">
                         <Button 
                             variant="ghost" 
                             size="sm" 
                             onClick={() => {
+                                resetCreatePostDraft();
                                 setIsCreatePostOpen(false);
-                                setNewPostImages([]);
-                                setNewPostContent("");
                             }}
                         >
                             취소
@@ -1527,22 +1694,141 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             className="resize-none border-none bg-gray-50 rounded-xl min-h-[100px] focus-visible:ring-0"
                         />
                         
-                        {/* 추가 옵션 */}
-                        <div className="mt-4 space-y-2">
-                            <button className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                                <div className="flex items-center gap-3">
-                                    <MapPin className="w-5 h-5 text-gray-400" />
-                                    <span className="text-sm">위치 추가</span>
+                        {/* 위치/장소 태그 */}
+                        <div className="mt-4 space-y-3">
+                            <div className="rounded-xl border border-gray-200 p-3">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                                    <MapPin className="w-4 h-4 text-gray-400" />
+                                    <span>위치</span>
                                 </div>
-                                <ChevronRight className="w-5 h-5 text-gray-400" />
-                            </button>
-                            <button className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                                <div className="flex items-center gap-3">
-                                    <Utensils className="w-5 h-5 text-gray-400" />
-                                    <span className="text-sm">장소 태그</span>
+                                {selectedLocation && (
+                                    <div className="mt-2 flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs">
+                                        <div className="min-w-0">
+                                            <div className="font-semibold text-gray-800 truncate">
+                                                {selectedLocation.name || selectedLocation.title || selectedLocation.address}
+                                            </div>
+                                            {selectedLocation.address && (
+                                                <div className="text-gray-500 truncate">{selectedLocation.address}</div>
+                                            )}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={clearLocationSelection}
+                                            className="ml-2 text-gray-400 hover:text-gray-600"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                )}
+                                <div className="mt-2">
+                                    <Input
+                                        placeholder="지역/역/주소 검색"
+                                        value={locationQuery}
+                                        onChange={(e) => {
+                                            if (selectedLocation) setSelectedLocation(null);
+                                            setLocationQuery(e.target.value);
+                                        }}
+                                        className="bg-gray-50 border-none h-10 text-sm rounded-xl"
+                                    />
                                 </div>
-                                <ChevronRight className="w-5 h-5 text-gray-400" />
-                            </button>
+                                {locationSearching && (
+                                    <p className="text-xs text-gray-400 mt-2">검색 중...</p>
+                                )}
+                                {!locationSearching && locationQuery.length >= 2 && locationResults.length === 0 && (
+                                    <p className="text-xs text-gray-400 mt-2">검색 결과가 없습니다.</p>
+                                )}
+                                {locationResults.length > 0 && (
+                                    <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-sm">
+                                        {locationResults.map((item: any, idx: number) => (
+                                            <button
+                                                type="button"
+                                                key={`${item.name || item.title || item.address}_${idx}`}
+                                                onClick={() => handleSelectLocation(item)}
+                                                className="w-full text-left px-3 py-2 flex items-start gap-2 hover:bg-gray-50"
+                                            >
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-medium text-gray-800 truncate">
+                                                        {item.name || item.title || item.address}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 truncate">
+                                                        {item.address || "주소 정보 없음"}
+                                                    </div>
+                                                </div>
+                                                {item.source && (
+                                                    <Badge variant="secondary" className="text-[10px] font-normal">
+                                                        {item.source === "db" ? "DB" : "외부"}
+                                                    </Badge>
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="rounded-xl border border-gray-200 p-3">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                                    <Utensils className="w-4 h-4 text-gray-400" />
+                                    <span>장소 태그</span>
+                                </div>
+                                {selectedPlace && (
+                                    <div className="mt-2 flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs">
+                                        <div className="min-w-0">
+                                            <div className="font-semibold text-gray-800 truncate">{selectedPlace.name}</div>
+                                            <div className="text-gray-500 truncate">{selectedPlace.address || "주소 정보 없음"}</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={clearPlaceSelection}
+                                            className="ml-2 text-gray-400 hover:text-gray-600"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                )}
+                                <div className="mt-2">
+                                    <Input
+                                        placeholder="장소 이름 검색"
+                                        value={placeQuery}
+                                        onChange={(e) => {
+                                            if (selectedPlace) setSelectedPlace(null);
+                                            setPlaceQuery(e.target.value);
+                                        }}
+                                        className="bg-gray-50 border-none h-10 text-sm rounded-xl"
+                                    />
+                                </div>
+                                {placeSearching && (
+                                    <p className="text-xs text-gray-400 mt-2">검색 중...</p>
+                                )}
+                                {!placeSearching && placeQuery.length >= 2 && placeResults.length === 0 && (
+                                    <p className="text-xs text-gray-400 mt-2">검색 결과가 없습니다.</p>
+                                )}
+                                {placeResults.length > 0 && (
+                                    <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-sm">
+                                        {placeResults.map((item: any, idx: number) => (
+                                            <button
+                                                type="button"
+                                                key={`${item.name || item.title}_${idx}`}
+                                                onClick={() => handleSelectPlace(item)}
+                                                className="w-full text-left px-3 py-2 flex items-start gap-2 hover:bg-gray-50"
+                                            >
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-medium text-gray-800 truncate">{item.name || item.title}</div>
+                                                    <div className="text-xs text-gray-500 truncate">{item.address || "주소 정보 없음"}</div>
+                                                    {item.category && (
+                                                        <div className="text-[10px] text-gray-400 mt-0.5">{item.category}</div>
+                                                    )}
+                                                </div>
+                                                {typeof item.wemeet_rating === "number" && (
+                                                    <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                                                        <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                                                        {item.wemeet_rating.toFixed(1)}
+                                                    </div>
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </DialogContent>
