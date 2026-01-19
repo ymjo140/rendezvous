@@ -342,7 +342,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             try {
                 setAiLoading(true);
                 const token = localStorage.getItem("token");
-                const res = await fetch(`${API_URL}/api/ai/recommendations?limit=6`, {
+                const res = await fetch(`${API_URL}/api/ai/recommendations?limit=30`, {
                     headers: token ? { Authorization: `Bearer ${token}` } : {}
                 });
                 
@@ -800,7 +800,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             try {
                 setIsLoading(true);
                 const token = localStorage.getItem("token");
-                const res = await fetch(`${API_URL}/api/posts?limit=20`, {
+                const res = await fetch(`${API_URL}/api/posts?limit=100`, {
                     headers: token ? { Authorization: `Bearer ${token}` } : {}
                 });
                 
