@@ -1,8 +1,8 @@
-"use client"
+﻿"use client"
 
-import { useEffect, useState } from "react"
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import {
   ChevronLeft,
   Clock,
@@ -13,9 +13,23 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://wemeet-backend-xqlo.onrender.com"
+const REVIEW_TAG_SUGGESTIONS = [
+  "맛있어요",
+  "친절해요",
+  "가성비",
+  "분위기좋음",
+  "웨이팅",
+  "재방문의사",
+  "가족모임",
+  "데이트",
+]
+const MAX_REVIEW_IMAGES = 3
+const MAX_REVIEW_IMAGE_MB = 2
 
 type PlaceReview = {
   id: number
@@ -23,6 +37,7 @@ type PlaceReview = {
   rating: number
   comment: string
   tags?: string[]
+  image_urls?: string[]
   created_at: string
   scores?: {
     taste?: number
@@ -59,6 +74,7 @@ const formatPrice = (price?: string | number | null) => {
 
 export default function PlaceDetailPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const rawPlaceId = params?.placeId
   const placeId = Array.isArray(rawPlaceId) ? rawPlaceId[0] : rawPlaceId
 
@@ -66,6 +82,22 @@ export default function PlaceDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const [scores, setScores] = useState({
+    taste: 4,
+    service: 4,
+    price: 4,
+    vibe: 4,
+  })
+  const [tagsInput, setTagsInput] = useState("")
+  const [comment, setComment] = useState("")
+  const [reason, setReason] = useState("")
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const [reviewSuccess, setReviewSuccess] = useState<string | null>(null)
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [reviewImages, setReviewImages] = useState<string[]>([])
+  const [reviewImageError, setReviewImageError] = useState<string | null>(null)
+  const reviewFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!placeId) return
@@ -100,6 +132,134 @@ export default function PlaceDetailPage() {
     load()
     return () => controller.abort()
   }, [placeId, retryKey])
+
+  useEffect(() => {
+    if (!place) return
+    if (searchParams?.get("review")) {
+      const target = document.getElementById("review-form")
+      target?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  }, [place, searchParams])
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag],
+    )
+  }
+
+  const handleReviewImageChange = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const files = Array.from(event.target.files || [])
+    if (!files.length) return
+
+    const remaining = MAX_REVIEW_IMAGES - reviewImages.length
+    const nextFiles = files.slice(0, Math.max(0, remaining))
+    if (files.length > remaining) {
+      setReviewImageError(`사진은 최대 ${MAX_REVIEW_IMAGES}장까지 첨부할 수 있어요.`)
+    } else {
+      setReviewImageError(null)
+    }
+
+    const results: string[] = []
+    for (const file of nextFiles) {
+      const maxBytes = MAX_REVIEW_IMAGE_MB * 1024 * 1024
+      if (file.size > maxBytes) {
+        setReviewImageError(`${MAX_REVIEW_IMAGE_MB}MB 이하 사진만 첨부할 수 있어요.`)
+        continue
+      }
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result || ""))
+        reader.onerror = () => reject(new Error("read_failed"))
+        reader.readAsDataURL(file)
+      }).catch(() => "")
+      if (dataUrl) results.push(dataUrl)
+    }
+
+    if (results.length > 0) {
+      setReviewImages((prev) => [...prev, ...results])
+    }
+
+    event.target.value = ""
+  }
+
+  const removeReviewImage = (index: number) => {
+    setReviewImages((prev) => prev.filter((_, idx) => idx !== index))
+  }
+
+  const handleReviewSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!place) return
+
+    const token = localStorage.getItem("token")
+    if (!token) {
+      setReviewError("로그인이 필요합니다.")
+      return
+    }
+
+    setReviewSubmitting(true)
+    setReviewError(null)
+    setReviewSuccess(null)
+
+    try {
+      const manualTags = tagsInput
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+      const tags = Array.from(new Set([...selectedTags, ...manualTags]))
+      const avgRating =
+        (scores.taste + scores.service + scores.price + scores.vibe) / 4
+
+      const res = await fetch(`${API_BASE_URL}/api/reviews`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          place_name: place.name,
+          rating: avgRating,
+          tags,
+          score_taste: scores.taste,
+          score_service: scores.service,
+          score_price: scores.price,
+          score_vibe: scores.vibe,
+          image_urls: reviewImages,
+          comment: comment || null,
+          reason: reason || null,
+        }),
+      })
+
+      if (!res.ok) {
+        setReviewError("리뷰 저장에 실패했습니다.")
+        return
+      }
+
+      setReviewSuccess("리뷰가 등록되었습니다.")
+      setTagsInput("")
+      setComment("")
+      setReason("")
+      setSelectedTags([])
+      setReviewImages([])
+      setReviewImageError(null)
+      setScores({ taste: 4, service: 4, price: 4, vibe: 4 })
+      setRetryKey((prev) => prev + 1)
+    } catch (err) {
+      setReviewError("네트워크 오류로 실패했습니다.")
+    } finally {
+      setReviewSubmitting(false)
+    }
+  }
+
+  const scoreItems = [
+    { key: "taste", label: "맛" },
+    { key: "service", label: "서비스" },
+    { key: "price", label: "가격" },
+    { key: "vibe", label: "분위기" },
+  ] as const
+  const averageScore =
+    (scores.taste + scores.service + scores.price + scores.vibe) / 4
 
   if (!placeId) {
     return (
@@ -257,6 +417,150 @@ export default function PlaceDetailPage() {
           )}
         </section>
 
+        <section
+          id="review-form"
+          className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
+        >
+          <h2 className="text-sm font-semibold text-gray-800">리뷰 작성</h2>
+          <form onSubmit={handleReviewSubmit} className="mt-3 space-y-4">
+            <div className="grid gap-3">
+              {scoreItems.map((item) => (
+                <div key={item.key} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span>{item.label}</span>
+                    <span className="font-semibold text-gray-700">
+                      {scores[item.key]}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    step={1}
+                    value={scores[item.key]}
+                    onChange={(event) =>
+                      setScores((prev) => ({
+                        ...prev,
+                        [item.key]: Number(event.target.value),
+                      }))
+                    }
+                    className="w-full accent-purple-500"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="text-xs text-gray-500">
+              평균 {averageScore.toFixed(1)}점
+            </div>
+            <div className="space-y-2">
+              <div className="text-xs text-gray-500">추천 태그</div>
+              <div className="flex flex-wrap gap-2">
+                {REVIEW_TAG_SUGGESTIONS.map((tag) => {
+                  const selected = selectedTags.includes(tag)
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleTag(tag)}
+                      className={`px-3 py-1 rounded-full text-xs border transition ${
+                        selected
+                          ? "bg-purple-600 text-white border-purple-600"
+                          : "bg-white text-gray-500 border-gray-200 hover:border-purple-200"
+                      }`}
+                    >
+                      #{tag}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <Input
+              placeholder="태그 입력 (쉼표로 구분)"
+              value={tagsInput}
+              onChange={(event) => setTagsInput(event.target.value)}
+              className="h-10 text-sm"
+            />
+            <Input
+              placeholder="한 줄 추천 포인트 (선택)"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              className="h-10 text-sm"
+            />
+            <Textarea
+              placeholder="리뷰 내용을 작성해 주세요 (선택)"
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              className="min-h-[100px] text-sm"
+            />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>사진 첨부 (최대 {MAX_REVIEW_IMAGES}장)</span>
+                <button
+                  type="button"
+                  onClick={() => reviewFileInputRef.current?.click()}
+                  className="text-purple-600"
+                >
+                  추가
+                </button>
+              </div>
+              <input
+                ref={reviewFileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleReviewImageChange}
+                className="hidden"
+              />
+              <div className="flex flex-wrap gap-2">
+                {reviewImages.map((src, idx) => (
+                  <div
+                    key={`${src}_${idx}`}
+                    className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200"
+                  >
+                    <img
+                      src={src}
+                      alt="리뷰 이미지"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeReviewImage(idx)}
+                      className="absolute top-1 right-1 bg-black/60 text-white text-[10px] rounded-full px-1.5 py-0.5"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                ))}
+                {reviewImages.length < MAX_REVIEW_IMAGES && (
+                  <button
+                    type="button"
+                    onClick={() => reviewFileInputRef.current?.click()}
+                    className="w-20 h-20 border border-dashed border-gray-200 rounded-lg text-xs text-gray-400 flex items-center justify-center"
+                  >
+                    + 추가
+                  </button>
+                )}
+              </div>
+              {reviewImageError && (
+                <p className="text-xs text-red-500">{reviewImageError}</p>
+              )}
+            </div>
+            {reviewError && (
+              <p className="text-xs text-red-500">{reviewError}</p>
+            )}
+            {reviewSuccess && (
+              <p className="text-xs text-green-600">{reviewSuccess}</p>
+            )}
+            <Button
+              type="submit"
+              className="w-full bg-purple-600 hover:bg-purple-700"
+              disabled={reviewSubmitting}
+            >
+              {reviewSubmitting ? "등록 중..." : "리뷰 등록"}
+            </Button>
+          </form>
+        </section>
+
         <section className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-gray-800">리뷰</h2>
           {place.reviews && place.reviews.length > 0 ? (
@@ -281,6 +585,18 @@ export default function PlaceDetailPage() {
                     <p className="mt-2 text-sm text-gray-700">
                       {review.comment}
                     </p>
+                  )}
+                  {review.image_urls && review.image_urls.length > 0 && (
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {review.image_urls.map((src, idx) => (
+                        <img
+                          key={`${review.id}_img_${idx}`}
+                          src={src}
+                          alt="리뷰 이미지"
+                          className="w-full h-20 object-cover rounded-lg border border-gray-100"
+                        />
+                      ))}
+                    </div>
                   )}
                   {review.tags && review.tags.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
@@ -332,3 +648,6 @@ export default function PlaceDetailPage() {
     </main>
   )
 }
+
+
+

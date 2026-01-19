@@ -225,6 +225,7 @@ class Review(Base):
     rating = Column(Float)
     comment = Column(String, nullable=True)
     tags = Column(JSON, default=[])
+    image_urls = Column(JSON, default=[])
     created_at = Column(DateTime, default=datetime.now)
     score_taste = Column(Integer, default=0)
     score_service = Column(Integer, default=0)

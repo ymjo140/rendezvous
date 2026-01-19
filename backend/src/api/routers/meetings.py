@@ -131,6 +131,7 @@ def get_place_detail(
             },
             "comment": r.comment,
             "tags": r.tags or [],
+            "image_urls": r.image_urls or [],
             "created_at": r.created_at.strftime("%Y-%m-%d")
         })
 

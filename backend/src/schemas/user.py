@@ -54,6 +54,7 @@ class ReviewCreate(BaseModel):
     place_name: str
     rating: float
     tags: List[str] = []
+    image_urls: List[str] = []
     score_taste: int
     score_service: int
     score_price: int

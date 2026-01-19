@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from typing import List
 from sqlalchemy.orm.attributes import flag_modified
 from fastapi import HTTPException
 
@@ -164,12 +165,24 @@ class UserService:
         return {"message": "친구 수락 완료"}
 
     # --- 리뷰 & 즐겨찾기 ---
+    def _normalize_image_urls(self, image_urls: List[str]):
+        normalized = []
+        for url in image_urls or []:
+            if not url:
+                continue
+            if url.startswith("http://") or url.startswith("https://") or url.startswith("data:image"):
+                normalized.append(url)
+            else:
+                normalized.append(f"data:image/jpeg;base64,{url}")
+        return normalized
+
     def create_review(self, db: Session, user: models.User, req: schemas.ReviewCreate):
         avg_rating = (req.score_taste + req.score_service + req.score_price + req.score_vibe) / 4.0
+        image_urls = self._normalize_image_urls(req.image_urls)
         db_review = models.Review(
             user_id=user.id, place_name=req.place_name, rating=avg_rating,
             score_taste=req.score_taste, score_service=req.score_service, score_price=req.score_price, score_vibe=req.score_vibe,
-            comment=req.comment, tags=req.tags, reason=req.reason
+            comment=req.comment, tags=req.tags, reason=req.reason, image_urls=image_urls
         )
         self.repo.create_review(db, db_review)
         
@@ -196,7 +209,7 @@ class UserService:
             result.append({
                 "id": r.id, "user_name": user.name if user else "알 수 없음", "rating": r.rating,
                 "scores": { "taste": r.score_taste, "service": r.score_service, "price": r.score_price, "vibe": r.score_vibe },
-                "comment": r.comment, "tags": r.tags, "created_at": r.created_at.strftime("%Y-%m-%d")
+                "comment": r.comment, "tags": r.tags, "image_urls": r.image_urls or [], "created_at": r.created_at.strftime("%Y-%m-%d")
             })
         return result
 

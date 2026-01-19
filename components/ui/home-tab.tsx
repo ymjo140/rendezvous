@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
@@ -550,9 +550,13 @@ export function HomeTab() {
     }
 
     const handlePlaceClick = (p: any) => {
+        if (p?.id) {
+            router.push(`/places/${p.id}`);
+            return;
+        }
         setSelectedPlace(p);
         setIsDetailOpen(true);
-        // 🌟 [Fix] lat, lng 사용
+        // ?? [Fix] lat, lng 사용
         drawPathsToTarget(p.lat, p.lng, currentDisplayRegion?.transit_info);
     };
 
@@ -752,7 +756,18 @@ export function HomeTab() {
                                 <Badge key={i} variant="secondary" className="bg-white border border-gray-200 text-gray-500">#{t}</Badge>
                             ))}
                         </div>
-                        <Button variant="outline" className="w-full">✍️ 리뷰 쓰고 AI 학습시키기</Button>
+                        <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => {
+                                if (selectedPlace?.id) {
+                                    setIsDetailOpen(false);
+                                    router.push(`/places/${selectedPlace.id}?review=1`);
+                                }
+                            }}
+                        >
+                            ✍️ 리뷰 쓰고 AI 학습시키기
+                        </Button>
                     </div>
                 </DialogContent>
             </Dialog>
@@ -818,3 +833,4 @@ function PlaceAutocomplete({ value, onChange, onSelect, placeholder }: any) {
         </div>
     )
 }
+
