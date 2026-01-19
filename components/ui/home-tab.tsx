@@ -549,10 +549,25 @@ export function HomeTab() {
         } catch (e) { alert("오류"); } finally { setInteractionLoading(false); }
     }
 
-    const handlePlaceClick = (p: any) => {
+    const handlePlaceClick = async (p: any) => {
         if (p?.id) {
             router.push(`/places/${p.id}`);
             return;
+        }
+        if (p?.name) {
+            try {
+                const res = await fetch(`${API_URL}/api/places/search?query=${encodeURIComponent(p.name)}&db_only=true`);
+                if (res.ok) {
+                    const matches = await res.json();
+                    const matched = matches.find((item: any) => item.name === p.name) || matches[0];
+                    if (matched?.id) {
+                        router.push(`/places/${matched.id}`);
+                        return;
+                    }
+                }
+            } catch (error) {
+                console.log("Place lookup failed:", error);
+            }
         }
         setSelectedPlace(p);
         setIsDetailOpen(true);
@@ -833,4 +848,5 @@ function PlaceAutocomplete({ value, onChange, onSelect, placeholder }: any) {
         </div>
     )
 }
+
 

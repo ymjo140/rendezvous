@@ -97,7 +97,7 @@ class MeetingService:
             filter_sql = " OR ".join(filter_clauses) if filter_clauses else "1=1"
 
             db_query = text(f"""
-                SELECT name, category, lat, lng, address, tags, wemeet_rating
+                SELECT id, name, category, lat, lng, address, tags, wemeet_rating
                 FROM places
                 WHERE (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) <= 2.0
                 AND ({filter_sql})
@@ -117,14 +117,14 @@ class MeetingService:
             place_candidates = []
             for row in db_rows:
                 try:
-                    loaded_tags = row[5] if isinstance(row[5], (list, dict)) else json.loads(row[5])
+                    loaded_tags = row[6] if isinstance(row[6], (list, dict)) else json.loads(row[6])
                 except:
                     loaded_tags = []
 
                 place_candidates.append(POI(
-                    id=0, name=row[0], category=row[1], tags=loaded_tags,
-                    location=np.array([row[2], row[3]]), price_level=1,
-                    avg_rating=float(row[6] or 0.0), address=row[4]
+                    id=int(row[0]), name=row[1], category=row[2], tags=loaded_tags,
+                    location=np.array([row[3], row[4]]), price_level=1,
+                    avg_rating=float(row[7] or 0.0), address=row[5]
                 ))
 
             if search_queries and len(place_candidates) < 5:
@@ -145,7 +145,15 @@ class MeetingService:
                     "region_name": r["name"],
                     "center": {"lat": r["lat"], "lng": r["lng"]},
                     "travel_times": r.get("travel_times", []),
-                    "places": [{"name": p.name, "address": p.address, "category": p.category, "lat": float(p.location[0]), "lng": float(p.location[1]), "wemeet_rating": p.avg_rating} for p in ranked]
+                    "places": [{
+                        "id": p.id,
+                        "name": p.name,
+                        "address": p.address,
+                        "category": p.category,
+                        "lat": float(p.location[0]),
+                        "lng": float(p.location[1]),
+                        "wemeet_rating": p.avg_rating
+                    } for p in ranked]
                 })
         return results
 
