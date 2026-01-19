@@ -14,6 +14,7 @@ import { motion, AnimatePresence } from "framer-motion"
 // --- 1. 의존성 컴포넌트 및 유틸리티 ---
 
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
+const HOME_STATE_KEY = "home_tab_state_v1";
 
 const PlaceCard = ({ place, onClick }: { place: any, onClick: () => void }) => (
     <div className="bg-white p-4 rounded-xl shadow-sm border flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors" onClick={onClick}>
@@ -146,6 +147,60 @@ export function HomeTab() {
     const [selectedPurpose, setSelectedPurpose] = useState("식사")
     const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({ PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] });
     const [myProfile, setMyProfile] = useState<any>(null)
+
+    const persistSearchState = () => {
+        if (typeof window === "undefined") return;
+        if (!recommendations.length) return;
+        try {
+            const payload = {
+                recommendations,
+                currentDisplayRegion,
+                activeTabIdx,
+                selectedPurpose,
+                selectedFilters,
+                manualInputs,
+                selectedFriends,
+                includeMe,
+                searchQuery
+            };
+            sessionStorage.setItem(HOME_STATE_KEY, JSON.stringify(payload));
+        } catch (error) {
+            console.log("Failed to persist search state:", error);
+        }
+    };
+
+    const restoreSearchState = () => {
+        if (typeof window === "undefined") return;
+        const raw = sessionStorage.getItem(HOME_STATE_KEY);
+        if (!raw) return;
+        try {
+            const saved = JSON.parse(raw);
+            if (Array.isArray(saved.recommendations) && saved.recommendations.length > 0) {
+                setRecommendations(saved.recommendations);
+                const restoredIdx = typeof saved.activeTabIdx === "number" ? saved.activeTabIdx : 0;
+                setActiveTabIdx(restoredIdx);
+                if (saved.currentDisplayRegion) {
+                    setCurrentDisplayRegion(saved.currentDisplayRegion);
+                } else {
+                    setCurrentDisplayRegion(saved.recommendations[restoredIdx] || null);
+                }
+            }
+            if (saved.selectedPurpose) setSelectedPurpose(saved.selectedPurpose);
+            if (saved.selectedFilters) setSelectedFilters(saved.selectedFilters);
+            if (Array.isArray(saved.manualInputs) && saved.manualInputs.length > 0) {
+                setManualInputs(saved.manualInputs);
+            }
+            if (Array.isArray(saved.selectedFriends)) setSelectedFriends(saved.selectedFriends);
+            if (typeof saved.includeMe === "boolean") setIncludeMe(saved.includeMe);
+            if (typeof saved.searchQuery === "string") setSearchQuery(saved.searchQuery);
+        } catch (error) {
+            console.log("Failed to restore search state:", error);
+        }
+    };
+
+    useEffect(() => {
+        restoreSearchState();
+    }, []);
 
     // Refs
     const mapRef = useRef<any>(null)
@@ -550,6 +605,7 @@ export function HomeTab() {
     }
 
     const handlePlaceClick = async (p: any) => {
+        persistSearchState();
         if (p?.id) {
             router.push(`/places/${p.id}`);
             return;
@@ -657,7 +713,20 @@ export function HomeTab() {
                         <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4" />
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="font-bold text-lg">추천 지역</h3>
-                            <button onClick={() => { setRecommendations([]); setManualInputs([{ text: "" }]); }} className="text-xs text-gray-400">다시 찾기</button>
+                            <button
+                                onClick={() => {
+                                    setRecommendations([]);
+                                    setManualInputs([{ text: "" }]);
+                                    setCurrentDisplayRegion(null);
+                                    setActiveTabIdx(0);
+                                    if (typeof window !== "undefined") {
+                                        sessionStorage.removeItem(HOME_STATE_KEY);
+                                    }
+                                }}
+                                className="text-xs text-gray-400"
+                            >
+                                다시 찾기
+                            </button>
                         </div>
 
                         {/* 지역 선택 탭 */}
@@ -776,6 +845,7 @@ export function HomeTab() {
                             className="w-full"
                             onClick={() => {
                                 if (selectedPlace?.id) {
+                                    persistSearchState();
                                     setIsDetailOpen(false);
                                     router.push(`/places/${selectedPlace.id}?review=1`);
                                 }
