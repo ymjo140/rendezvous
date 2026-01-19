@@ -7,6 +7,7 @@ AI 추천 서비스
 """
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import func, desc
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta
@@ -24,14 +25,16 @@ class AIRecommendationService:
     # 행동별 가중치
     ACTION_WEIGHTS = {
         ActionType.VIEW.value: 1.0,
-        ActionType.CLICK.value: 2.0,
+        ActionType.CLICK.value: 1.0,
         ActionType.LIKE.value: 3.0,
-        ActionType.SAVE.value: 4.0,
+        ActionType.SAVE.value: 5.0,
         ActionType.REVIEW.value: 5.0,
         ActionType.VISIT.value: 5.0,
         ActionType.SHARE.value: 3.0,
+        ActionType.RESERVE.value: 10.0,
     }
-    
+    THRESHOLD_SCORE = 50
+
     def __init__(self):
         self.min_actions_for_personalization = 5  # 개인화 추천 최소 행동 수
         self.recommendation_count = 10  # 기본 추천 개수
@@ -39,30 +42,77 @@ class AIRecommendationService:
     # === 사용자 행동 기록 ===
     
     def record_action(
-        self, 
-        db: Session, 
-        user_id: int, 
+        self,
+        db: Session,
+        user_id: int,
         action_type: str,
         place_id: Optional[int] = None,
         action_value: float = 1.0,
-        context: Dict = None
+        context: Dict = None,
+        weight_score: Optional[int] = None,
+        update_preference: bool = True
     ) -> UserAction:
         """사용자 행동 기록"""
+        normalized_type = (action_type or "").lower()
+        score = int(weight_score) if weight_score is not None else int(
+            self.ACTION_WEIGHTS.get(normalized_type, 1.0)
+        )
         action = UserAction(
             user_id=user_id,
             place_id=place_id,
-            action_type=action_type,
+            action_type=normalized_type,
             action_value=action_value,
+            weight_score=score,
             context=context or {}
         )
         db.add(action)
+
+        user = db.query(User).filter(User.id == user_id).first()
+        if user and score > 0:
+            user.interaction_score = (user.interaction_score or 0) + score
+            if user.ml_status == "STARTER" and user.interaction_score >= self.THRESHOLD_SCORE:
+                user.ml_status = "PRO"
+
         db.commit()
         db.refresh(action)
-        
-        # 선호도 벡터 업데이트 (비동기로 처리하면 더 좋음)
-        if place_id:
+
+        # 선호도 벡터 업데이트 (부정 행동은 제외)
+        if place_id and update_preference and score > 0:
             self._update_user_preference(db, user_id)
         
+        return action
+
+    def record_negative_feedback(
+        self,
+        db: Session,
+        user_id: int,
+        place_id: int,
+        reason: str = "BAD_REVIEW",
+        context: Dict = None
+    ) -> UserAction:
+        """부정 피드백 처리: 블랙리스트 + 로그 기록"""
+        normalized_reason = (reason or "BAD_REVIEW").lower()
+        weight = -10 if normalized_reason == ActionType.BAD_REVIEW.value else -5
+        action = self.record_action(
+            db=db,
+            user_id=user_id,
+            action_type=normalized_reason,
+            place_id=place_id,
+            action_value=weight,
+            weight_score=weight,
+            context=context,
+            update_preference=False
+        )
+
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            blacklist = list(user.blacklisted_place_ids) if user.blacklisted_place_ids else []
+            if place_id not in blacklist:
+                blacklist.append(place_id)
+                user.blacklisted_place_ids = blacklist
+                flag_modified(user, "blacklisted_place_ids")
+
+        db.commit()
         return action
     
     # === 추천 알고리즘 ===
@@ -74,33 +124,41 @@ class AIRecommendationService:
         purpose: str = None,
         limit: int = 10,
         exclude_place_ids: List[int] = None
-    ) -> List[Dict]:
+    ) -> Tuple[List[Dict], str]:
         """
         하이브리드 추천 - 상황에 따라 적절한 알고리즘 선택
         """
         exclude_place_ids = exclude_place_ids or []
-        
-        # 사용자 행동 수 확인
-        action_count = db.query(func.count(UserAction.id))\
-            .filter(UserAction.user_id == user_id)\
-            .scalar()
-        
-        if action_count < self.min_actions_for_personalization:
-            # Cold Start: 인기도 기반 + 규칙 기반
+        user = db.query(User).filter(User.id == user_id).first()
+
+        if user and user.blacklisted_place_ids:
+            exclude_place_ids = list(set(exclude_place_ids + list(user.blacklisted_place_ids)))
+
+        if not user:
             algorithm = "popular"
             recommendations = self._get_popular_recommendations(
                 db, purpose, limit, exclude_place_ids
             )
+        elif user.ml_status == "PRO":
+            algorithm = "pro_collab"
+            recommendations = self._get_collaborative_recommendations(
+                db, user_id, limit, exclude_place_ids
+            )
+            if not recommendations:
+                algorithm = "pro_content"
+                recommendations = self._get_content_based_recommendations(
+                    db, user_id, purpose, limit, exclude_place_ids
+                )
         else:
-            # 하이브리드: 콘텐츠 기반 + 협업 필터링
-            algorithm = "hybrid"
-            content_recs = self._get_content_based_recommendations(
-                db, user_id, purpose, limit * 2, exclude_place_ids
+            algorithm = "starter"
+            recommendations = self._get_starter_recommendations(
+                db, user_id, purpose, limit, exclude_place_ids
             )
-            collab_recs = self._get_collaborative_recommendations(
-                db, user_id, limit * 2, exclude_place_ids
-            )
-            recommendations = self._merge_recommendations(content_recs, collab_recs, limit)
+            if not recommendations:
+                algorithm = "popular"
+                recommendations = self._get_popular_recommendations(
+                    db, purpose, limit, exclude_place_ids
+                )
         
         # 추천 로그 기록
         self._log_recommendation(
@@ -110,7 +168,35 @@ class AIRecommendationService:
             {"purpose": purpose}
         )
         
-        return recommendations
+        return recommendations, algorithm
+
+    def _get_starter_recommendations(
+        self,
+        db: Session,
+        user_id: int,
+        purpose: str = None,
+        limit: int = 10,
+        exclude_place_ids: List[int] = None
+    ) -> List[Dict]:
+        """Starter 엔진: 인기 + 콘텐츠 기반 하이브리드"""
+        exclude_place_ids = exclude_place_ids or []
+        content_recs = self._get_content_based_recommendations(
+            db, user_id, purpose, limit * 2, exclude_place_ids
+        )
+        popular_recs = self._get_popular_recommendations(
+            db, purpose, limit * 2, exclude_place_ids
+        )
+
+        if not content_recs:
+            return popular_recs[:limit]
+        if not popular_recs:
+            return content_recs[:limit]
+
+        merged = self._merge_recommendations(content_recs, popular_recs, limit)
+        for rec in merged:
+            if rec.get("collab_score", 0) > 0 and rec.get("content_score", 0) > 0:
+                rec["reason"] = "취향 + 인기"
+        return merged
     
     def _get_popular_recommendations(
         self,
@@ -391,7 +477,8 @@ class AIRecommendationService:
         recent_actions = db.query(UserAction)\
             .filter(
                 UserAction.user_id == user_id,
-                UserAction.place_id.isnot(None)
+                UserAction.place_id.isnot(None),
+                UserAction.weight_score > 0
             ).order_by(desc(UserAction.created_at))\
             .limit(100)\
             .all()
@@ -429,7 +516,13 @@ class AIRecommendationService:
                 continue
             
             pv = pv_dict[action.place_id]
-            weight = self.ACTION_WEIGHTS.get(action.action_type, 1.0) * action.action_value
+            base_weight = action.weight_score
+            if base_weight is None:
+                base_weight = self.ACTION_WEIGHTS.get(action.action_type, 1.0)
+            action_value = action.action_value if action.action_value is not None else 1.0
+            weight = float(base_weight) * float(action_value)
+            if weight <= 0:
+                continue
             total_weight += weight
             
             vec = self._extract_place_vector(pv)

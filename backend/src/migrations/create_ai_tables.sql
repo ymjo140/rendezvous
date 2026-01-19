@@ -9,8 +9,9 @@ CREATE TABLE IF NOT EXISTS user_actions (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     place_id INTEGER REFERENCES places(id) ON DELETE SET NULL,
     
-    action_type VARCHAR(50) NOT NULL,  -- view, click, like, save, review, visit, share, search
+    action_type VARCHAR(50) NOT NULL,  -- view, click, like, save, review, visit, share, search, reserve, dismiss, bad_review
     action_value FLOAT DEFAULT 1.0,
+    weight_score INTEGER DEFAULT 1,
     
     context JSONB DEFAULT '{}'::jsonb,
     session_id VARCHAR(100),

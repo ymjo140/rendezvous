@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://wemeet-backend-xqlo.onrender.com";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://wemeet-backend-xqlo.onrender.com";
 
 export const fetchWithAuth = async (endpoint: string, options: RequestInit = {}) => {
     const token = localStorage.getItem("token");
@@ -20,4 +20,20 @@ export const fetchWithAuth = async (endpoint: string, options: RequestInit = {})
     }
 
     return response;
+};
+
+export const fetchJson = async <T>(endpoint: string, options: RequestInit = {}) => {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+    if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+    }
+    return response.json() as Promise<T>;
+};
+
+export const fetchWithAuthJson = async <T>(endpoint: string, options: RequestInit = {}) => {
+    const response = await fetchWithAuth(endpoint, options);
+    if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+    }
+    return response.json() as Promise<T>;
 };

@@ -37,6 +37,9 @@ class User(Base):
     preferences = Column(JSON, default={})
     preference_vector = Column(JSON, default={})
     favorites = Column(JSON, default=[])
+    ml_status = Column(String, default="STARTER")
+    interaction_score = Column(Integer, default=0)
+    blacklisted_place_ids = Column(JSON, default=[])
     wallet_balance = Column(Integer, default=0)
     
     review_count = Column(Integer, default=0)
@@ -398,6 +401,9 @@ class ActionType(str, enum.Enum):
     VISIT = "visit"         # 실제 방문
     SHARE = "share"         # 공유
     SEARCH = "search"       # 검색
+    RESERVE = "reserve"     # 예약
+    DISMISS = "dismiss"     # 관심 없음
+    BAD_REVIEW = "bad_review"  # 부정 리뷰
 
 
 class UserAction(Base):
@@ -409,6 +415,7 @@ class UserAction(Base):
     
     action_type = Column(String, nullable=False, index=True)  # ActionType enum 값
     action_value = Column(Float, default=1.0)  # 행동 가중치 (리뷰 점수 등)
+    weight_score = Column(Integer, default=1)  # 행동 점수 (양수/음수)
     
     # 컨텍스트 정보
     context = Column(JSON, default={})  # 시간대, 날씨, 동행자 수 등

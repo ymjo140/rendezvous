@@ -13,11 +13,13 @@ from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 
-from core.database import get_db
+from core.database import get_db, SessionLocal
 from domain import models
 from api.dependencies import get_current_user
+from services.ai_recommendation_service import AIRecommendationService
 
 router = APIRouter()
+ai_service = AIRecommendationService()
 
 
 # ========================================
@@ -87,6 +89,43 @@ def get_current_context() -> dict:
             "day_of_week": now.weekday(),
             "is_weekend": now.weekday() >= 5
         }
+
+
+def _record_ai_action_background(
+    user_id: int,
+    action_type: str,
+    place_id: Optional[int],
+    action_value: float,
+    context: dict
+):
+    """Bridge vector interactions to AI recommendation actions."""
+    if place_id is None:
+        return
+
+    db = SessionLocal()
+    try:
+        normalized_type = (action_type or "").lower()
+        if normalized_type in ["dismiss", "bad_review"]:
+            ai_service.record_negative_feedback(
+                db=db,
+                user_id=user_id,
+                place_id=place_id,
+                reason=normalized_type,
+                context=context
+            )
+        elif normalized_type:
+            ai_service.record_action(
+                db=db,
+                user_id=user_id,
+                action_type=normalized_type,
+                place_id=place_id,
+                action_value=action_value,
+                context=context
+            )
+    except Exception as e:
+        print(f"[ERROR] AI action sync failed: {e}")
+    finally:
+        db.close()
 
 
 # ========================================
@@ -304,7 +343,10 @@ def log_interaction(
             raise HTTPException(status_code=401, detail="Login required")
         
         # Validation
-        valid_actions = ["VIEW", "CLICK", "LIKE", "SAVE", "SHARE", "DISMISS", "DWELL", "REVIEW"]
+        valid_actions = [
+            "VIEW", "CLICK", "LIKE", "SAVE", "SHARE",
+            "DISMISS", "DWELL", "REVIEW", "RESERVE", "BAD_REVIEW"
+        ]
         action_type = req.action_type.upper()
         if action_type not in valid_actions:
             raise HTTPException(
@@ -335,6 +377,16 @@ def log_interaction(
         db.add(log)
         db.commit()
         db.refresh(log)
+
+        # Sync action to AI recommendation engine
+        background_tasks.add_task(
+            _record_ai_action_background,
+            user_id=current_user.id,
+            action_type=action_type,
+            place_id=req.place_id,
+            action_value=req.action_value,
+            context=context
+        )
         
         # Update user embedding in background (async)
         def update_embedding_async():
@@ -346,7 +398,7 @@ def log_interaction(
                 print(f"[ERROR] Async embedding update failed: {e}")
         
         # Only update on important actions
-        if action_type in ["LIKE", "SAVE", "SHARE", "REVIEW"]:
+        if action_type in ["LIKE", "SAVE", "SHARE", "REVIEW", "RESERVE"]:
             background_tasks.add_task(update_embedding_async)
         
         return InteractionLogResponse(

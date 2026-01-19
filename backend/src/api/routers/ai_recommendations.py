@@ -35,14 +35,26 @@ def _record_action_background(
     """
     db = SessionLocal()
     try:
-        ai_service.record_action(
-            db=db,
-            user_id=user_id,
-            action_type=action_type,
-            place_id=place_id,
-            action_value=action_value,
-            context=context
-        )
+        normalized_type = (action_type or "").lower()
+        if normalized_type in ["dismiss", "bad_review"]:
+            if place_id is None:
+                return
+            ai_service.record_negative_feedback(
+                db=db,
+                user_id=user_id,
+                place_id=place_id,
+                reason=normalized_type,
+                context=context
+            )
+        else:
+            ai_service.record_action(
+                db=db,
+                user_id=user_id,
+                action_type=normalized_type,
+                place_id=place_id,
+                action_value=action_value,
+                context=context
+            )
         print(f"[BG] Action recorded: user={user_id}, type={action_type}, place={place_id}")
     except Exception as e:
         print(f"[BG] Action record failed: {e}")
@@ -80,7 +92,7 @@ def _log_recommendation_background(
 # === Pydantic Schemas ===
 
 class ActionRequest(BaseModel):
-    action_type: str  # view, click, like, save, review, visit, share
+    action_type: str  # view, click, like, save, review, visit, share, reserve, dismiss, bad_review
     place_id: Optional[int] = None
     action_value: float = 1.0
     context: dict = {}
@@ -134,7 +146,10 @@ async def record_user_action(
     if not current_user:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     
-    valid_actions = ["view", "click", "like", "save", "review", "visit", "share", "search"]
+    valid_actions = [
+        "view", "click", "like", "save", "review", "visit",
+        "share", "search", "reserve", "dismiss", "bad_review"
+    ]
     if req.action_type.lower() not in valid_actions:
         raise HTTPException(
             status_code=400, 
@@ -202,14 +217,13 @@ def get_recommendations(
     
     try:
         if user_id > 0:
-            recommendations = ai_service.get_recommendations(
+            recommendations, algorithm = ai_service.get_recommendations(
                 db=db,
                 user_id=user_id,
                 purpose=purpose,
                 limit=limit,
                 exclude_place_ids=exclude_place_ids
             )
-            algorithm = "hybrid" if len(recommendations) > 0 else "popular"
         else:
             recommendations = ai_service._get_popular_recommendations(
                 db=db,
