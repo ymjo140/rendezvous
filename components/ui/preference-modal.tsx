@@ -43,7 +43,7 @@ export function PreferenceModal({ isOpen, onClose, onComplete }: PreferenceModal
   const handleSave = async () => {
       const token = localStorage.getItem("token");
       try {
-          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me/preferences", {
+          const res = await fetch("https://subsidiary-women-creator-truly.trycloudflare.com/api/users/me/preferences", {
               method: "PUT",
               headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify(selections)

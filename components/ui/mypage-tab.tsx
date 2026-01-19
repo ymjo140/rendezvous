@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -43,7 +43,7 @@ interface UserInfo {
     preferences?: any;
 }
 
-const API_URL = "https://wemeet-backend-xqlo.onrender.com";
+const API_URL = "https://subsidiary-women-creator-truly.trycloudflare.com";
 
 // 게시물 타입 정의
 interface PostItem {

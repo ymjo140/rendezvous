@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import React, { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
@@ -36,7 +36,7 @@ interface ChatRoom {
 }
 
 // --- API URL ---
-const API_URL = "https://wemeet-backend-xqlo.onrender.com";
+const API_URL = "https://subsidiary-women-creator-truly.trycloudflare.com";
 
 // --- 더미 데이터 (SNS 게시물 + 가게 정보 연동) ---
 const MOCK_FEEDS = [
