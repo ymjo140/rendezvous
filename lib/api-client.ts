@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://subsidiary-women-creator-truly.trycloudflare.com";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://survivor-sold-fiscal-manner.trycloudflare.com";
 
 export const fetchWithAuth = async (endpoint: string, options: RequestInit = {}) => {
     const token = localStorage.getItem("token");

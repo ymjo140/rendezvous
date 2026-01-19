@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
 import { Card } from "@/components/ui/card"
 
-const API_URL = "https://subsidiary-women-creator-truly.trycloudflare.com";
+const API_URL = "https://survivor-sold-fiscal-manner.trycloudflare.com";
 
 // --- 상수 데이터 ---
 const FOOD_TAGS = ["한식", "일식", "중식", "양식", "분식", "아시안", "패스트푸드", "카페/디저트"]
