@@ -1,6 +1,16 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { notFound } from "next/navigation"
-import { ChevronLeft, Clock, ExternalLink, MapPin, Phone, Star } from "lucide-react"
+import { useParams } from "next/navigation"
+import {
+  ChevronLeft,
+  Clock,
+  ExternalLink,
+  MapPin,
+  Phone,
+  Star,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 
@@ -47,25 +57,98 @@ const formatPrice = (price?: string | number | null) => {
   return price
 }
 
-const fetchPlaceDetail = async (placeId: string): Promise<PlaceDetail | null> => {
-  const res = await fetch(`${API_BASE_URL}/api/places/${placeId}`, {
-    cache: "no-store",
-  })
-  if (!res.ok) return null
-  return res.json()
-}
+export default function PlaceDetailPage() {
+  const params = useParams()
+  const rawPlaceId = params?.placeId
+  const placeId = Array.isArray(rawPlaceId) ? rawPlaceId[0] : rawPlaceId
 
-export default async function PlaceDetailPage({
-  params,
-}: {
-  params: { placeId: string }
-}) {
-  const placeId = params.placeId
-  const numericId = Number(placeId)
-  if (!Number.isFinite(numericId)) notFound()
+  const [place, setPlace] = useState<PlaceDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
 
-  const place = await fetchPlaceDetail(placeId)
-  if (!place) notFound()
+  useEffect(() => {
+    if (!placeId) return
+    const controller = new AbortController()
+
+    const load = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/places/${placeId}`, {
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          setError("not_found")
+          setPlace(null)
+          return
+        }
+        const data = await res.json()
+        setPlace(data)
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setError("network")
+          setPlace(null)
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    load()
+    return () => controller.abort()
+  }, [placeId, retryKey])
+
+  if (!placeId) {
+    return (
+      <main className="min-h-screen bg-gray-50 font-['Pretendard'] flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <p className="text-sm text-gray-500">잘못된 접근입니다.</p>
+          <Link href="/" className="text-sm text-purple-600">
+            홈으로 이동
+          </Link>
+        </div>
+      </main>
+    )
+  }
+
+  if (loading && !place) {
+    return (
+      <main className="min-h-screen bg-gray-50 font-['Pretendard'] flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-purple-500 border-t-transparent mx-auto"></div>
+          <p className="text-sm text-gray-500">장소 정보를 불러오는 중...</p>
+        </div>
+      </main>
+    )
+  }
+
+  if (!place) {
+    return (
+      <main className="min-h-screen bg-gray-50 font-['Pretendard'] flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <p className="text-sm text-gray-500">
+            장소 정보를 불러오지 못했어요.
+          </p>
+          <button
+            type="button"
+            onClick={() => setRetryKey((prev) => prev + 1)}
+            className="text-sm text-purple-600"
+          >
+            다시 시도
+          </button>
+          <Link href="/" className="block text-xs text-gray-400">
+            홈으로 이동
+          </Link>
+          {error && (
+            <p className="text-[11px] text-gray-300">오류 코드: {error}</p>
+          )}
+        </div>
+      </main>
+    )
+  }
 
   const rating = Number(place.rating || 0).toFixed(1)
   const reviewCount = place.review_count || 0
@@ -230,7 +313,10 @@ export default async function PlaceDetailPage({
               <a href={`tel:${place.phone}`}>전화</a>
             </Button>
           )}
-          <Button className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600" asChild>
+          <Button
+            className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+            asChild
+          >
             <a href={reservationLink} target="_blank" rel="noreferrer">
               {reservationLabel}
               <ExternalLink className="w-4 h-4 ml-2" />
