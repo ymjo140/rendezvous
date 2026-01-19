@@ -16,7 +16,7 @@ import { placeApi } from "@/lib/place-api"
 import { useMapLogic } from "@/hooks/use-map-logic"
 import { useRecommendation } from "@/hooks/use-recommendation"
 
-// --- 1. ÀÇÁ¸¼º ÄÄÆ÷³ÍÆ® ¹× À¯Æ¿¸®Æ¼ ---
+// --- 1. ì˜ì¡´ì„± ì»´í¬ë„ŒíŠ¸ ë° ìœ í‹¸ë¦¬í‹° ---
 
 const HOME_STATE_KEY = "home_tab_state_v1";
 
@@ -25,89 +25,89 @@ const PlaceCard = ({ place, onClick }: { place: any, onClick: () => void }) => (
         <div className="flex-1">
             <div className="font-bold text-gray-800 flex items-center gap-2">
                 {place.name || place.title}
-                {/* ?? ¹é¿£µå¿¡¼­ ¿Â Á¡¼ö°¡ ÀÖÀ¸¸é Ç¥½Ã (wemeet_rating or score) */}
+                {/* ?? ë°±ì—”ë“œì—ì„œ ì˜¨ ì ìˆ˜ê°€ ìˆìœ¼ë©´ í‘œì‹œ (wemeet_rating or score) */}
                 <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
-                    {place.wemeet_rating ? `¡Ú${place.wemeet_rating.toFixed(1)}` : (place.score ? `¡Ú${place.score}` : '')}
+                    {place.wemeet_rating ? `â˜…${place.wemeet_rating.toFixed(1)}` : (place.score ? `â˜…${place.score}` : '')}
                 </span>
             </div>
             <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                <MapPin className="w-3 h-3" /> {place.category || "Àå¼Ò"}
+                <MapPin className="w-3 h-3" /> {place.category || "ì¥ì†Œ"}
                 {place.tags && <span className="text-gray-400">| {place.tags.slice(0, 2).join(", ")}</span>}
             </div>
             <div className="text-[10px] text-gray-400 mt-1">{place.address}</div>
         </div>
-        <Button size="sm" variant="outline" className="ml-2 h-8 text-xs">»ó¼¼</Button>
+        <Button size="sm" variant="outline" className="ml-2 h-8 text-xs">ìƒì„¸</Button>
     </div>
 );
 
 const PreferenceModal = ({ isOpen, onClose, onComplete }: any) => (
     <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent>
-            <DialogHeader><DialogTitle>ÃëÇâ Á¶»ç</DialogTitle></DialogHeader>
-            <div className="py-4 text-center text-gray-600">´õ Á¤È®ÇÑ ÃßÃµÀ» À§ÇØ ÃëÇâÀ» ¾Ë·ÁÁÖ¼¼¿ä!</div>
-            <DialogFooter><Button onClick={onComplete}>¿Ï·á</Button></DialogFooter>
+            <DialogHeader><DialogTitle>ì·¨í–¥ ì¡°ì‚¬</DialogTitle></DialogHeader>
+            <div className="py-4 text-center text-gray-600">ë” ì •í™•í•œ ì¶”ì²œì„ ìœ„í•´ ì·¨í–¥ì„ ì•Œë ¤ì£¼ì„¸ìš”!</div>
+            <DialogFooter><Button onClick={onComplete}>ì™„ë£Œ</Button></DialogFooter>
         </DialogContent>
     </Dialog>
 );
 
 const AI_PERSONAS = [
-    { id: 2, name: "±èÁ÷Àå (°­³²)", locationName: "°­³²¿ª", location: { lat: 37.498085, lng: 127.027621 } },
-    { id: 3, name: "ÀÌ´ëÇĞ (È«´ë)", locationName: "È«´ëÀÔ±¸", location: { lat: 37.557527, lng: 126.924467 } },
-    { id: 4, name: "¹Ú°¨¼º (¼º¼ö)", locationName: "¼º¼ö¿ª", location: { lat: 37.544581, lng: 127.056035 } },
+    { id: 2, name: "ê¹€ì§ì¥ (ê°•ë‚¨)", locationName: "ê°•ë‚¨ì—­", location: { lat: 37.498085, lng: 127.027621 } },
+    { id: 3, name: "ì´ëŒ€í•™ (í™ëŒ€)", locationName: "í™ëŒ€ì…êµ¬", location: { lat: 37.557527, lng: 126.924467 } },
+    { id: 4, name: "ë°•ê°ì„± (ì„±ìˆ˜)", locationName: "ì„±ìˆ˜ì—­", location: { lat: 37.544581, lng: 127.056035 } },
 ];
 
 const PURPOSE_FILTERS: Record<string, any> = {
-    "½Ä»ç": { 
-        label: "?? ½Ä»ç", 
+    "ì‹ì‚¬": { 
+        label: "?? ì‹ì‚¬", 
         mainCategory: "RESTAURANT",
         tabs: { 
-            "MENU": { label: "¸Ş´º", options: ["ÇÑ½Ä", "¾ç½Ä", "ÀÏ½Ä", "Áß½Ä", "°í±â/±¸ÀÌ", "ÇØ»ê¹°", "Ä¡Å²", "ÇÇÀÚ", "ºĞ½Ä", "¾Æ½Ã¾ÆÀ½½Ä"] }, 
-            "VIBE": { label: "ºĞÀ§±â", options: ["°¡¼ººñ", "Á¶¿ëÇÑ", "¿şÀÌÆÃ¸ÀÁı", "È¥¹ä", "´ÜÃ¼", "°¡Á·¸ğÀÓ"] } 
+            "MENU": { label: "ë©”ë‰´", options: ["í•œì‹", "ì–‘ì‹", "ì¼ì‹", "ì¤‘ì‹", "ê³ ê¸°/êµ¬ì´", "í•´ì‚°ë¬¼", "ì¹˜í‚¨", "í”¼ì", "ë¶„ì‹", "ì•„ì‹œì•„ìŒì‹"] }, 
+            "VIBE": { label: "ë¶„ìœ„ê¸°", options: ["ê°€ì„±ë¹„", "ì¡°ìš©í•œ", "ì›¨ì´íŒ…ë§›ì§‘", "í˜¼ë°¥", "ë‹¨ì²´", "ê°€ì¡±ëª¨ì„"] } 
         } 
     },
-    "¼ú/È¸½Ä": { 
-        label: "?? ¼ú/È¸½Ä", 
+    "ìˆ /íšŒì‹": { 
+        label: "?? ìˆ /íšŒì‹", 
         mainCategory: "PUB",
         tabs: { 
-            "TYPE": { label: "ÁÖÁ¾", options: ["¼ÒÁÖ", "¸ÆÁÖ", "¿ÍÀÎ", "ÇÏÀÌº¼", "Ä¬Å×ÀÏ", "¸·°É¸®", "»çÄÉ"] }, 
-            "VIBE": { label: "ºĞÀ§±â", options: ["½Ã²ø¹÷Àû", "Á¶¿ëÇÑ", "·ë¼úÁı", "·çÇÁÅ¾", "½ºÅÄµù", "ÀÌÀÚÄ«¾ß"] } 
+            "TYPE": { label: "ì£¼ì¢…", options: ["ì†Œì£¼", "ë§¥ì£¼", "ì™€ì¸", "í•˜ì´ë³¼", "ì¹µí…Œì¼", "ë§‰ê±¸ë¦¬", "ì‚¬ì¼€"] }, 
+            "VIBE": { label: "ë¶„ìœ„ê¸°", options: ["ì‹œëŒë²…ì ", "ì¡°ìš©í•œ", "ë£¸ìˆ ì§‘", "ë£¨í”„íƒ‘", "ìŠ¤íƒ ë”©", "ì´ìì¹´ì•¼"] } 
         } 
     },
-    "Ä«Æä": { 
-        label: "? Ä«Æä", 
+    "ì¹´í˜": { 
+        label: "? ì¹´í˜", 
         mainCategory: "CAFE",
         tabs: { 
-            "TYPE": { label: "¸ñÀû", options: ["¼ö´Ù", "ÀÛ¾÷", "µğÀúÆ®", "ºê·±Ä¡", "º£ÀÌÄ¿¸®"] }, 
-            "VIBE": { label: "ºĞÀ§±â", options: ["°¨¼º", "ºä¸ÀÁı", "´ëÇü", "Á¶¿ëÇÑ", "·çÇÁÅ¾", "ÆêÄ«Æä"] } 
+            "TYPE": { label: "ëª©ì ", options: ["ìˆ˜ë‹¤", "ì‘ì—…", "ë””ì €íŠ¸", "ë¸ŒëŸ°ì¹˜", "ë² ì´ì»¤ë¦¬"] }, 
+            "VIBE": { label: "ë¶„ìœ„ê¸°", options: ["ê°ì„±", "ë·°ë§›ì§‘", "ëŒ€í˜•", "ì¡°ìš©í•œ", "ë£¨í”„íƒ‘", "í«ì¹´í˜"] } 
         } 
     },
-    "µ¥ÀÌÆ®": { 
-        label: "?? µ¥ÀÌÆ®", 
+    "ë°ì´íŠ¸": { 
+        label: "?? ë°ì´íŠ¸", 
         mainCategory: "RESTAURANT",
         tabs: { 
-            "COURSE": { label: "ÄÚ½º", options: ["¸ÀÁı", "Ä«Æä", "»êÃ¥", "¿µÈ­", "Àü½Ã"] }, 
-            "VIBE": { label: "ºĞÀ§±â", options: ["·Î¸ÇÆ½", "Á¶¿ëÇÑ", "¾ß°æ", "ÇÁ¶óÀÌºø", "ÇÖÇÃ"] } 
+            "COURSE": { label: "ì½”ìŠ¤", options: ["ë§›ì§‘", "ì¹´í˜", "ì‚°ì±…", "ì˜í™”", "ì „ì‹œ"] }, 
+            "VIBE": { label: "ë¶„ìœ„ê¸°", options: ["ë¡œë§¨í‹±", "ì¡°ìš©í•œ", "ì•¼ê²½", "í”„ë¼ì´ë¹—", "í•«í”Œ"] } 
         } 
     },
-    "ºñÁî´Ï½º": { 
-        label: "?? ºñÁî´Ï½º", 
+    "ë¹„ì¦ˆë‹ˆìŠ¤": { 
+        label: "?? ë¹„ì¦ˆë‹ˆìŠ¤", 
         mainCategory: "BUSINESS",
         tabs: { 
-            "TYPE": { label: "À¯Çü", options: ["È¸ÀÇ½Ç", "½Ä»ç¹ÌÆÃ", "½ºÅÍµğÄ«Æä", "ÄÚ¿öÅ·½ºÆäÀÌ½º", "¼¼¹Ì³ª½Ç"] }, 
-            "VIBE": { label: "ºĞÀ§±â", options: ["Á¶¿ëÇÑ", "ÇÁ¶óÀÌºø", "´ëÇü", "ºöÇÁ·ÎÁ§ÅÍ", "È­ÀÌÆ®º¸µå"] } 
+            "TYPE": { label: "ìœ í˜•", options: ["íšŒì˜ì‹¤", "ì‹ì‚¬ë¯¸íŒ…", "ìŠ¤í„°ë””ì¹´í˜", "ì½”ì›Œí‚¹ìŠ¤í˜ì´ìŠ¤", "ì„¸ë¯¸ë‚˜ì‹¤"] }, 
+            "VIBE": { label: "ë¶„ìœ„ê¸°", options: ["ì¡°ìš©í•œ", "í”„ë¼ì´ë¹—", "ëŒ€í˜•", "ë¹”í”„ë¡œì í„°", "í™”ì´íŠ¸ë³´ë“œ"] } 
         } 
     },
-    "¹®È­»ıÈ°": { 
-        label: "?? ¹®È­»ıÈ°", 
+    "ë¬¸í™”ìƒí™œ": { 
+        label: "?? ë¬¸í™”ìƒí™œ", 
         mainCategory: "CULTURE",
         tabs: { 
-            "TYPE": { label: "À¯Çü", options: ["¿µÈ­°ü", "°ø¿¬/¹ÂÁöÄÃ", "Àü½Ã/¹Ì¼ú°ü", "ÄÜ¼­Æ®", "ÃàÁ¦/ÀÌº¥Æ®", "½ºÆ÷Ã÷°ü¶÷"] }, 
-            "VIBE": { label: "ºĞÀ§±â", options: ["µ¥ÀÌÆ®", "Ä£±¸", "°¡Á·", "È¥ÀÚ", "¾ß¿Ü", "½Ç³»"] } 
+            "TYPE": { label: "ìœ í˜•", options: ["ì˜í™”ê´€", "ê³µì—°/ë®¤ì§€ì»¬", "ì „ì‹œ/ë¯¸ìˆ ê´€", "ì½˜ì„œíŠ¸", "ì¶•ì œ/ì´ë²¤íŠ¸", "ìŠ¤í¬ì¸ ê´€ëŒ"] }, 
+            "VIBE": { label: "ë¶„ìœ„ê¸°", options: ["ë°ì´íŠ¸", "ì¹œêµ¬", "ê°€ì¡±", "í˜¼ì", "ì•¼ì™¸", "ì‹¤ë‚´"] } 
         } 
     }
 };
 
-// --- 2. ¸ŞÀÎ ÄÄÆ÷³ÍÆ® ---
+// --- 2. ë©”ì¸ ì»´í¬ë„ŒíŠ¸ ---
 
 export function HomeTab() {
     const router = useRouter();
@@ -115,9 +115,9 @@ export function HomeTab() {
     // State
     const [searchQuery, setSearchQuery] = useState("")
     const [myLocation, setMyLocation] = useState<{ lat: number, lng: number } | null>(null)
-    const [myLocationInput, setMyLocationInput] = useState("À§Ä¡ È®ÀÎ Áß...")
+    const [myLocationInput, setMyLocationInput] = useState("ìœ„ì¹˜ í™•ì¸ ì¤‘...")
 
-    // manualInputs: °´Ã¼ ¹è¿­
+    // manualInputs: ê°ì²´ ë°°ì—´
     const [manualInputs, setManualInputs] = useState<{ text: string, lat?: number, lng?: number }[]>([{ text: "" }]);
     const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
     const [includeMe, setIncludeMe] = useState(true);
@@ -135,8 +135,8 @@ export function HomeTab() {
     const [selectedPlace, setSelectedPlace] = useState<any>(null);
     const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
 
-    const [selectedPurpose, setSelectedPurpose] = useState("½Ä»ç")
-    const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({ PURPOSE: ["½Ä»ç"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] });
+    const [selectedPurpose, setSelectedPurpose] = useState("ì‹ì‚¬")
+    const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({ PURPOSE: ["ì‹ì‚¬"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] });
     const [myProfile, setMyProfile] = useState<any>(null)
 
     const {
@@ -158,11 +158,11 @@ export function HomeTab() {
         selectedFriends,
         manualInputs,
         labels: {
-            noOriginMessage: "Ãâ¹ßÁö¸¦ ÇÏ³ª ÀÌ»ó ÀÔ·ÂÇØÁÖ¼¼¿ä.",
-            errorMessage: "³×Æ®¿öÅ© ¿À·ù°¡ ¹ß»ıÇß½À´Ï´Ù.",
-            locationName: "Áß°£ÁöÁ¡",
-            searchResultTag: "°Ë»ö°á°ú",
-            searchRegionLabel: (query: string) => `'${query}' °Ë»ö °á°ú`
+            noOriginMessage: "ì¶œë°œì§€ë¥¼ í•˜ë‚˜ ì´ìƒ ì…ë ¥í•´ì£¼ì„¸ìš”.",
+            errorMessage: "ë„¤íŠ¸ì›Œí¬ ì˜¤ë¥˜ê°€ ë°œìƒí–ˆìŠµë‹ˆë‹¤.",
+            locationName: "ì¤‘ê°„ì§€ì ",
+            searchResultTag: "ê²€ìƒ‰ê²°ê³¼",
+            searchRegionLabel: (query: string) => `'${query}' ê²€ìƒ‰ ê²°ê³¼`
         }
     });
 
@@ -174,8 +174,8 @@ export function HomeTab() {
         includeMe,
         manualInputs,
         myProfile,
-        fallbackName: "³ª",
-        formatTravelTime: (minutes) => `¾à ${minutes}ºĞ`
+        fallbackName: "ë‚˜",
+        formatTravelTime: (minutes) => `ì•½ ${minutes}ë¶„`
     });
 
     const persistSearchState = () => {
@@ -232,11 +232,11 @@ export function HomeTab() {
         restoreSearchState();
     }, []);
 
-    // ?? [ÇÙ½É] n°³ Ãâ¹ßÁö ¹× ÇÊÅÍ Àü¼Û
+    // ?? [í•µì‹¬] nê°œ ì¶œë°œì§€ ë° í•„í„° ì „ì†¡
     const handleMidpointSearch = async () => {
         const result = await searchMidpoint();
         if (!result.ok) {
-            alert(result.message || "ÃßÃµ ½ÇÆĞ: ¼­¹ö ¿À·ù°¡ ¹ß»ıÇß½À´Ï´Ù.");
+            alert(result.message || "ì¶”ì²œ ì‹¤íŒ¨: ì„œë²„ ì˜¤ë¥˜ê°€ ë°œìƒí–ˆìŠµë‹ˆë‹¤.");
         }
     };
     // --- Handlers ---
@@ -247,7 +247,7 @@ export function HomeTab() {
             const mainCategory = PURPOSE_FILTERS[selectedPurpose]?.mainCategory || "";
             const searchRegion = await searchByQuery(searchQuery, mainCategory);
             if (!searchRegion) {
-                alert("°Ë»ö °á°ú°¡ ¾ø½À´Ï´Ù.");
+                alert("ê²€ìƒ‰ ê²°ê³¼ê°€ ì—†ìŠµë‹ˆë‹¤.");
                 return;
             }
             if (mapRef.current) {
@@ -256,7 +256,7 @@ export function HomeTab() {
             }
         } catch (e) {
             console.error("Search failed:", e);
-            alert("°Ë»ö Áß ¿À·ù°¡ ¹ß»ıÇß½À´Ï´Ù.");
+            alert("ê²€ìƒ‰ ì¤‘ ì˜¤ë¥˜ê°€ ë°œìƒí–ˆìŠµë‹ˆë‹¤.");
         }
     }
     const handleManualInputChange = (idx: number, val: string) => {
@@ -288,16 +288,16 @@ export function HomeTab() {
         setInteractionLoading(true);
         try {
             await fetchWithAuth("/api/coins/check-in", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ place_name: nearbyPlace.name, lat: nearbyPlace.lat, lng: nearbyPlace.lng }) });
-            alert("50ÄÚÀÎ È¹µæ!"); setNearbyPlace(null);
-        } catch (e) { alert("¿À·ù"); } finally { setInteractionLoading(false); }
+            alert("50ì½”ì¸ íšë“!"); setNearbyPlace(null);
+        } catch (e) { alert("ì˜¤ë¥˜"); } finally { setInteractionLoading(false); }
     }
     const handleClaimLoot = async () => {
         if (!nearbyLoot) return;
         setInteractionLoading(true);
         try {
             await fetchWithAuth("/api/coins/claim-loot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ loot_id: nearbyLoot.id, amount: nearbyLoot.amount }) });
-            alert(`${nearbyLoot.amount}ÄÚÀÎ È¹µæ!`); setLoots(p => p.filter(l => l.id !== nearbyLoot.id)); setNearbyLoot(null);
-        } catch (e) { alert("¿À·ù"); } finally { setInteractionLoading(false); }
+            alert(`${nearbyLoot.amount}ì½”ì¸ íšë“!`); setLoots(p => p.filter(l => l.id !== nearbyLoot.id)); setNearbyLoot(null);
+        } catch (e) { alert("ì˜¤ë¥˜"); } finally { setInteractionLoading(false); }
     }
 
     const handlePlaceClick = async (p: any) => {
@@ -329,20 +329,20 @@ export function HomeTab() {
     return (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col bg-[#F3F4F6] relative font-['Pretendard']">
 
-            {/* »ó´Ü °Ë»ö¹Ù */}
+            {/* ìƒë‹¨ ê²€ìƒ‰ë°” */}
             <div className="absolute top-4 left-4 right-4 z-10">
                 <div className="flex items-center bg-white rounded-2xl shadow-md h-12 px-4 border border-gray-100">
                     <Search className="w-5 h-5 text-gray-400 mr-2" />
                     <Input 
                         className="border-none bg-transparent h-full text-base p-0" 
-                        placeholder="ºü¸¥ Àå¼Ò °Ë»ö (¿¹: ¹é¼ÒÁ¤)" 
+                        placeholder="ë¹ ë¥¸ ì¥ì†Œ ê²€ìƒ‰ (ì˜ˆ: ë°±ì†Œì •)" 
                         value={searchQuery} 
                         onChange={(e) => setSearchQuery(e.target.value)} 
                         onKeyDown={(e) => e.key === 'Enter' && handleTopSearch()} 
                     />
                 </div>
                 <div className="flex gap-2 overflow-x-auto mt-2 pb-1 scrollbar-hide">
-                    <Button variant="outline" size="sm" className="rounded-full bg-white shadow-sm border-[#7C3AED] text-[#7C3AED]" onClick={() => setIsFilterOpen(true)}><Filter className="w-3 h-3 mr-1" />ÇÊÅÍ</Button>
+                    <Button variant="outline" size="sm" className="rounded-full bg-white shadow-sm border-[#7C3AED] text-[#7C3AED]" onClick={() => setIsFilterOpen(true)}><Filter className="w-3 h-3 mr-1" />í•„í„°</Button>
                     <Badge className="rounded-full bg-gradient-to-r from-[#7C3AED] to-[#14B8A6] border-0 text-white h-9 px-3 flex items-center">{currentFilters?.label}</Badge>
                     {Object.entries(selectedFilters).flatMap(([k, v]) => v).map(tag => (
                         <Badge key={tag} variant="secondary" className="h-9 px-3 rounded-full bg-white text-gray-600 border border-gray-200 text-xs font-normal whitespace-nowrap flex-shrink-0 cursor-pointer" onClick={() => removeTag(tag)}>
@@ -354,23 +354,23 @@ export function HomeTab() {
 
             <div id="map" className="w-full h-full bg-gray-200"></div>
 
-            {/* »óÈ£ÀÛ¿ë ¹öÆ° */}
+            {/* ìƒí˜¸ì‘ìš© ë²„íŠ¼ */}
             <AnimatePresence>
                 {nearbyLoot ? (
                     <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="absolute bottom-24 left-4 right-4 z-30">
-                        <Button onClick={handleClaimLoot} disabled={interactionLoading} className="w-full h-14 rounded-2xl bg-blue-500 hover:bg-blue-600 text-white font-bold shadow-xl animate-pulse flex gap-2"><Gem className="w-5 h-5" /> º¸¹° Áİ±â (+{nearbyLoot.amount}C)</Button>
+                        <Button onClick={handleClaimLoot} disabled={interactionLoading} className="w-full h-14 rounded-2xl bg-blue-500 hover:bg-blue-600 text-white font-bold shadow-xl animate-pulse flex gap-2"><Gem className="w-5 h-5" /> ë³´ë¬¼ ì¤ê¸° (+{nearbyLoot.amount}C)</Button>
                     </motion.div>
                 ) : nearbyPlace ? (
                     <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="absolute bottom-24 left-4 right-4 z-30">
-                        <Button onClick={handleCheckIn} disabled={interactionLoading} className="w-full h-14 rounded-2xl bg-yellow-500 hover:bg-yellow-600 text-white font-bold shadow-xl animate-bounce flex gap-2"><Coins className="w-5 h-5" /> ¹æ¹® ÀÎÁõ (+50C)</Button>
+                        <Button onClick={handleCheckIn} disabled={interactionLoading} className="w-full h-14 rounded-2xl bg-yellow-500 hover:bg-yellow-600 text-white font-bold shadow-xl animate-bounce flex gap-2"><Coins className="w-5 h-5" /> ë°©ë¬¸ ì¸ì¦ (+50C)</Button>
                     </motion.div>
                 ) : null}
             </AnimatePresence>
 
-            {/* Ãâ¹ßÁö ¼³Á¤ Ä«µå (±âº» Ç¥½Ã) */}
+            {/* ì¶œë°œì§€ ì„¤ì • ì¹´ë“œ (ê¸°ë³¸ í‘œì‹œ) */}
             {!recommendations.length && (
                 <div className="absolute bottom-4 left-4 right-4 bg-white rounded-3xl p-5 shadow-lg border border-gray-100 z-20">
-                    <h2 className="text-lg font-bold mb-3">¾îµğ¼­ ¸ğÀÌ³ª¿ä?</h2>
+                    <h2 className="text-lg font-bold mb-3">ì–´ë””ì„œ ëª¨ì´ë‚˜ìš”?</h2>
                     <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
                         {includeMe && <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><span className="text-xl">??</span><span className="flex-1 text-sm">{myLocationInput}</span><button onClick={() => setIncludeMe(false)}><Trash2 className="w-4 h-4 text-gray-400" /></button></div>}
                         {selectedFriends.map(f => <div key={f.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><Avatar className="w-8 h-8"><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><span className="flex-1 text-sm">{f.name}</span><button onClick={() => toggleFriend(f)}><X className="w-4 h-4 text-gray-400" /></button></div>)}
@@ -382,7 +382,7 @@ export function HomeTab() {
                                         value={val.text}
                                         onChange={(v: string) => handleManualInputChange(i, v)}
                                         onSelect={(place: any) => handleManualSelect(i, place)}
-                                        placeholder="Àå¼Ò ÀÔ·Â (¿¹: °­³²)"
+                                        placeholder="ì¥ì†Œ ì…ë ¥ (ì˜ˆ: ê°•ë‚¨)"
                                     />
                                 </div>
                                 <button onClick={() => removeManualInput(i)} className="mt-1"><Trash2 className="w-4 h-4 text-gray-400" /></button>
@@ -390,21 +390,21 @@ export function HomeTab() {
                         ))}
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-3">
-                        <Button variant="outline" onClick={() => setIsFriendModalOpen(true)}><Users className="w-4 h-4 mr-2" />Ä£±¸</Button>
-                        <Button variant="outline" onClick={addManualInput}><Plus className="w-4 h-4 mr-2" />Àå¼Ò</Button>
+                        <Button variant="outline" onClick={() => setIsFriendModalOpen(true)}><Users className="w-4 h-4 mr-2" />ì¹œêµ¬</Button>
+                        <Button variant="outline" onClick={addManualInput}><Plus className="w-4 h-4 mr-2" />ì¥ì†Œ</Button>
                     </div>
-                    {!includeMe && <button onClick={() => setIncludeMe(true)} className="text-xs text-gray-500 mt-2 underline w-full">+ ³» À§Ä¡ Ãß°¡</button>}
-                    <Button className="w-full mt-3 h-12 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold" onClick={handleMidpointSearch}>?? Áß°£ ÁöÁ¡ Ã£±â</Button>
+                    {!includeMe && <button onClick={() => setIncludeMe(true)} className="text-xs text-gray-500 mt-2 underline w-full">+ ë‚´ ìœ„ì¹˜ ì¶”ê°€</button>}
+                    <Button className="w-full mt-3 h-12 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold" onClick={handleMidpointSearch}>?? ì¤‘ê°„ ì§€ì  ì°¾ê¸°</Button>
                 </div>
             )}
 
-            {/* ÃßÃµ °á°ú ¸®½ºÆ® */}
+            {/* ì¶”ì²œ ê²°ê³¼ ë¦¬ìŠ¤íŠ¸ */}
             <AnimatePresence>
                 {recommendations.length > 0 && (
                     <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] max-h-[60vh] overflow-y-auto z-20">
                         <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4" />
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-lg">ÃßÃµ Áö¿ª</h3>
+                            <h3 className="font-bold text-lg">ì¶”ì²œ ì§€ì—­</h3>
                             <button
                                 onClick={() => {
                                     setRecommendations([]);
@@ -417,11 +417,11 @@ export function HomeTab() {
                                 }}
                                 className="text-xs text-gray-400"
                             >
-                                ´Ù½Ã Ã£±â
+                                ë‹¤ì‹œ ì°¾ê¸°
                             </button>
                         </div>
 
-                        {/* Áö¿ª ¼±ÅÃ ÅÇ */}
+                        {/* ì§€ì—­ ì„ íƒ íƒ­ */}
                         <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
                             {recommendations.map((r, i) => (
                                 <button key={i} onClick={() => { setActiveTabIdx(i); setCurrentDisplayRegion(r); }}
@@ -440,16 +440,16 @@ export function HomeTab() {
             {isLoading && <div className="absolute inset-0 bg-white/60 z-50 flex items-center justify-center"><Loader2 className="w-10 h-10 text-[#7C3AED] animate-spin" /></div>}
             {gpsError && <div className="absolute top-24 left-4 right-4 bg-red-100 text-red-600 p-2 rounded-lg text-xs z-50">{gpsError}</div>}
 
-            {/* ÇÊÅÍ »ó¼¼ ¼³Á¤ ¸ğ´Ş */}
+            {/* í•„í„° ìƒì„¸ ì„¤ì • ëª¨ë‹¬ */}
             <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
                 <DialogContent className="sm:max-w-md h-[70vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
                     <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b">
-                        <DialogTitle>»ó¼¼ ÇÊÅÍ ¼³Á¤</DialogTitle>
-                        <DialogDescription className="hidden">¸ğÀÓÀÇ ¸ñÀû°ú ¼¼ºÎ ¿É¼ÇÀ» ¼³Á¤ÇÏ¼¼¿ä.</DialogDescription>
+                        <DialogTitle>ìƒì„¸ í•„í„° ì„¤ì •</DialogTitle>
+                        <DialogDescription className="hidden">ëª¨ì„ì˜ ëª©ì ê³¼ ì„¸ë¶€ ì˜µì…˜ì„ ì„¤ì •í•˜ì„¸ìš”.</DialogDescription>
                     </DialogHeader>
 
                     <div className="px-4 py-3 bg-gray-50 border-b">
-                        <div className="text-xs font-bold text-gray-500 mb-2">¸ğÀÓÀÇ ¸ñÀû</div>
+                        <div className="text-xs font-bold text-gray-500 mb-2">ëª¨ì„ì˜ ëª©ì </div>
                         <div className="flex gap-2 overflow-x-auto scrollbar-hide">
                             {Object.keys(PURPOSE_FILTERS).map((purposeKey) => (
                                 <Button key={purposeKey} variant={selectedPurpose === purposeKey ? "default" : "outline"} className={`rounded-full h-8 text-xs flex-shrink-0 ${selectedPurpose === purposeKey ? "bg-[#7C3AED] text-white" : "text-gray-600"}`} onClick={() => { setSelectedPurpose(purposeKey); setSelectedFilters({ PURPOSE: [purposeKey], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] }); }}>
@@ -485,23 +485,23 @@ export function HomeTab() {
                             </Tabs>
                         )}
                     </div>
-                    <div className="p-4 border-t bg-white"><Button className="w-full bg-[#7C3AED] hover:bg-purple-700 font-bold" onClick={() => setIsFilterOpen(false)}>¼±ÅÃ ¿Ï·á</Button></div>
+                    <div className="p-4 border-t bg-white"><Button className="w-full bg-[#7C3AED] hover:bg-purple-700 font-bold" onClick={() => setIsFilterOpen(false)}>ì„ íƒ ì™„ë£Œ</Button></div>
                 </DialogContent>
             </Dialog>
 
-            {/* Ä£±¸/ÃëÇâ ¸ğ´Ş */}
+            {/* ì¹œêµ¬/ì·¨í–¥ ëª¨ë‹¬ */}
             <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Ä£±¸ Ãß°¡</DialogTitle>
-                        <DialogDescription className="hidden">ÇÔ²² ¸¸³¯ Ä£±¸¸¦ ¼±ÅÃÇÏ¼¼¿ä.</DialogDescription>
+                        <DialogTitle>ì¹œêµ¬ ì¶”ê°€</DialogTitle>
+                        <DialogDescription className="hidden">í•¨ê»˜ ë§Œë‚  ì¹œêµ¬ë¥¼ ì„ íƒí•˜ì„¸ìš”.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2">{AI_PERSONAS.map(f => <div key={f.id} onClick={() => toggleFriend(f)} className="flex items-center gap-3 p-2 hover:bg-gray-50 cursor-pointer border rounded-lg"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName}</div></div>{selectedFriends.find(sf => sf.id === f.id) && <CheckCircle2 className="ml-auto w-4 h-4 text-purple-600" />}</div>)}</div>
                 </DialogContent>
             </Dialog>
             <PreferenceModal isOpen={isPreferenceModalOpen} onClose={() => setIsPreferenceModalOpen(false)} onComplete={() => setIsPreferenceModalOpen(false)} />
 
-            {/* »ó¼¼ ¸ğ´Ş */}
+            {/* ìƒì„¸ ëª¨ë‹¬ */}
             <Dialog open={isDetailOpen} onOpenChange={(open) => {
                 setIsDetailOpen(open);
                 if (!open) {
@@ -515,12 +515,12 @@ export function HomeTab() {
                             {selectedPlace?.name}
                             <Badge variant="outline" className="text-xs font-normal">{selectedPlace?.category}</Badge>
                         </DialogTitle>
-                        <DialogDescription className="hidden">Àå¼Ò »ó¼¼ Á¤º¸ÀÔ´Ï´Ù.</DialogDescription>
+                        <DialogDescription className="hidden">ì¥ì†Œ ìƒì„¸ ì •ë³´ì…ë‹ˆë‹¤.</DialogDescription>
                     </DialogHeader>
 
                     <div className="flex-1 overflow-y-auto py-2 space-y-4">
                         <div className="bg-purple-50 p-4 rounded-lg text-center">
-                            <div className="text-sm text-purple-800 font-bold mb-1">AI ÃßÃµ Á¡¼ö</div>
+                            <div className="text-sm text-purple-800 font-bold mb-1">AI ì¶”ì²œ ì ìˆ˜</div>
                             <div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score || selectedPlace?.wemeet_rating || "NEW"}</div>
                         </div>
 
@@ -540,7 +540,7 @@ export function HomeTab() {
                                 }
                             }}
                         >
-                            ?? ¸®ºä ¾²°í AI ÇĞ½À½ÃÅ°±â
+                            ?? ë¦¬ë·° ì“°ê³  AI í•™ìŠµì‹œí‚¤ê¸°
                         </Button>
                     </div>
                 </DialogContent>
@@ -549,7 +549,7 @@ export function HomeTab() {
     )
 }
 
-// ?? PlaceAutocomplete: ÄÄÆ÷³ÍÆ® ¹ÛÀ¸·Î »©¼­ Á¤ÀÇ
+// ?? PlaceAutocomplete: ì»´í¬ë„ŒíŠ¸ ë°–ìœ¼ë¡œ ë¹¼ì„œ ì •ì˜
 function PlaceAutocomplete({ value, onChange, onSelect, placeholder }: any) {
     const [list, setList] = useState<any[]>([]);
     const [debouncedValue, setDebouncedValue] = useState(value);
@@ -585,7 +585,7 @@ function PlaceAutocomplete({ value, onChange, onSelect, placeholder }: any) {
                 className="h-8 text-sm bg-transparent border-none p-0 focus-visible:ring-0"
             />
             {list.length > 0 && (
-                // ?? [¼öÁ¤ Æ÷ÀÎÆ®] absolute Á¦°Å -> ÀÏ¹İ Èå¸§(Flow)À¸·Î º¯°æ (°ãÄ§ ¹æÁö)
+                // ?? [ìˆ˜ì • í¬ì¸íŠ¸] absolute ì œê±° -> ì¼ë°˜ íë¦„(Flow)ìœ¼ë¡œ ë³€ê²½ (ê²¹ì¹¨ ë°©ì§€)
                 <div className="w-full bg-white border border-gray-200 rounded-lg shadow-sm mt-2 max-h-60 overflow-y-auto">
                     {list.map((item, i) => (
                         <div
@@ -598,7 +598,7 @@ function PlaceAutocomplete({ value, onChange, onSelect, placeholder }: any) {
                         >
                             <div className="font-bold text-gray-800">
                                 {item.name}
-                                {/* È£¼± Á¤º¸°¡ ÀÖÀ¸¸é Ç¥½Ã */}
+                                {/* í˜¸ì„  ì •ë³´ê°€ ìˆìœ¼ë©´ í‘œì‹œ */}
                                 {item.lines && item.lines.length > 0 && (
                                     <span className="ml-2 text-[10px] font-normal text-gray-500 bg-gray-100 px-1 rounded">
                                         {item.lines.join(",")}
