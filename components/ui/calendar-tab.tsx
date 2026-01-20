@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Trash2, Link as LinkIcon, RefreshCw, ArrowLeft, Loader2 } from "lucide-react"
 
 // ✅ [수정] 파일 내부에 직접 URL과 인증 함수를 선언 (import 의존성 제거)
-const API_URL = "https://survivor-sold-fiscal-manner.trycloudflare.com";
+const API_URL = "https://advertiser-senator-another-distinguished.trycloudflare.com";
 
 const fetchWithAuth = async (endpoint: string, options: any = {}) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;

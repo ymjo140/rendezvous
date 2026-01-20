@@ -13,7 +13,7 @@ function KakaoCallbackContent() {
 
   useEffect(() => {
     if (code) {
-      fetch("https://survivor-sold-fiscal-manner.trycloudflare.com/api/auth/kakao", {
+      fetch("https://advertiser-senator-another-distinguished.trycloudflare.com/api/auth/kakao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code })
@@ -24,7 +24,7 @@ function KakaoCallbackContent() {
           localStorage.setItem("token", data.access_token)
           
           // 🌟 로그인 후 사용자 정보 확인 (온보딩 필요 여부 체크)
-          fetch("https://survivor-sold-fiscal-manner.trycloudflare.com/api/users/me", {
+          fetch("https://advertiser-senator-another-distinguished.trycloudflare.com/api/users/me", {
             headers: { "Authorization": `Bearer ${data.access_token}` }
           })
           .then(res => res.json())

@@ -43,7 +43,7 @@ interface UserInfo {
     preferences?: any;
 }
 
-const API_URL = "https://survivor-sold-fiscal-manner.trycloudflare.com";
+const API_URL = "https://advertiser-senator-another-distinguished.trycloudflare.com";
 
 // 게시물 타입 정의
 interface PostItem {

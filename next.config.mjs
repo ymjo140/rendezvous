@@ -18,7 +18,7 @@ const nextConfig = {
               "img-src 'self' data: blob: https://*.pstatic.net https://*.naver.com https://images.unsplash.com http://k.kakaocdn.net https://*.kakao.com;",
               // [핵심] 구버전(xqlo) + 신버전(4lza) + 카카오 API 모두 허용
               "default-src 'self'; connect-src 'self' https://*.trycloudflare.com;",
-              "connect-src 'self' https://kr-col-ext.nelo.navercorp.com https://*.naver.com https://survivor-sold-fiscal-manner.trycloudflare.com wss://wemeet-backend-xqlo.onrender.com https://wemeet-backend-4lza.onrender.com wss://wemeet-backend-4lza.onrender.com https://kapi.kakao.com https://kauth.kakao.com;", 
+              "connect-src 'self' https://kr-col-ext.nelo.navercorp.com https://*.naver.com https://advertiser-senator-another-distinguished.trycloudflare.com wss://wemeet-backend-xqlo.onrender.com https://wemeet-backend-4lza.onrender.com wss://wemeet-backend-4lza.onrender.com https://kapi.kakao.com https://kauth.kakao.com;", 
               "font-src 'self' data: https://cdn.jsdelivr.net;",
               "object-src 'none';",
               "base-uri 'self';",

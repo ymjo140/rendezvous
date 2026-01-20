@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 
 // 🌟 [핵심] 외부 의존성 제거: 마이페이지처럼 여기서 직접 주소를 정의합니다.
-const API_URL = "https://survivor-sold-fiscal-manner.trycloudflare.com";
+const API_URL = "https://advertiser-senator-another-distinguished.trycloudflare.com";
 const CATEGORIES = ["전체", "맛집", "운동", "스터디", "취미", "여행"];
 
 // 🌟 [핵심] 외부 의존성 제거: 이 파일 전용 통신 함수를 만듭니다.

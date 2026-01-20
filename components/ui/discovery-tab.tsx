@@ -36,7 +36,7 @@ interface ChatRoom {
 }
 
 // --- API URL ---
-const API_URL = "https://survivor-sold-fiscal-manner.trycloudflare.com";
+const API_URL = "https://advertiser-senator-another-distinguished.trycloudflare.com";
 
 // --- 더미 데이터 (SNS 게시물 + 가게 정보 연동) ---
 const MOCK_FEEDS = [
