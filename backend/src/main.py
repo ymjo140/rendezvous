@@ -1,17 +1,17 @@
-import sys
+﻿import sys
 import os
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# [경로 설정]
+# [寃쎈줈 ?ㅼ젙]
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 app = fastapi.FastAPI()
 
-# --- CORS 설정 ---
+# --- CORS ?ㅼ젙 ---
 origins = [
     "http://localhost:3000",
     "https://v0-we-meet-app-features.vercel.app",
@@ -28,65 +28,66 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 기본 라우트 ---
+# --- 湲곕낯 ?쇱슦??---
 @app.get("/")
 async def root():
     return {"status": "ok", "message": "WeMeet Backend is Live."}
 
-# --- 라우터 연결 ---
+# --- ?쇱슦???곌껐 ---
 
-# ❌ [삭제/주석] 구버전 events 라우터가 요청을 가로채지 못하게 막습니다!
+# ??[??젣/二쇱꽍] 援щ쾭??events ?쇱슦?곌? ?붿껌??媛濡쒖콈吏 紐삵븯寃?留됱뒿?덈떎!
 # try:
 #     from api import events
 #     app.include_router(events.router, prefix="/api/events", tags=["events"])
-#     print("✅ Events 라우터 연결 성공")
+#     print("??Events ?쇱슦???곌껐 ?깃났")
 # except Exception:
-#     print("⚠️ Events 라우터 없음")
+#     print("?좑툘 Events ?쇱슦???놁쓬")
 
-# 2. Routers 폴더 연결
-from api.routers import sync, auth, users, coins, meetings, community, chat, posts
+# 2. Routers ?대뜑 ?곌껐
+from api.routers import sync, auth, users, coins, meetings, community, chat, posts, system
 
-# ✅ [수정] 파일 안에 이미 '/api/...' 경로가 있는 애들은 prefix를 뺍니다.
+# ??[?섏젙] ?뚯씪 ?덉뿉 ?대? '/api/...' 寃쎈줈媛 ?덈뒗 ?좊뱾? prefix瑜?類띾땲??
 app.include_router(auth.router, tags=["auth"])
 app.include_router(users.router, tags=["users"])
 app.include_router(coins.router, tags=["coins"])
 app.include_router(chat.router, tags=["chat"])
-# 🌟 중요: 이제 meetings.py가 '/api/events' 요청을 처리하게 됩니다.
+# ?뙚 以묒슂: ?댁젣 meetings.py媛 '/api/events' ?붿껌??泥섎━?섍쾶 ?⑸땲??
 app.include_router(meetings.router, tags=["meetings"]) 
 app.include_router(community.router, tags=["community"])
-# 📸 SNS 게시물 라우터 (Instagram 스타일)
+# ?벝 SNS 寃뚯떆臾??쇱슦??(Instagram ?ㅽ???
 app.include_router(posts.router, tags=["posts"])
+app.include_router(system.router, tags=["system"])
 
-# 💾 저장/공유 시스템 라우터
+# ?뮶 ???怨듭쑀 ?쒖뒪???쇱슦??
 try:
     from api.routers import saves
     app.include_router(saves.router, tags=["saves"])
-    print("✅ 저장/공유 라우터 연결 성공")
+    print("?????怨듭쑀 ?쇱슦???곌껐 ?깃났")
 except Exception as e:
-    print(f"⚠️ 저장/공유 라우터 로드 실패: {e}")
+    print(f"?좑툘 ???怨듭쑀 ?쇱슦??濡쒕뱶 ?ㅽ뙣: {e}")
 
-# 🤖 AI 추천 시스템 라우터
+# ?쨼 AI 異붿쿇 ?쒖뒪???쇱슦??
 try:
     from api.routers import ai_recommendations
     app.include_router(ai_recommendations.router, tags=["ai"])
-    print("✅ AI 추천 라우터 연결 성공")
+    print("??AI 異붿쿇 ?쇱슦???곌껐 ?깃났")
 except Exception as e:
-    print(f"⚠️ AI 추천 라우터 로드 실패 (서비스는 계속 동작): {e}")
+    print(f"?좑툘 AI 異붿쿇 ?쇱슦??濡쒕뱶 ?ㅽ뙣 (?쒕퉬?ㅻ뒗 怨꾩냽 ?숈옉): {e}")
 
-# 🧠 벡터 AI 추천 시스템 라우터 (진짜 AI!)
+# ?쭬 踰≫꽣 AI 異붿쿇 ?쒖뒪???쇱슦??(吏꾩쭨 AI!)
 try:
     from api.routers import vector_ai
     app.include_router(vector_ai.router, tags=["vector-ai"])
-    print("✅ 벡터 AI 라우터 연결 성공")
+    print("??踰≫꽣 AI ?쇱슦???곌껐 ?깃났")
 except Exception as e:
-    print(f"⚠️ 벡터 AI 라우터 로드 실패: {e}")
+    print(f"?좑툘 踰≫꽣 AI ?쇱슦??濡쒕뱶 ?ㅽ뙣: {e}")
 
-# ✅ [유지] 파일 안에 경로가 짧은 애들은 prefix를 붙여줍니다.
+# ??[?좎?] ?뚯씪 ?덉뿉 寃쎈줈媛 吏㏃? ?좊뱾? prefix瑜?遺숈뿬以띾땲??
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 
-print("✅ 모든 라우터 연결 성공")
+print("??紐⑤뱺 ?쇱슦???곌껐 ?깃났")
 
-# --- 커뮤니티 (임시) ---
+# --- 而ㅻ??덊떚 (?꾩떆) ---
 class CommunityCreate(BaseModel):
     title: str
     class Config:
@@ -94,4 +95,5 @@ class CommunityCreate(BaseModel):
 
 @app.post("/api/communities_dummy")
 async def create_community_dummy(comm: CommunityCreate):
-    return {"status": "success", "message": "커뮤니티 생성"}
+    return {"status": "success", "message": "而ㅻ??덊떚 ?앹꽦"}
+

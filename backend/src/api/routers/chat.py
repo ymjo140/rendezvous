@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from typing import List, Dict
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from core.database import get_db
 from domain import models
@@ -98,15 +98,17 @@ def leave_room(room_id: str, db: Session = Depends(get_db)):
 
 @router.get("/api/chat/rooms/{room_id}/available-dates")
 def get_available_dates(room_id: str):
+    fallback_time = (datetime.now() + timedelta(hours=1)).strftime("%H:%M")
     return [
-        {"fullDate": "2026-01-20", "displayDate": "1/20 (화)", "time": "19:00"},
-        {"fullDate": "2026-01-21", "displayDate": "1/21 (수)", "time": "12:00"}
+        {"fullDate": "2026-01-20", "displayDate": "1/20 (화)", "time": fallback_time},
+        {"fullDate": "2026-01-21", "displayDate": "1/21 (수)", "time": fallback_time}
     ]
 
 @router.post("/api/ai/parse-schedule")
 def parse_schedule(req: dict):
+    fallback_time = (datetime.now() + timedelta(hours=1)).strftime("%H:%M")
     return {
-        "title": "새로운 약속", "date": "2026-01-24", "time": "19:00",
+        "title": "새로운 약속", "date": "2026-01-24", "time": fallback_time,
         "location_name": "강남역", "purpose": "식사"
     }
 

@@ -1,18 +1,18 @@
-from pydantic import BaseModel, ConfigDict
+﻿from pydantic import BaseModel, ConfigDict
 from typing import List, Optional, Any, Dict
 
-# --- 회의/모임 흐름 (AI 추천) ---
+# --- ?뚯쓽/紐⑥엫 ?먮쫫 (AI 異붿쿇) ---
 class MeetingCondition(BaseModel):
     date: str = "today"
-    time: str = "19:00"
+    time: Optional[str] = None
     budget_range: List[int] = [1, 10]
-    category: str = "식사"
+    category: str = "meal"
     tags: List[str] = []
     detail_prompt: str = ""
 
 class MeetingFlowRequest(BaseModel):
     room_id: Optional[str] = None
-    purpose: str = "식사"
+    purpose: str = "meal"
     conditions: MeetingCondition
     manual_locations: List[str] = []
     current_lat: float = 0.0
@@ -31,7 +31,7 @@ class ConfirmRequest(BaseModel):
     time: str
     category: str
 
-# --- 일정 (Event) ---
+# --- ?쇱젙 (Event) ---
 class EventSchema(BaseModel):
     id: Optional[str] = None
     user_id: int
@@ -49,7 +49,7 @@ class NlpRequest(BaseModel):
 
 class RecommendRequest(BaseModel):
     users: List[Any] = []
-    purpose: str = "식사"
+    purpose: str = "meal"
     location_name: str = ""
     friend_location_manual: Optional[str] = None
     manual_locations: List[str] = []

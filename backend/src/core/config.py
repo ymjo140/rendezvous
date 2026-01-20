@@ -1,50 +1,124 @@
 import os
 from dotenv import load_dotenv
 
-# .env 로드
+# Load .env
 load_dotenv()
+
 
 class Settings:
     PROJECT_NAME: str = "WeMeet API"
     VERSION: str = "2.0.0"
 
-    # 보안
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "unsafe_default_key")
+    # Security
+    SECRET_KEY: str = os.getenv("SECRET_KEY")
+    if not SECRET_KEY:
+        raise ValueError("SECRET_KEY is missing!")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7일
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
-    # 데이터베이스
+    # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./wemeet.db")
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-    # API 키
+    # API keys
     NAVER_SEARCH_ID: str = os.getenv("NAVER_SEARCH_ID")
     NAVER_SEARCH_SECRET: str = os.getenv("NAVER_SEARCH_SECRET")
     NAVER_MAP_ID: str = os.getenv("NAVER_MAP_ID")
     NAVER_MAP_SECRET: str = os.getenv("NAVER_MAP_SECRET")
-    
     ODSAY_API_KEY: str = os.getenv("ODSAY_API_KEY")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY")
     KAKAO_REST_API_KEY: str = os.getenv("KAKAO_REST_API_KEY")
     KAKAO_REDIRECT_URI: str = os.getenv("KAKAO_REDIRECT_URI")
-    # 운영 상수 (constants.py 내용 통합)
+
+    # Purpose config shared with frontend (single source of truth)
     PURPOSE_CONFIG = {
-        "식사": { "allowed": ["restaurant"], "keywords": ["한식", "중식", "양식", "일식", "아시안 음식", "밥집"] },
-        "술/회식": { "allowed": ["bar", "restaurant"], "keywords": ["술집", "이자카야", "요리주점", "포차", "호프"] },
-        "카페": { "allowed": ["cafe"], "keywords": ["카페", "디저트", "베이커리", "커피"] },
-        "스터디": { "allowed": ["cafe", "workspace"], "keywords": ["스터디카페", "북카페", "노트북", "조용한카페"] }
+        "meal": {
+            "label": "Meal",
+            "mainCategory": "RESTAURANT",
+            "tabs": {
+                "MENU": {
+                    "label": "Menu",
+                    "options": [
+                        "Korean",
+                        "Western",
+                        "Japanese",
+                        "Chinese",
+                        "BBQ",
+                        "Seafood",
+                        "Chicken",
+                        "Pizza",
+                        "Street Food",
+                        "Asian",
+                    ],
+                },
+                "VIBE": {
+                    "label": "Vibe",
+                    "options": [
+                        "Value",
+                        "Quiet",
+                        "View",
+                        "Family",
+                        "Group",
+                        "Casual",
+                    ],
+                },
+            },
+        },
+        "drink": {
+            "label": "Drinks",
+            "mainCategory": "PUB",
+            "tabs": {
+                "TYPE": {
+                    "label": "Type",
+                    "options": ["Soju", "Beer", "Wine", "Highball", "Cocktail", "Makgeolli"],
+                },
+                "VIBE": {
+                    "label": "Vibe",
+                    "options": ["Lively", "Quiet", "Rooftop", "Izakaya", "Pub", "Music"],
+                },
+            },
+        },
+        "cafe": {
+            "label": "Cafe",
+            "mainCategory": "CAFE",
+            "tabs": {
+                "TYPE": {
+                    "label": "Type",
+                    "options": ["Dessert", "Brunch", "Bakery", "Coffee", "Tea"],
+                },
+                "VIBE": {
+                    "label": "Vibe",
+                    "options": ["Cozy", "Quiet", "View", "Study", "Rooftop", "Pet-friendly"],
+                },
+            },
+        },
+        "study": {
+            "label": "Study",
+            "mainCategory": "WORKSPACE",
+            "tabs": {
+                "TYPE": {
+                    "label": "Type",
+                    "options": ["Study Cafe", "Library", "Coworking", "Private Room"],
+                },
+                "VIBE": {
+                    "label": "Vibe",
+                    "options": ["Quiet", "Focus", "Calm", "Minimal"],
+                },
+            },
+        },
     }
 
     TAG_KEYWORD_EXPANSIONS = {
-        "한식": ["한식", "한정식", "솥밥", "갈비", "불고기", "보쌈", "한우"],
-        "양식": ["양식", "파스타", "스테이크", "브런치", "이탈리안", "뇨끼", "라자냐", "아메리칸"],
-        "일식": ["일식", "스시", "라멘", "돈카츠", "우동", "오마카세", "이자카야", "후토마키"],
-        "중식": ["중식", "중국요리", "짜장면", "짬뽕", "탕수육", "딤섬", "훠궈"],
-        "가성비": ["가성비", "저렴한", "만원", "무한리필", "착한가격"],
-        "분위기": ["분위기", "감성", "데이트", "예쁜", "인스타", "뷰맛집", "루프탑"],
-        "조용한": ["조용한", "차분한", "룸식당", "룸술집", "프라이빗"],
-        "주차": ["주차", "발렛", "주차장"]
+        "Korean": ["Korean", "K-BBQ", "Bibimbap", "Bulgogi", "Galbi"],
+        "Western": ["Western", "Steak", "Pasta", "Italian", "French"],
+        "Japanese": ["Japanese", "Sushi", "Ramen", "Izakaya", "Omakase"],
+        "Chinese": ["Chinese", "Jjajangmyeon", "Jjamppong", "Dim Sum"],
+        "Value": ["Value", "Affordable", "Budget"],
+        "Vibe": ["Vibe", "Mood", "Atmosphere", "Cozy", "Stylish"],
+        "Quiet": ["Quiet", "Calm", "Silent", "Private"],
+        "Parking": ["Parking", "Valet"],
     }
+
 
 settings = Settings()
