@@ -16,8 +16,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://advertiser-senator-another-distinguished.trycloudflare.com"
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "")
+
+const API_BASE_URL = API_URL
 const REVIEW_TAG_SUGGESTIONS = [
   "맛있어요",
   "친절해요",

@@ -53,11 +53,11 @@ class MeetingService:
             search_terms.append(t)
 
         main_category_map = {
-            "meal": ["RESTAURANT", "FOOD"],
-            "cafe": ["CAFE"],
-            "drink": ["PUB"],
-            "pub": ["PUB"],
-            "bar": ["PUB"],
+            "식사": ["RESTAURANT", "FOOD"],
+            "카페": ["CAFE"],
+            "술": ["PUB"],
+            "술집": ["PUB"],
+            "주점": ["PUB"],
         }
         main_category_terms = main_category_map.get(purpose, [])
 

@@ -36,7 +36,7 @@ interface ChatRoom {
 }
 
 // --- API URL ---
-const API_URL = "https://advertiser-senator-another-distinguished.trycloudflare.com";
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
 // --- 더미 데이터 (SNS 게시물 + 가게 정보 연동) ---
 const MOCK_FEEDS = [
@@ -2260,3 +2260,4 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         </div>
     )
 }
+

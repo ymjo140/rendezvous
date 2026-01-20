@@ -13,8 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
 
 // 🌟 [핵심] 주소를 여기서 직접 관리 (커뮤니티 탭과 통일)
-const API_URL = "https://advertiser-senator-another-distinguished.trycloudflare.com";
-const WS_URL = "wss://wemeet-backend-xqlo.onrender.com";
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+const WS_URL = (process.env.NEXT_PUBLIC_WS_URL || (API_URL ? API_URL.replace(/^https?/, "ws") : ""))
 
 // 🌟 [핵심] 이 파일 전용 통신 함수 (토큰 자동 포함)
 const fetchChatAPI = async (endpoint: string, options: RequestInit = {}) => {

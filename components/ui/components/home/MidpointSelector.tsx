@@ -41,11 +41,11 @@ export const MidpointSelector = ({
 }: MidpointSelectorProps) => {
   return (
     <div className="absolute bottom-4 left-4 right-4 bg-white rounded-3xl p-5 shadow-lg border border-gray-100 z-20">
-      <h2 className="text-lg font-bold mb-3">Where are you meeting?</h2>
+      <h2 className="text-lg font-bold mb-3">어디서 모이나요?</h2>
       <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
         {includeMe && (
           <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl">
-            <span className="text-xl">Me</span>
+            <span className="text-xl">나</span>
             <span className="flex-1 text-sm">{myLocationInput}</span>
             <button onClick={() => onIncludeMeChange(false)}>
               <Trash2 className="w-4 h-4 text-gray-400" />
@@ -71,7 +71,7 @@ export const MidpointSelector = ({
                 value={val.text}
                 onChange={(v) => onManualInputChange(i, v)}
                 onSelect={(place) => onManualSelect(i, place)}
-                placeholder="Enter a place (e.g., Gangnam)"
+                placeholder="장소 입력 (예: 강남)"
               />
             </div>
             <button onClick={() => onRemoveManualInput(i)} className="mt-1">
@@ -82,22 +82,22 @@ export const MidpointSelector = ({
       </div>
       <div className="grid grid-cols-2 gap-2 mt-3">
         <Button variant="outline" onClick={onOpenFriendModal}>
-          <Users className="w-4 h-4 mr-2" />Friends
+          <Users className="w-4 h-4 mr-2" />친구
         </Button>
         <Button variant="outline" onClick={onAddManualInput}>
-          <Plus className="w-4 h-4 mr-2" />Add place
+          <Plus className="w-4 h-4 mr-2" />장소
         </Button>
       </div>
       {!includeMe && (
         <button onClick={() => onIncludeMeChange(true)} className="text-xs text-gray-500 mt-2 underline w-full">
-          + Add my location
+          + 내 위치 추가
         </button>
       )}
       <Button
         className="w-full mt-3 h-12 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold"
         onClick={onSearch}
       >
-        Find midpoint
+        중간 지점 찾기
       </Button>
     </div>
   )

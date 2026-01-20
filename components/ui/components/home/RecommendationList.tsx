@@ -22,20 +22,20 @@ const PlaceCard = ({ place, onClick }: { place: any; onClick: () => void }) => (
         {place.name || place.title}
         <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
           {place.wemeet_rating
-            ? `★${place.wemeet_rating.toFixed(1)}`
+            ? `⭐${place.wemeet_rating.toFixed(1)}`
             : place.score
-            ? `★${place.score}`
+            ? `⭐${place.score}`
             : ""}
         </span>
       </div>
       <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-        <MapPin className="w-3 h-3" /> {place.category || "Place"}
+        <MapPin className="w-3 h-3" /> {place.category || "장소"}
         {place.tags && <span className="text-gray-400">| {place.tags.slice(0, 2).join(", ")}</span>}
       </div>
       <div className="text-[10px] text-gray-400 mt-1">{place.address}</div>
     </div>
     <Button size="sm" variant="outline" className="ml-2 h-8 text-xs">
-      Details
+      상세
     </Button>
   </div>
 )
@@ -58,9 +58,9 @@ export const RecommendationList = ({
         >
           <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4" />
           <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-lg">Recommendations</h3>
+            <h3 className="font-bold text-lg">추천 지역</h3>
             <button onClick={onReset} className="text-xs text-gray-400">
-              Reset
+              다시 찾기
             </button>
           </div>
 

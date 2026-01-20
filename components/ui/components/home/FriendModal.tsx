@@ -22,8 +22,8 @@ export const FriendModal = ({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add friends</DialogTitle>
-          <DialogDescription className="hidden">Select friends to include.</DialogDescription>
+          <DialogTitle>친구 추가</DialogTitle>
+          <DialogDescription className="hidden">함께 만날 친구를 선택하세요.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           {aiPersonas.map((f) => (

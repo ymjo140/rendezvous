@@ -6,13 +6,13 @@ class MeetingCondition(BaseModel):
     date: str = "today"
     time: Optional[str] = None
     budget_range: List[int] = [1, 10]
-    category: str = "meal"
+    category: str = "식사"
     tags: List[str] = []
     detail_prompt: str = ""
 
 class MeetingFlowRequest(BaseModel):
     room_id: Optional[str] = None
-    purpose: str = "meal"
+    purpose: str = "식사"
     conditions: MeetingCondition
     manual_locations: List[str] = []
     current_lat: float = 0.0
@@ -49,7 +49,7 @@ class NlpRequest(BaseModel):
 
 class RecommendRequest(BaseModel):
     users: List[Any] = []
-    purpose: str = "meal"
+    purpose: str = "식사"
     location_name: str = ""
     friend_location_manual: Optional[str] = None
     manual_locations: List[str] = []

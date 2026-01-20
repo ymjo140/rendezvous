@@ -29,7 +29,7 @@ export const HomeHeader = ({
         <Search className="w-5 h-5 text-gray-400 mr-2" />
         <Input
           className="border-none bg-transparent h-full text-base p-0"
-          placeholder="Quick place search (e.g., Gangnam)"
+          placeholder="빠른 장소 검색(예: 강남)"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && onSearchSubmit()}
@@ -42,7 +42,7 @@ export const HomeHeader = ({
           className="rounded-full bg-white shadow-sm border-[#7C3AED] text-[#7C3AED]"
           onClick={onOpenFilter}
         >
-          <Filter className="w-3 h-3 mr-1" />Filter</Button>
+          <Filter className="w-3 h-3 mr-1" />필터</Button>
         {currentFiltersLabel && (
           <Badge className="rounded-full bg-gradient-to-r from-[#7C3AED] to-[#14B8A6] border-0 text-white h-9 px-3 flex items-center">
             {currentFiltersLabel}

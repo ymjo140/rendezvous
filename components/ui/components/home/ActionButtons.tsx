@@ -32,7 +32,7 @@ export const ActionButtons = ({
             disabled={interactionLoading}
             className="w-full h-14 rounded-2xl bg-blue-500 hover:bg-blue-600 text-white font-bold shadow-xl animate-pulse flex gap-2"
           >
-            <Gem className="w-5 h-5" /> Collect loot (+{nearbyLoot.amount}C)
+            <Gem className="w-5 h-5" /> 보물 줍기 (+{nearbyLoot.amount}C)
           </Button>
         </motion.div>
       ) : nearbyPlace ? (
@@ -47,7 +47,7 @@ export const ActionButtons = ({
             disabled={interactionLoading}
             className="w-full h-14 rounded-2xl bg-yellow-500 hover:bg-yellow-600 text-white font-bold shadow-xl animate-bounce flex gap-2"
           >
-            <Coins className="w-5 h-5" /> Check in (+50C)
+            <Coins className="w-5 h-5" /> 방문 인증 (+50C)
           </Button>
         </motion.div>
       ) : null}

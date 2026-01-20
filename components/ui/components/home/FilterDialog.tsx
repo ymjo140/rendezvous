@@ -30,12 +30,12 @@ export const FilterDialog = ({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md h-[70vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
         <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b">
-          <DialogTitle>Filter options</DialogTitle>
-          <DialogDescription className="hidden">Select purpose and filters.</DialogDescription>
+          <DialogTitle>필터 설정</DialogTitle>
+          <DialogDescription className="hidden">목적과 옵션을 설정하세요.</DialogDescription>
         </DialogHeader>
 
         <div className="px-4 py-3 bg-gray-50 border-b">
-          <div className="text-xs font-bold text-gray-500 mb-2">Purpose</div>
+          <div className="text-xs font-bold text-gray-500 mb-2">목적</div>
           <div className="flex gap-2 overflow-x-auto scrollbar-hide">
             {purposeKeys.length === 0 ? (
               <div className="flex items-center gap-2 text-xs text-gray-400">
@@ -102,7 +102,7 @@ export const FilterDialog = ({
         </div>
         <DialogFooter className="p-4 border-t bg-white">
           <Button className="w-full bg-[#7C3AED] hover:bg-purple-700 font-bold" onClick={() => onOpenChange(false)}>
-            Apply
+            적용
           </Button>
         </DialogFooter>
       </DialogContent>
