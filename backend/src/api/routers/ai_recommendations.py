@@ -92,8 +92,15 @@ def _log_recommendation_background(
 # === Pydantic Schemas ===
 
 class ActionRequest(BaseModel):
-    action_type: str  # view, click, like, save, review, visit, share, reserve, dismiss, bad_review
+    action_type: str  # detail_view, click, like, save, review, share, reserve, dismiss, bad_review, etc
     place_id: Optional[int] = None
+    meeting_id: Optional[str] = None
+    event_id: Optional[str] = None
+    offer_id: Optional[int] = None
+    request_id: Optional[str] = None
+    decision_cell: Optional[dict] = None
+    source: Optional[str] = None
+    metadata: dict = {}
     action_value: float = 1.0
     context: dict = {}
 
@@ -148,7 +155,10 @@ async def record_user_action(
     
     valid_actions = [
         "view", "click", "like", "save", "review", "visit",
-        "share", "search", "reserve", "dismiss", "bad_review"
+        "share", "search", "reserve", "dismiss", "bad_review",
+        "detail_view", "impression", "offer_impression", "offer_click",
+        "reserve_click", "reserve_complete", "meeting_create", "meeting_join",
+        "calendar_event_create", "review_submit"
     ]
     if req.action_type.lower() not in valid_actions:
         raise HTTPException(
@@ -157,23 +167,59 @@ async def record_user_action(
         )
     
     try:
+        entity_type = None
+        entity_id = None
+        if req.offer_id is not None:
+            entity_type = "offer"
+            entity_id = str(req.offer_id)
+        elif req.place_id is not None:
+            entity_type = "place"
+            entity_id = str(req.place_id)
+        elif req.meeting_id is not None:
+            entity_type = "meeting"
+            entity_id = str(req.meeting_id)
+        elif req.event_id is not None:
+            entity_type = "event"
+            entity_id = str(req.event_id)
+
+        metadata = {**(req.metadata or {})}
+        if req.source:
+            metadata["source"] = req.source
+
+        action_log = models.ActionLog(
+            user_id=current_user.id if current_user else None,
+            action_type=req.action_type.lower(),
+            request_id=req.request_id,
+            decision_cell_json=req.decision_cell or {},
+            entity_type=entity_type,
+            entity_id=entity_id,
+            metadata_json=metadata,
+        )
+        db.add(action_log)
+        db.commit()
+
         # Add timestamp to context
         context_with_time = {
             **(req.context or {}),
             "recorded_at": datetime.now().isoformat(),
             "hour": datetime.now().hour,
-            "is_weekend": datetime.now().weekday() >= 5
+            "is_weekend": datetime.now().weekday() >= 5,
+            "request_id": req.request_id,
+            "decision_cell": req.decision_cell or {},
+            "source": req.source,
+            "metadata": metadata,
         }
         
-        # Schedule background task for logging (non-blocking)
-        background_tasks.add_task(
-            _record_action_background,
-            user_id=current_user.id,
-            action_type=req.action_type.lower(),
-            place_id=req.place_id,
-            action_value=req.action_value,
-            context=context_with_time
-        )
+        # Schedule background task for place actions only (non-blocking)
+        if req.place_id is not None:
+            background_tasks.add_task(
+                _record_action_background,
+                user_id=current_user.id,
+                action_type=req.action_type.lower(),
+                place_id=req.place_id,
+                action_value=req.action_value,
+                context=context_with_time
+            )
         
         # Return immediately without waiting for DB write
         return ActionResponse(

@@ -11,23 +11,19 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
+import { API_BASE_URL, fetchWithAuth } from "@/lib/api-client"
+import { useMe } from "@/hooks/use-me"
+import { CommunityTab } from "@/components/ui/community-tab"
 
 // 🌟 [핵심] 주소를 여기서 직접 관리 (커뮤니티 탭과 통일)
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
-const WS_URL = (process.env.NEXT_PUBLIC_WS_URL || (API_URL ? API_URL.replace(/^https?/, "ws") : ""))
+const WS_BASE_URL =
+    process.env.NEXT_PUBLIC_WS_URL ||
+    (API_BASE_URL ? API_BASE_URL.replace(/^https:/, "wss:").replace(/^http:/, "ws:") : "")
 
-// 🌟 [핵심] 이 파일 전용 통신 함수 (토큰 자동 포함)
 const fetchChatAPI = async (endpoint: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem("token");
-    const headers = {
-        "Content-Type": "application/json",
-        ...options.headers,
-        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-    } as HeadersInit;
-
-    const url = `${API_URL}${endpoint}`;
-    console.log(`📡 Chat 요청: ${url}`);
-    return fetch(url, { ...options, headers });
+    const url = `${API_BASE_URL}${endpoint}`;
+    console.log(`?? Chat ??: ${url}`);
+    return fetchWithAuth(endpoint, options);
 };
 
 // --- AI 장소 추천용 필터 데이터 ---
@@ -482,7 +478,9 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     const [activeRoom, setActiveRoom] = useState<any>(null)
     const [messages, setMessages] = useState<any[]>([])
     const [input, setInput] = useState("")
-    const [myId, setMyId] = useState<number | null>(null)
+    const { me } = useMe()
+    const myId = me?.id ?? null
+    const [rootTab, setRootTab] = useState("open")
     const [showPlanner, setShowPlanner] = useState(false)
     const [isConnected, setIsConnected] = useState(false)
     const scrollRef = useRef<HTMLDivElement>(null)
@@ -502,17 +500,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     };
 
     useEffect(() => {
-        const init = async () => {
-            const token = localStorage.getItem("token");
-            if(token) {
-                try {
-                    const res = await fetchChatAPI("/api/users/me");
-                    if (res.ok) setMyId((await res.json()).id);
-                } catch(e) {}
-            }
-            fetchRooms();
-        }
-        init()
+        fetchRooms()
     }, [])
     
     // 📤 특정 채팅방 직접 열기 (공유 게시물에서 돌아올 때)
@@ -520,6 +508,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
         if (openRoomId && rooms.length > 0) {
             const room = rooms.find(r => r.id === openRoomId);
             if (room) {
+                setRootTab("open");
                 setActiveRoom(room);
                 setView('room');
                 onRoomOpened?.();
@@ -555,7 +544,11 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
 
             // WebSocket 연결
             const token = localStorage.getItem("token");
-            const wsUrl = `${WS_URL}/api/ws/${activeRoom.id}?token=${token}`;
+            if (!WS_BASE_URL || !token) {
+                setIsConnected(false);
+                return;
+            }
+            const wsUrl = `${WS_BASE_URL}/api/ws/${activeRoom.id}?token=${token}`;
             const ws = new WebSocket(wsUrl);
 
             ws.onopen = () => { setIsConnected(true); console.log("Connected"); };
@@ -596,32 +589,61 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
         setInput("");
     }
 
+    const renderTabHeader = () => (
+        <div className="bg-white p-4 pb-3 shadow-sm sticky top-0 z-30">
+            <Tabs value={rootTab} onValueChange={setRootTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-2 h-10">
+                    <TabsTrigger value="open">Open Chat</TabsTrigger>
+                    <TabsTrigger value="community">Community</TabsTrigger>
+                </TabsList>
+            </Tabs>
+        </div>
+    )
+
+    if (rootTab === "community") {
+        return (
+            <div className="flex flex-col h-full bg-[#F3F4F6] font-['Pretendard']">
+                {renderTabHeader()}
+                <div className="flex-1 overflow-hidden">
+                    <CommunityTab source="chat/community" />
+                </div>
+            </div>
+        )
+    }
+
     if (view === 'list') {
         return (
             <div className="flex flex-col h-full bg-[#F3F4F6] font-['Pretendard']">
-                <div className="bg-white p-5 pb-4 shadow-sm sticky top-0 z-10">
-                    <h1 className="text-xl font-bold text-gray-900">채팅</h1>
-                </div>
-                <ScrollArea className="flex-1">
-                    <div className="divide-y divide-gray-100 pb-20">
-                        {rooms.length > 0 ? rooms.map(room => (
-                            <div key={room.id} onClick={() => { setActiveRoom(room); setView('room'); }} className="p-4 bg-white hover:bg-gray-50 cursor-pointer flex gap-3 transition-colors">
-                                <Avatar className="w-12 h-12 border border-gray-100"><AvatarFallback className="bg-purple-50 text-[#7C3AED] font-bold">{room.title[0]}</AvatarFallback></Avatar>
-                                <div className="flex-1 overflow-hidden py-1">
-                                    <div className="flex justify-between items-center mb-1"><h3 className="font-bold text-sm text-gray-900 truncate">{room.title}</h3><span className="text-[10px] text-gray-400">방금 전</span></div>
-                                    <p className="text-xs text-gray-500 truncate">{room.last_message || "대화를 시작해보세요."}</p>
-                                </div>
+                {renderTabHeader()}
+                <div className="flex-1 overflow-hidden">
+                    <div className="flex flex-col h-full">
+                        <div className="bg-white p-5 pb-4 shadow-sm sticky top-0 z-10">
+                            <h1 className="text-xl font-bold text-gray-900">채팅</h1>
+                        </div>
+                        <ScrollArea className="flex-1">
+                            <div className="divide-y divide-gray-100 pb-20">
+                                {rooms.length > 0 ? rooms.map(room => (
+                                    <div key={room.id} onClick={() => { setActiveRoom(room); setView('room'); }} className="p-4 bg-white hover:bg-gray-50 cursor-pointer flex gap-3 transition-colors">
+                                        <Avatar className="w-12 h-12 border border-gray-100"><AvatarFallback className="bg-purple-50 text-[#7C3AED] font-bold">{room.title[0]}</AvatarFallback></Avatar>
+                                        <div className="flex-1 overflow-hidden py-1">
+                                            <div className="flex justify-between items-center mb-1"><h3 className="font-bold text-sm text-gray-900 truncate">{room.title}</h3><span className="text-[10px] text-gray-400">방금 전</span></div>
+                                            <p className="text-xs text-gray-500 truncate">{room.last_message || "대화를 시작해보세요."}</p>
+                                        </div>
+                                    </div>
+                                )) : <div className="p-10 text-center text-gray-400 text-sm">참여 중인 대화방이 없습니다.</div>}
                             </div>
-                        )) : <div className="p-10 text-center text-gray-400 text-sm">참여 중인 대화방이 없습니다.</div>}
+                        </ScrollArea>
                     </div>
-                </ScrollArea>
+                </div>
             </div>
         )
     }
 
     return (
         <div className="flex flex-col h-full bg-[#f8fafc] font-['Pretendard']">
-            <div className="bg-white px-4 py-3 flex items-center shadow-sm sticky top-0 z-20 justify-between">
+            {renderTabHeader()}
+            <div className="flex-1 flex flex-col">
+                <div className="bg-white px-4 py-3 flex items-center shadow-sm sticky top-0 z-20 justify-between">
                 <div className="flex items-center gap-2">
                     <Button variant="ghost" size="icon" onClick={() => setView('list')} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
                     <div>
@@ -649,9 +671,9 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                         <LogOut className="w-4 h-4" />
                     </Button>
                 </div>
-            </div>
+                </div>
 
-            <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+                <ScrollArea className="flex-1 p-4" ref={scrollRef}>
                 <div className="flex flex-col gap-3 pb-4">
                     <div className="flex justify-center my-4"><span className="bg-gray-200/60 text-gray-500 text-[10px] px-3 py-1 rounded-full">대화가 시작되었습니다.</span></div>
 
@@ -757,12 +779,13 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                         )
                     })}
                 </div>
-            </ScrollArea>
+                </ScrollArea>
 
-            <div className="p-3 bg-white border-t safe-area-bottom">
+                <div className="p-3 bg-white border-t safe-area-bottom">
                 <div className="flex gap-2 items-center bg-gray-50 px-3 py-1.5 rounded-3xl border border-gray-200 focus-within:border-[#7C3AED] focus-within:ring-1 focus-within:ring-[#7C3AED]/20 transition-all">
                     <Input className="flex-1 border-none shadow-none bg-transparent focus-visible:ring-0 h-9 text-sm" placeholder="메시지 입력..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
                     <Button size="icon" className="h-8 w-8 rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] shadow-sm" onClick={handleSend}><Send className="w-4 h-4 text-white" /></Button>
+                </div>
                 </div>
             </div>
         </div>

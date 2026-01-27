@@ -10,75 +10,52 @@ import { Search, Heart, MapPin, Calendar, User, Plus, Loader2, Check, Trash2, Lo
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { fetchWithAuth } from "@/lib/api-client"
+import { useMe } from "@/hooks/use-me"
+import { useDecisionCell } from "@/hooks/use-decision-cell"
+import { logAction } from "@/lib/analytics-client"
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "")
 const CATEGORIES = ["전체", "맛집", "운동", "스터디", "취미", "여행"]
 
-const fetchCommunityAPI = async (endpoint: string, options: RequestInit = {}) => {
-  const token = localStorage.getItem("token")
-  const headers = {
-    "Content-Type": "application/json",
-    ...options.headers,
-    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-  } as HeadersInit
-
-  const url = `${API_URL}${endpoint}`
-  console.log(`📡 Community 요청: ${url}`)
-  return fetch(url, { ...options, headers })
+type CommunityTabProps = {
+  source?: string
 }
 
-export function CommunityTab() {
+export function CommunityTab({ source = "community_tab" }: CommunityTabProps = {}) {
   const router = useRouter()
   const [isGuest, setIsGuest] = useState(false)
   const [meetings, setMeetings] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("전체")
 
-  const [myId, setMyId] = useState<number | null>(null)
+  const { me } = useMe()
+  const { updatePartial } = useDecisionCell()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const [newMeeting, setNewMeeting] = useState({
-    title: "", description: "", max_members: "4", location: "", date: "", time: "", category: "맛집"
+    title: "",
+    description: "",
+    max_members: "4",
+    location: "",
+    date: "",
+    time: "",
+    category: "맛집"
   })
 
   useEffect(() => {
-    const checkLogin = async () => {
-      const token = localStorage.getItem("token")
-      if (!token) {
-        console.log("❌ 토큰 없음 -> 게스트 모드")
-        setIsGuest(true)
-        return
-      }
-
-      try {
-        const res = await fetchCommunityAPI("/api/users/me")
-        if (res.ok) {
-          const data = await res.json()
-          console.log("✅ 로그인 성공:", data.name)
-          setMyId(data.id)
-        } else {
-          console.log("❌ 로그인 실패 (401) -> 게스트 모드")
-          setIsGuest(true)
-        }
-      } catch (e) {
-        console.error(e)
-        setIsGuest(true)
-      }
+    const token = localStorage.getItem("token")
+    if (!token) {
+      setIsGuest(true)
     }
-    checkLogin()
   }, [])
 
   const fetchCommunities = async () => {
     setLoading(true)
     try {
-      const res = await fetchCommunityAPI("/api/communities")
+      const res = await fetchWithAuth("/api/communities")
       if (res.ok) {
         const data = await res.json()
-        if (Array.isArray(data)) {
-          setMeetings(data)
-        } else {
-          setMeetings([])
-        }
+        setMeetings(Array.isArray(data) ? data : [])
       }
     } catch (e) {
       console.error(e)
@@ -92,8 +69,20 @@ export function CommunityTab() {
     if (!isGuest) fetchCommunities()
   }, [isGuest])
 
+  const calcTimeBlock = (start: string, durationMinutes = 120) => {
+    const [h, m] = start.split(":").map(Number)
+    if (Number.isNaN(h) || Number.isNaN(m)) return { start, end: start }
+    const base = new Date()
+    base.setHours(h, m, 0, 0)
+    const end = new Date(base.getTime() + durationMinutes * 60000)
+    const endH = String(end.getHours()).padStart(2, "0")
+    const endM = String(end.getMinutes()).padStart(2, "0")
+    return { start, end: `${endH}:${endM}` }
+  }
+
   const addToCalendar = async (title: string, date: string, time: string, location: string) => {
     try {
+      if (!me?.id) throw new Error("missing user id")
       const payload = {
         title: `[모임] ${title}`,
         date: date,
@@ -101,13 +90,22 @@ export function CommunityTab() {
         duration: 2,
         location_name: location,
         description: "커뮤니티 모임 자동 등록",
-        user_id: 1,
+        user_id: me.id,
         purpose: "모임",
       }
-      await fetchCommunityAPI("/api/events", {
+      const res = await fetchWithAuth("/api/events", {
         method: "POST",
         body: JSON.stringify(payload)
       })
+      if (res.ok) {
+        const created = await res.json().catch(() => null)
+        logAction({
+          action_type: "calendar_event_create",
+          event_id: created?.id,
+          source,
+          metadata: { title }
+        })
+      }
     } catch (e) {
       console.error("캘린더 등록 실패:", e)
     }
@@ -124,6 +122,13 @@ export function CommunityTab() {
     }
 
     try {
+      const timeBlock = calcTimeBlock(newMeeting.time)
+      updatePartial({
+        date: newMeeting.date,
+        time_block: timeBlock,
+        party_size: parseInt(newMeeting.max_members, 10) || 2
+      })
+
       const payload = {
         title: newMeeting.title,
         description: newMeeting.description,
@@ -134,12 +139,19 @@ export function CommunityTab() {
         tags: [newMeeting.category]
       }
 
-      const res = await fetchCommunityAPI("/api/communities", {
+      const res = await fetchWithAuth("/api/communities", {
         method: "POST",
         body: JSON.stringify(payload)
       })
 
       if (res.ok) {
+        const created = await res.json().catch(() => null)
+        logAction({
+          action_type: "meeting_create",
+          meeting_id: created?.id,
+          source,
+          metadata: { category: newMeeting.category }
+        })
         await addToCalendar(newMeeting.title, newMeeting.date, newMeeting.time, newMeeting.location)
         alert("모임이 생성되었습니다!")
         setIsCreateOpen(false)
@@ -157,10 +169,11 @@ export function CommunityTab() {
   const handleJoin = async (m: any) => {
     if (!confirm(`'${m.title}' 모임에 참여하시겠습니까?`)) return
     try {
-      const res = await fetchCommunityAPI(`/api/communities/${m.id}/join`, { method: "POST" })
+      const res = await fetchWithAuth(`/api/communities/${m.id}/join`, { method: "POST" })
       if (res.ok) {
         const [datePart, timePart] = m.date_time.split(" ")
         const cleanTime = timePart.length > 5 ? timePart.substring(0, 5) : timePart
+        logAction({ action_type: "meeting_join", meeting_id: m.id, source })
         await addToCalendar(m.title, datePart, cleanTime, m.location)
         alert("참여 완료! 캘린더에 등록되었습니다.")
         fetchCommunities()
@@ -175,7 +188,7 @@ export function CommunityTab() {
   const handleDelete = async (id: string) => {
     if (!confirm("정말 이 모임을 삭제하시겠습니까? (복구 불가)")) return
     try {
-      const res = await fetchCommunityAPI(`/api/communities/${id}`, { method: "DELETE" })
+      const res = await fetchWithAuth(`/api/communities/${id}`, { method: "DELETE" })
       if (res.ok) {
         alert("삭제되었습니다.")
         fetchCommunities()
@@ -190,7 +203,7 @@ export function CommunityTab() {
   const handleLeave = async (id: string) => {
     if (!confirm("모임에서 나가시겠습니까?")) return
     try {
-      const res = await fetchCommunityAPI(`/api/chat/rooms/${id}/leave`, { method: "POST" })
+      const res = await fetchWithAuth(`/api/chat/rooms/${id}/leave`, { method: "POST" })
       if (res.ok) {
         alert("나갔습니다.")
         fetchCommunities()
@@ -253,8 +266,8 @@ export function CommunityTab() {
             <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-[#7C3AED]" /></div>
           ) : filteredMeetings.length > 0 ? (
             filteredMeetings.map((m) => {
-              const isAuthor = m.host_id === myId
-              const isMember = Array.isArray(m.member_ids) ? m.member_ids.includes(myId) : false
+              const isAuthor = m.host_id === me?.id
+              const isMember = Array.isArray(m.member_ids) ? m.member_ids.includes(me?.id) : false
               const memberCount = Array.isArray(m.member_ids) ? m.member_ids.length : 0
 
               return (

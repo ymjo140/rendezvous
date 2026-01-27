@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "")
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "")
 
 const API_BASE_URL = API_URL
 const REVIEW_TAG_SUGGESTIONS = [

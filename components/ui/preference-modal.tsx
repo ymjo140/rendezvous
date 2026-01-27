@@ -5,9 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
+import { fetchWithAuth } from "@/lib/api-client"
 import { ChevronRight, Check } from "lucide-react"
-
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "")
 
 const OPTIONS = {
   foods: ["한식", "일식", "중식", "양식", "아시아음식", "고기/구이", "해산물", "분식", "패스트푸드", "카페/디저트"],
@@ -47,11 +46,9 @@ export function PreferenceModal({ isOpen, onClose, onComplete }: PreferenceModal
   }
 
   const handleSave = async () => {
-    const token = localStorage.getItem("token")
     try {
-      const res = await fetch(`${API_URL}/api/users/me/preferences`, {
+      const res = await fetchWithAuth("/api/users/me/preferences", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify(selections)
       })
       if (res.ok) {

@@ -4,14 +4,12 @@ import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Loader2, MapPin, Check, ChevronRight, User, Utensils, GlassWater, Wallet } from "lucide-react"
+import { Loader2, MapPin, Check, ChevronRight, Utensils, GlassWater, Wallet } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
-import { Card } from "@/components/ui/card"
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "")
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "")
 
-// --- 상수 데이터 ---
 const FOOD_TAGS = ["한식", "일식", "중식", "양식", "분식", "아시아음식", "패스트푸드", "카페/디저트"]
 const VIBE_TAGS = ["조용한", "감성적인", "힙한", "가성비", "고급스러운", "뷰맛집", "야외", "인스타감성"]
 const ALCOHOL_TAGS = ["소주", "맥주", "와인", "하이볼", "막걸리/전통주", "칵테일"]
@@ -19,28 +17,23 @@ const AGE_GROUPS = ["10대", "20대", "30대", "40대", "50대+"]
 
 export default function OnboardingPage() {
   const router = useRouter()
-  const [step, setStep] = useState(1) // 1: 프로필 2: 위치, 3: 취향
+  const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [locLoading, setLocLoading] = useState(false)
 
-  // --- Form States ---
-  // Step 1: Profile
   const [name, setName] = useState("")
   const [gender, setGender] = useState("")
   const [ageGroup, setAgeGroup] = useState("")
-  const [jobStatus, setJobStatus] = useState("") // student, worker
+  const [jobStatus, setJobStatus] = useState("")
 
-  // Step 2: Location
   const [locationName, setLocationName] = useState("위치 확인 필요")
   const [coords, setCoords] = useState({ lat: 0, lng: 0 })
 
-  // Step 3: Preferences
   const [selectedFoods, setSelectedFoods] = useState<string[]>([])
   const [selectedVibes, setSelectedVibes] = useState<string[]>([])
   const [selectedAlcohol, setSelectedAlcohol] = useState<string[]>([])
   const [budget, setBudget] = useState([20000])
 
-  // 초기 로드: 기존 프로필 불러오기
   useEffect(() => {
     const token = localStorage.getItem("token")
     if (!token) router.push("/login")
@@ -52,7 +45,6 @@ export default function OnboardingPage() {
       })
   }, [router])
 
-  // --- Handlers ---
   const handleGetLocation = () => {
     if (!navigator.geolocation) return alert("위치 권한을 허용해주세요.")
     setLocLoading(true)
@@ -112,7 +104,6 @@ export default function OnboardingPage() {
     }
   }
 
-  // --- UI Parts ---
   const renderStep1 = () => (
     <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300">
       <div className="space-y-2">
@@ -185,7 +176,6 @@ export default function OnboardingPage() {
 
   const renderStep3 = () => (
     <div className="space-y-8 animate-in slide-in-from-right-4 fade-in duration-300 pb-10">
-      {/* 음식 */}
       <div className="space-y-3">
         <label className="flex items-center gap-2 text-sm font-bold text-gray-800"><Utensils className="w-4 h-4 text-[#7C3AED]" /> 좋아하는 음식 (복수 선택)</label>
         <div className="flex flex-wrap gap-2">
@@ -197,7 +187,6 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      {/* 분위기 */}
       <div className="space-y-3">
         <label className="flex items-center gap-2 text-sm font-bold text-gray-800">선호하는 분위기</label>
         <div className="flex flex-wrap gap-2">
@@ -209,7 +198,6 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      {/* 주류 */}
       <div className="space-y-3">
         <label className="flex items-center gap-2 text-sm font-bold text-gray-800"><GlassWater className="w-4 h-4 text-blue-500" /> 주류 취향</label>
         <div className="flex flex-wrap gap-2">
@@ -221,7 +209,6 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      {/* 예산 */}
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <label className="flex items-center gap-2 text-sm font-bold text-gray-800"><Wallet className="w-4 h-4 text-green-500" /> 1인당 평균 예산</label>
@@ -242,7 +229,6 @@ export default function OnboardingPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-white font-['Pretendard']">
-      {/* Progress Bar */}
       <div className="w-full h-1 bg-gray-100 fixed top-0 left-0 z-10">
         <div className="h-full bg-[#7C3AED] transition-all duration-500" style={{ width: `${(step / 3) * 100}%` }}></div>
       </div>

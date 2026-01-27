@@ -7,30 +7,18 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input" 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock, Trash2, Link as LinkIcon, RefreshCw, ArrowLeft, Loader2 } from "lucide-react"
+import { fetchWithAuth } from "@/lib/api-client"
+import { useMe } from "@/hooks/use-me"
+import { useDecisionCell } from "@/hooks/use-decision-cell"
+import { logAction } from "@/lib/analytics-client"
 
-// ✅ [수정] 파일 내부에 직접 URL과 인증 함수를 선언 (import 의존성 제거)
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
-
-const fetchWithAuth = async (endpoint: string, options: any = {}) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
-    const url = `${API_URL}${endpoint}`;
-    
-    const headers = {
-        "Content-Type": "application/json",
-        ...options.headers,
-        ...(token ? { "Authorization": `Bearer ${token}` } : {})
-    };
-
-    console.log(`📡 Calendar 요청: ${url}`);
-    return fetch(url, { ...options, headers });
-};
+// ? [수정] 파일 내부에 직접 URL과 인증 함수를 선언 (import 의존성 제거)
 
 export function CalendarTab() {
     const router = useRouter();
     const [isGuest, setIsGuest] = useState(false);
-    
-    // 🌟 [추가] 로그인한 유저의 진짜 ID를 담을 상태
-    const [myId, setMyId] = useState<number | null>(null);
+    const { me } = useMe();
+    const { updatePartial } = useDecisionCell();
 
     const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
     const [date, setDate] = useState<Date>(new Date())
@@ -59,19 +47,6 @@ export function CalendarTab() {
         const day = String(d.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     };
-
-    // 🌟 [추가] 내 정보(ID) 가져오기
-    const fetchMyInfo = async () => {
-        try {
-            const res = await fetchWithAuth("/api/users/me");
-            if (res.ok) {
-                const data = await res.json();
-                setMyId(data.id); // 내 진짜 ID 저장
-                console.log("✅ 로그인된 유저 ID:", data.id);
-            }
-        } catch (e) { console.error("유저 정보 로드 실패", e); }
-    };
-
     const loadEvents = async () => {
         try {
             const token = localStorage.getItem("token");
@@ -111,9 +86,7 @@ export function CalendarTab() {
 
     useEffect(() => {
         const token = localStorage.getItem("token");
-        if(token) {
-            fetchMyInfo(); // 🌟 컴포넌트 켜질 때 내 정보 먼저 가져옴
-            loadEvents();
+        if(token) {            loadEvents();
             const savedUrl = localStorage.getItem("calendar_sync_url");
             const savedSource = localStorage.getItem("calendar_sync_source");
             if (savedUrl && savedSource) autoSync(savedUrl, savedSource);
@@ -160,15 +133,27 @@ export function CalendarTab() {
         } catch (e) { alert("오류 발생"); }
     };
 
-    // 🌟 [수정] 일정 생성 시 '진짜 내 ID'를 함께 전송
+    // 일정 생성 시 Decision Cell 시간대 계산
+    const calcTimeBlock = (start: string, durationMinutes: number) => {
+        const [h, m] = start.split(":").map(Number);
+        if (Number.isNaN(h) || Number.isNaN(m)) return { start, end: start };
+        const base = new Date();
+        base.setHours(h, m, 0, 0);
+        const end = new Date(base.getTime() + durationMinutes * 60000);
+        const endH = String(end.getHours()).padStart(2, "0");
+        const endM = String(end.getMinutes()).padStart(2, "0");
+        return { start, end: `${endH}:${endM}` };
+    };
     const handleCreateEvent = async () => {
         if(!newEvent.title || !newEvent.date || !newEvent.time) return alert("일정 제목, 날짜, 시간을 모두 입력하세요.");
-        if(!myId) return alert("유저 정보를 불러오지 못했습니다. 다시 로그인해주세요.");
+        if(!me?.id) return alert("유저 정보를 불러오지 못했습니다. 다시 로그인해주세요.");
 
         try {
+            const timeBlock = calcTimeBlock(newEvent.time, Number(newEvent.duration));
+            updatePartial({ date: newEvent.date, time_block: timeBlock });
             const payload = {
                 id: crypto.randomUUID(), 
-                user_id: myId, // 👈 여기가 핵심! (1이나 null이 아니라 진짜 내 ID)
+                user_id: me.id, // ?? 여기가 핵심! (1이나 null이 아니라 진짜 내 ID)
                 title: newEvent.title,
                 date: newEvent.date,          
                 time: newEvent.time,          
@@ -186,6 +171,8 @@ export function CalendarTab() {
             });
 
             if(res.ok) {
+                const created = await res.json().catch(() => null);
+                logAction({ action_type: "calendar_event_create", event_id: created?.id, source: "calendar_tab", metadata: { title: newEvent.title } });
                 alert("일정이 등록되었습니다.");
                 setIsCreateOpen(false); 
                 loadEvents();
@@ -215,7 +202,9 @@ export function CalendarTab() {
     }
     const handleDateClick = (d: Date) => { 
         setSelectedDate(d); setDate(d); 
-        setNewEvent(prev => ({...prev, date: formatDateLocal(d)}));
+        const dateStr = formatDateLocal(d);
+        setNewEvent(prev => ({...prev, date: dateStr}));
+        updatePartial({ date: dateStr });
     };
 
     const getWeekDates = (baseDate: Date) => {
@@ -236,7 +225,7 @@ export function CalendarTab() {
         return (
             <div className="flex flex-col items-center justify-center h-full p-6 space-y-6 bg-[#F3F4F6] font-['Pretendard']">
                 <div className="text-center space-y-3">
-                    <div className="text-6xl mb-4">🔒</div>
+                    <div className="text-6xl mb-4">??</div>
                     <h2 className="text-2xl font-bold text-gray-800">로그인이 필요해요</h2>
                     <p className="text-gray-500 leading-relaxed">나만의 일정을 관리하고<br/>친구들과 약속을 잡아보세요.</p>
                 </div>
@@ -394,7 +383,7 @@ export function CalendarTab() {
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader><DialogTitle>외부 캘린더 가져오기</DialogTitle><DialogDescription className="text-xs text-gray-500">에브리타임, 구글 캘린더 URL 입력</DialogDescription></DialogHeader>
                     <div className="flex gap-2 mb-2">{["에브리타임", "구글"].map(src => (<Button key={src} size="sm" variant={syncSource === src ? "default" : "outline"} onClick={() => setSyncSource(src)} className={`flex-1 text-xs ${syncSource === src ? "bg-[#7C3AED]" : ""}`}>{src}</Button>))}</div>
-                    {localStorage.getItem("calendar_sync_url") && (<div className="mb-2 p-2 bg-green-50 text-green-700 text-xs rounded-lg flex justify-between items-center"><span>✅ 자동 동기화 켜짐</span><button onClick={handleUnlink} className="text-red-500 underline">해제</button></div>)}
+                    {localStorage.getItem("calendar_sync_url") && (<div className="mb-2 p-2 bg-green-50 text-green-700 text-xs rounded-lg flex justify-between items-center"><span>? 자동 동기화 켜짐</span><button onClick={handleUnlink} className="text-red-500 underline">해제</button></div>)}
                     <Input placeholder="https://..." value={syncUrl} onChange={e=>setSyncUrl(e.target.value)} className="text-sm h-10" />
                     <DialogFooter><Button onClick={handleSync} disabled={syncLoading} className="w-full bg-[#7C3AED] hover:bg-[#6D28D9]">{syncLoading ? <RefreshCw className="w-4 h-4 animate-spin"/> : "불러오기"}</Button></DialogFooter>
                 </DialogContent>
@@ -402,3 +391,6 @@ export function CalendarTab() {
         </div>
     )
 }
+
+
+

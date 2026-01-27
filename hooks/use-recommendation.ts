@@ -15,6 +15,8 @@ type UseRecommendationParams = {
     myLocation: LatLng | null;
     selectedFriends: any[];
     manualInputs: ManualInput[];
+    decisionCell?: any;
+    requestId?: string;
     labels?: {
         noOriginMessage?: string;
         errorMessage?: string;
@@ -33,6 +35,8 @@ export const useRecommendation = ({
     selectedFriends,
     manualInputs
     ,
+    decisionCell,
+    requestId,
     labels
 }: UseRecommendationParams) => {
     const [recommendations, setRecommendations] = useState<any[]>([]);
@@ -92,7 +96,9 @@ export const useRecommendation = ({
             current_lng: allPoints[0].lng,
             users: allPoints.slice(1).map((point) => ({
                 location: { lat: point.lat, lng: point.lng }
-            }))
+            })),
+            decision_cell: decisionCell,
+            request_id: requestId
         };
 
         try {
@@ -115,7 +121,9 @@ export const useRecommendation = ({
         resolvedLabels.noOriginMessage,
         selectedFilters,
         selectedFriends,
-        selectedPurpose
+        selectedPurpose,
+        decisionCell,
+        requestId
     ]);
 
     const searchByQuery = useCallback(

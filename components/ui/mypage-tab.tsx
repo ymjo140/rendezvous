@@ -21,6 +21,8 @@ import {
 import { CalendarTab } from "@/components/ui/calendar-tab"
 
 import { PreferenceModal } from "@/components/ui/preference-modal"
+import { fetchWithAuth } from "@/lib/api-client"
+import { logAction } from "@/lib/analytics-client"
 
 // --- 상수 및 타입 정의 ---
 const CATEGORIES = [
@@ -43,7 +45,6 @@ interface UserInfo {
     preferences?: any;
 }
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
 // 게시물 타입 정의
 interface PostItem {
@@ -66,7 +67,7 @@ function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
         const t = setTimeout(async () => {
             setSearching(true);
             try {
-                const res = await fetch(`${API_URL}/api/places/search?query=${query}`);
+                const res = await fetchWithAuth(`/api/places/search?query=${query}`);
                 if (res.ok) {
                     setResults(await res.json());
                 } else {
@@ -174,7 +175,7 @@ export function MyPageTab() {
       const token = localStorage.getItem("token");
       if (!token) { setIsGuest(true); return; }
       try {
-          const res = await fetch(`${API_URL}/api/users/me`, { headers: { "Authorization": `Bearer ${token}` } });
+          const res = await fetchWithAuth(`/api/users/me`);
           if (res.ok) {
               const data = await res.json();
               setUser(data);
@@ -189,7 +190,7 @@ export function MyPageTab() {
   };
 
   const fetchShopItems = async () => {
-      try { const res = await fetch(`${API_URL}/api/shop/items`); if (res.ok) setShopItems(await res.json()); } catch (e) {}
+      try { const res = await fetchWithAuth(`/api/shop/items`); if (res.ok) setShopItems(await res.json()); } catch (e) {}
   };
 
   const fetchMyPosts = async () => {
@@ -198,9 +199,7 @@ export function MyPageTab() {
       
       setPostsLoading(true);
       try {
-          const res = await fetch(`${API_URL}/api/posts/me`, {
-              headers: { "Authorization": `Bearer ${token}` }
-          });
+          const res = await fetchWithAuth(`/api/posts/me`);
           if (res.ok) {
               const posts = await res.json();
               setMyPosts(posts);
@@ -217,9 +216,8 @@ export function MyPageTab() {
       
       const token = localStorage.getItem("token");
       try {
-          const res = await fetch(`${API_URL}/api/posts/${postId}`, {
-              method: "DELETE",
-              headers: { "Authorization": `Bearer ${token}` }
+          const res = await fetchWithAuth(`/api/posts/${postId}`, {
+              method: "DELETE"
           });
           if (res.ok) {
               setMyPosts(prev => prev.filter(p => p.id !== postId));
@@ -238,9 +236,7 @@ export function MyPageTab() {
       
       setFoldersLoading(true);
       try {
-          const res = await fetch(`${API_URL}/api/folders`, {
-              headers: { "Authorization": `Bearer ${token}` }
-          });
+          const res = await fetchWithAuth(`/api/folders`);
           if (res.ok) {
               const folders = await res.json();
               setSaveFolders(folders);
@@ -259,9 +255,7 @@ export function MyPageTab() {
       
       setFolderItemsLoading(true);
       try {
-          const res = await fetch(`${API_URL}/api/folders/${folderId}/items`, {
-              headers: { "Authorization": `Bearer ${token}` }
-          });
+          const res = await fetchWithAuth(`/api/folders/${folderId}/items`);
           if (res.ok) {
               const items = await res.json();
               setFolderItems(items);
@@ -279,9 +273,8 @@ export function MyPageTab() {
       
       const token = localStorage.getItem("token");
       try {
-          const res = await fetch(`${API_URL}/api/saves/${itemId}`, {
-              method: "DELETE",
-              headers: { "Authorization": `Bearer ${token}` }
+          const res = await fetchWithAuth(`/api/saves/${itemId}`, {
+              method: "DELETE"
           });
           if (res.ok) {
               setFolderItems(prev => prev.filter(item => item.id !== itemId));
@@ -307,8 +300,8 @@ export function MyPageTab() {
       if (user.wallet_balance < item.price_coin) { alert("코인이 부족합니다! 열심히 활동해서 모아보세요."); return; }
       if (confirm(`${item.name}을(를) ${item.price_coin}코인에 구매하시겠습니까?`)) {
           const token = localStorage.getItem("token");
-          const res = await fetch(`${API_URL}/api/shop/buy`, {
-              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ item_id: item.id })
+          const res = await fetchWithAuth(`/api/shop/buy`, {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item_id: item.id })
           });
           if (res.ok) { alert("구매 완료! 인벤토리에서 확인하세요."); fetchMyInfo(); }
       }
@@ -316,8 +309,8 @@ export function MyPageTab() {
 
   const handleEquip = async (item: AvatarItem) => {
       const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/api/avatar/equip`, {
-          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ category: item.category, item_id: item.id })
+      const res = await fetchWithAuth(`/api/avatar/equip`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category: item.category, item_id: item.id })
       });
       if (res.ok) { const data = await res.json(); setPreviewEquipped(data.equipped); fetchMyInfo(); }
   };
@@ -332,10 +325,22 @@ export function MyPageTab() {
           comment: reviewText, tags: targetPlace.tags || []
       };
       try {
-          const res = await fetch(`${API_URL}/api/reviews`, {
-              method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify(payload)
+          const res = await fetchWithAuth(`/api/reviews`, {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
           });
-          if (res.ok) { alert("소중한 리뷰가 등록되었습니다!"); setIsReviewOpen(false); setScores({ taste: 3, service: 3, price: 3, vibe: 3 }); setReviewText(""); fetchMyInfo(); }
+          if (res.ok) {
+              logAction({
+                  action_type: "review_submit",
+                  place_id: targetPlace?.id ?? null,
+                  source: "mypage_tab",
+                  metadata: { place_name: payload.place_name }
+              });
+              alert("소중한 리뷰가 등록되었습니다!");
+              setIsReviewOpen(false);
+              setScores({ taste: 3, service: 3, price: 3, vibe: 3 });
+              setReviewText("");
+              fetchMyInfo();
+          }
       } catch (e) { alert("오류가 발생했습니다."); }
   };
 
@@ -343,8 +348,8 @@ export function MyPageTab() {
       if (!newName.trim()) return;
       const token = localStorage.getItem("token");
       try {
-          const res = await fetch(`${API_URL}/api/users/me`, {
-              method: "PUT", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ name: newName })
+          const res = await fetchWithAuth(`/api/users/me`, {
+              method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName })
           });
           if (res.ok) {
               const data = await res.json();
@@ -359,9 +364,9 @@ export function MyPageTab() {
       setLocLoading(true);
       try {
           const token = localStorage.getItem("token");
-          const res = await fetch(`${API_URL}/api/users/me/location`, {
+          const res = await fetchWithAuth(`/api/users/me/location`, {
               method: "PUT",
-              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                   location_name: place.title,
                   lat: place.lat,
@@ -990,3 +995,5 @@ export function MyPageTab() {
     </div>
   )
 }
+
+

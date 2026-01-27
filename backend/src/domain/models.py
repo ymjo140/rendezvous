@@ -258,6 +258,54 @@ class Campaign(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+# --- Offers / Action Logs ---
+class Offer(Base):
+    __tablename__ = "offers"
+    id = Column(Integer, primary_key=True, index=True)
+    place_id = Column(Integer, ForeignKey("places.id"), nullable=True)
+    title = Column(String)
+    description = Column(String)
+    benefit_type = Column(String)
+    benefit_value = Column(String)
+    conditions_json = Column(JSON, default={})
+    valid_from = Column(DateTime, nullable=True)
+    valid_to = Column(DateTime, nullable=True)
+    inventory_cap = Column(Integer, default=0)
+    inventory_used = Column(Integer, default=0)
+    status = Column(String, default="active")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class OfferRule(Base):
+    __tablename__ = "offer_rules"
+    id = Column(Integer, primary_key=True, index=True)
+    place_id = Column(Integer, ForeignKey("places.id"), nullable=True)
+    rule_name = Column(String)
+    day_of_week_mask = Column(Integer, default=0)
+    time_blocks_json = Column(JSON, default=[])
+    party_size_min = Column(Integer, default=1)
+    party_size_max = Column(Integer, default=10)
+    lead_time_thresholds_json = Column(JSON, default={})
+    base_benefit_json = Column(JSON, default={})
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class ActionLog(Base):
+    __tablename__ = "action_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    action_type = Column(String, nullable=False, index=True)
+    request_id = Column(String, nullable=True, index=True)
+    decision_cell_json = Column(JSON, default={})
+    entity_type = Column(String, nullable=True)
+    entity_id = Column(String, nullable=True)
+    metadata_json = Column(JSON, default={})
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
 # --- SNS 게시물 (Instagram 스타일) ---
 class Post(Base):
     __tablename__ = "posts"

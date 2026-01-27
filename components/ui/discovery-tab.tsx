@@ -16,6 +16,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Textarea } from "@/components/ui/textarea"
 import { motion, AnimatePresence } from "framer-motion"
 import { PhotoEditor } from "@/components/ui/photo-editor"
+import { fetchWithAuth } from "@/lib/api-client"
+import { useDecisionCell } from "@/hooks/use-decision-cell"
+import { logAction } from "@/lib/analytics-client"
 
 // 폴더 타입
 interface SaveFolder {
@@ -35,8 +38,6 @@ interface ChatRoom {
     member_count: number;
 }
 
-// --- API URL ---
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
 // --- 더미 데이터 (SNS 게시물 + 가게 정보 연동) ---
 const MOCK_FEEDS = [
@@ -172,13 +173,14 @@ interface DiscoveryTabProps {
 
 export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabProps = {}) {
     const router = useRouter();
+    const { decisionCell, requestId } = useDecisionCell();
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedFeed, setSelectedFeed] = useState<any>(null);
     const [isPlaceModalOpen, setIsPlaceModalOpen] = useState(false);
     const [feeds, setFeeds] = useState(MOCK_FEEDS);
     const [isLoading, setIsLoading] = useState(false);
     
-    // 📤 공유된 게시물로 진입했는지 여부
+    // ?? 공유된 게시물로 진입했는지 여부
     const [isFromSharedPost, setIsFromSharedPost] = useState(false);
     
     // 게시물 작성 관련 상태
@@ -202,12 +204,12 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
     const [tempImageForEdit, setTempImageForEdit] = useState<string>("");
     
-    // 🤖 AI 추천 관련 상태
+    // ?? AI 추천 관련 상태
     const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
     const [aiLoading, setAiLoading] = useState(false);
     const [showAiSection, setShowAiSection] = useState(true);
     
-    // 💾 저장 폴더 관련 상태
+    // ?? 저장 폴더 관련 상태
     const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
     const [savingItem, setSavingItem] = useState<{type: string, postId?: string, placeId?: number} | null>(null);
     const [folders, setFolders] = useState<SaveFolder[]>([]);
@@ -216,7 +218,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [isCreatingFolder, setIsCreatingFolder] = useState(false);
     const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
     
-    // 📤 공유 관련 상태
+    // ?? 공유 관련 상태
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [sharingItem, setSharingItem] = useState<any>(null);
     const [shareMode, setShareMode] = useState<"direct" | "cart">("direct");
@@ -226,10 +228,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [shareMessage, setShareMessage] = useState("");
     const [cartItems, setCartItems] = useState<any[]>([]);
     
-    // 📤 공유된 게시물 로딩 상태
+    // ?? 공유된 게시물 로딩 상태
     const [sharedPostLoading, setSharedPostLoading] = useState(false);
     
-    // 📤 공유된 게시물 열기 (채팅에서 온 경우) - 전체 피드 로드 안 함
+    // ?? 공유된 게시물 열기 (채팅에서 온 경우) - 전체 피드 로드 안 함
     useEffect(() => {
         if (sharedPostId) {
             setSharedPostLoading(true);
@@ -237,10 +239,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             
             const fetchSharedPost = async () => {
                 try {
-                    const token = localStorage.getItem("token");
-                    const res = await fetch(`${API_URL}/api/posts/${sharedPostId}`, {
-                        headers: token ? { Authorization: `Bearer ${token}` } : {}
-                    });
+                    const res = await fetchWithAuth(`/api/posts/${sharedPostId}`);
                     
                     if (res.ok) {
                         const post = await res.json();
@@ -295,7 +294,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         const timer = setTimeout(async () => {
             setLocationSearching(true);
             try {
-                const res = await fetch(`${API_URL}/api/places/search?query=${encodeURIComponent(locationQuery)}`);
+                const res = await fetchWithAuth(`/api/places/search?query=${encodeURIComponent(locationQuery)}`);
                 if (res.ok) {
                     setLocationResults(await res.json());
                 }
@@ -320,7 +319,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         const timer = setTimeout(async () => {
             setPlaceSearching(true);
             try {
-                const res = await fetch(`${API_URL}/api/places/search?query=${encodeURIComponent(placeQuery)}&db_only=true`);
+                const res = await fetchWithAuth(`/api/places/search?query=${encodeURIComponent(placeQuery)}&db_only=true`);
                 if (res.ok) {
                     setPlaceResults(await res.json());
                 }
@@ -333,18 +332,22 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         return () => clearTimeout(timer);
     }, [placeQuery, selectedPlace]);
     
-    // 🤖 AI 추천 불러오기 (공유된 게시물로 온 경우는 스킵)
+    // ?? AI 추천 불러오기 (공유된 게시물로 온 경우는 스킵)
     useEffect(() => {
         // 공유된 게시물로 접근한 경우 AI 추천 로드 안 함
         if (sharedPostId) return;
-        
+
         const fetchAiRecommendations = async () => {
             try {
                 setAiLoading(true);
-                const token = localStorage.getItem("token");
-                const res = await fetch(`${API_URL}/api/ai/recommendations?limit=30`, {
-                    headers: token ? { Authorization: `Bearer ${token}` } : {}
+                const payload = { limit: 30, decision_cell: decisionCell, request_id: requestId };
+                let res = await fetchWithAuth("/api/ai/recommendations", {
+                    method: "POST",
+                    body: JSON.stringify(payload)
                 });
+                if (!res.ok) {
+                    res = await fetchWithAuth(`/api/ai/recommendations?limit=30`);
+                }
                 
                 if (res.ok) {
                     const data = await res.json();
@@ -360,39 +363,40 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         };
         
         fetchAiRecommendations();
-    }, []);
-    
-    // 🤖 AI 행동 기록 함수 (벡터 AI 시스템)
-    const recordAiAction = async (actionType: string, placeId?: number, postId?: string) => {
-        try {
-            const token = localStorage.getItem("token");
-            const locationName = selectedLocation?.name || selectedLocation?.address || selectedPlace?.address || null;
-            if (!token) return;
-            
-            // 새로운 벡터 AI API 호출
-            await fetch(`${API_URL}/api/vector/interaction`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    action_type: actionType.toUpperCase(),  // VIEW, CLICK, LIKE, SAVE, SHARE, REVIEW
-                    place_id: placeId || null,
-                    post_id: postId || null,
-                    action_value: 1.0,
-                    context: { 
-                        source: "discovery_tab",
-                        timestamp: new Date().toISOString(),
-                        location_name: locationName
-                    }
-                })
+    }, [sharedPostId, decisionCell, requestId]);
+
+    useEffect(() => {
+        if (!aiRecommendations.length) return;
+        aiRecommendations.slice(0, 6).forEach((rec) => {
+            logAction({
+                action_type: "impression",
+                place_id: rec.place_id ?? rec.id ?? null,
+                source: "discovery_tab",
+                metadata: { reason: rec.reason ?? null }
             });
-            console.log(`[AI] Logged action: ${actionType}`, { placeId, postId });
-        } catch (error) {
-            // 실패해도 무시 (사용자 경험에 영향 없음)
-            console.log("[AI] Action logging failed (non-critical):", error);
-        }
+        });
+    }, [aiRecommendations]);
+    
+    // ?? AI 행동 기록 함수 (벡터 AI 시스템)
+    const recordAiAction = async (actionType: string, placeId?: number, postId?: string) => {
+        const actionMap: Record<string, string> = {
+            VIEW: "impression",
+            CLICK: "detail_view",
+            LIKE: "like",
+            SAVE: "save",
+            SHARE: "share",
+            REVIEW: "review_submit"
+        };
+        const mapped = actionMap[actionType.toUpperCase()] || actionType.toLowerCase();
+        await logAction({
+            action_type: mapped,
+            place_id: placeId ?? null,
+            source: "discovery_tab",
+            metadata: {
+                post_id: postId ?? null,
+                location_name: selectedLocation?.name || selectedLocation?.address || selectedPlace?.address || null
+            }
+        });
     };
 
     const formatPlaceFromPost = (post: any) => {
@@ -485,7 +489,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         setSelectedPlace(null);
     };
     
-    // 💾 폴더 목록 불러오기
+    // ?? 폴더 목록 불러오기
     const fetchFolders = async () => {
         try {
             setFoldersLoading(true);
@@ -495,9 +499,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 return;
             }
             
-            const res = await fetch(`${API_URL}/api/folders`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await fetchWithAuth(`/api/folders`);
             
             if (res.ok) {
                 const data = await res.json();
@@ -510,7 +512,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // 💾 새 폴더 생성
+    // ?? 새 폴더 생성
     const createFolder = async () => {
         if (!newFolderName.trim()) return;
         
@@ -519,11 +521,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             const token = localStorage.getItem("token");
             if (!token) return;
             
-            const res = await fetch(`${API_URL}/api/folders`, {
+            const res = await fetchWithAuth(`/api/folders`, {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`
+                    "Content-Type": "application/json"
                 },
                 body: JSON.stringify({ name: newFolderName.trim() })
             });
@@ -541,7 +542,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // 💾 아이템 저장
+    // ?? 아이템 저장
     const saveToFolder = async () => {
         if (!selectedFolderId || !savingItem) return;
         
@@ -552,11 +553,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 return;
             }
             
-            const res = await fetch(`${API_URL}/api/saves`, {
+            const res = await fetchWithAuth(`/api/saves`, {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`
+                    "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
                     folder_id: selectedFolderId,
@@ -591,16 +591,14 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // 📤 채팅방 목록 불러오기
+    // ?? 채팅방 목록 불러오기
     const fetchChatRooms = async () => {
         try {
             setRoomsLoading(true);
             const token = localStorage.getItem("token");
             if (!token) return;
             
-            const res = await fetch(`${API_URL}/api/share/rooms`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await fetchWithAuth(`/api/share/rooms`);
             
             if (res.ok) {
                 const data = await res.json();
@@ -613,7 +611,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // 📤 담기에 추가
+    // ?? 담기에 추가
     const addToCart = async (item: any) => {
         try {
             const token = localStorage.getItem("token");
@@ -622,11 +620,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 return;
             }
             
-            const res = await fetch(`${API_URL}/api/share-cart`, {
+            const res = await fetchWithAuth(`/api/share-cart`, {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`
+                    "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
                     item_type: item.type,
@@ -650,7 +647,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // 📤 바로 공유
+    // ?? 바로 공유
     const shareDirectly = async () => {
         if (!selectedRoomId || !sharingItem) return;
         
@@ -661,11 +658,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 return;
             }
             
-            const res = await fetch(`${API_URL}/api/share/direct`, {
+            const res = await fetchWithAuth(`/api/share/direct`, {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`
+                    "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
                     room_id: selectedRoomId,
@@ -692,7 +688,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // 💾 저장 모달 열기
+    // ?? 저장 모달 열기
     const openSaveModal = (postId?: string, placeId?: number) => {
         setSavingItem({
             type: postId ? "post" : "place",
@@ -703,7 +699,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         setIsSaveModalOpen(true);
     };
     
-    // 📤 공유 모달 열기
+    // ?? 공유 모달 열기
     const openShareModal = (item: any) => {
         setSharingItem({
             type: item.postId ? "post" : "place",
@@ -717,15 +713,13 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         setIsShareModalOpen(true);
     };
     
-    // 📤 담기 목록 불러오기
+    // ?? 담기 목록 불러오기
     const fetchCartItems = async () => {
         try {
             const token = localStorage.getItem("token");
             if (!token) return;
             
-            const res = await fetch(`${API_URL}/api/share-cart`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await fetchWithAuth(`/api/share-cart`);
             
             if (res.ok) {
                 const data = await res.json();
@@ -736,15 +730,14 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // 📤 담기에서 제거
+    // ?? 담기에서 제거
     const removeFromCart = async (itemId: number) => {
         try {
             const token = localStorage.getItem("token");
             if (!token) return;
             
-            const res = await fetch(`${API_URL}/api/share-cart/${itemId}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` }
+            const res = await fetchWithAuth(`/api/share-cart/${itemId}`, {
+                method: "DELETE"
             });
             
             if (res.ok) {
@@ -755,7 +748,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // 📤 담기 전체 공유
+    // ?? 담기 전체 공유
     const shareCart = async () => {
         if (!selectedRoomId || cartItems.length === 0) return;
         
@@ -766,11 +759,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 return;
             }
             
-            const res = await fetch(`${API_URL}/api/share/cart`, {
+            const res = await fetchWithAuth(`/api/share/cart`, {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`
+                    "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
                     room_id: selectedRoomId,
@@ -799,10 +791,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         const fetchPosts = async () => {
             try {
                 setIsLoading(true);
-                const token = localStorage.getItem("token");
-                const res = await fetch(`${API_URL}/api/posts?limit=100`, {
-                    headers: token ? { Authorization: `Bearer ${token}` } : {}
-                });
+                const res = await fetchWithAuth(`/api/posts?limit=100`);
                 
                 if (res.ok) {
                     const apiPosts = await res.json();
@@ -869,7 +858,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [comments, setComments] = useState<any[]>([]);
     const [commentsLoading, setCommentsLoading] = useState(false);
 
-    // 🔥 좋아요 토글 + AI 학습 기록
+    // ?? 좋아요 토글 + AI 학습 기록
     const handleLike = async (feedId: string | number, e: React.MouseEvent, placeId?: number) => {
         e.stopPropagation();
         const feedIdStr = String(feedId);
@@ -898,13 +887,12 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         try {
             // API 게시물인 경우 좋아요 API 호출
             if (typeof feedId === "string" && !feedId.startsWith("local_")) {
-                await fetch(`${API_URL}/api/posts/${feedId}/like`, {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${token}` }
+                await fetchWithAuth(`/api/posts/${feedId}/like`, {
+                    method: "POST"
                 });
             }
             
-            // 🤖 AI: 좋아요 행동 기록
+            // ?? AI: 좋아요 행동 기록
             if (newIsLiked) {
                 const postId = typeof feedId === "string" ? feedId : undefined;
                 recordAiAction("LIKE", placeId, postId);
@@ -914,7 +902,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
 
-    // 🔥 저장/찜 - 폴더 선택 모달 열기
+    // ?? 저장/찜 - 폴더 선택 모달 열기
     const handleSave = (feedId: number | string, e: React.MouseEvent, placeId?: number) => {
         e.stopPropagation();
         
@@ -925,7 +913,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         );
     };
     
-    // 🔥 댓글 불러오기
+    // ?? 댓글 불러오기
     const loadComments = async (postId: string | number) => {
         if (typeof postId !== "string" || postId.startsWith("local_")) {
             setComments([]);
@@ -934,10 +922,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         
         setCommentsLoading(true);
         try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(`${API_URL}/api/posts/${postId}/comments`, {
-                headers: token ? { Authorization: `Bearer ${token}` } : {}
-            });
+            const res = await fetchWithAuth(`/api/posts/${postId}/comments`);
             if (res.ok) {
                 const data = await res.json();
                 setComments(data);
@@ -949,7 +934,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // 🔥 댓글 작성 + AI 학습 기록
+    // ?? 댓글 작성 + AI 학습 기록
     const handleAddComment = async (feedId: string | number, placeId?: number) => {
         if (!commentText.trim()) return;
         
@@ -961,11 +946,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         
         try {
             if (typeof feedId === "string" && !feedId.startsWith("local_")) {
-                const res = await fetch(`${API_URL}/api/posts/${feedId}/comments`, {
+                const res = await fetchWithAuth(`/api/posts/${feedId}/comments`, {
                     method: "POST",
                     headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`
+                        "Content-Type": "application/json"
                     },
                     body: JSON.stringify({ content: commentText })
                 });
@@ -983,7 +967,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                         setSelectedFeed((prev: any) => prev ? { ...prev, comments: prev.comments + 1 } : null);
                     }
                     
-                    // 🤖 AI: 댓글 행동 기록
+                    // ?? AI: 댓글 행동 기록
                     const postId = typeof feedId === "string" ? feedId : undefined;
                     recordAiAction("REVIEW", placeId, postId);
                 }
@@ -994,7 +978,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
-    // 🔥 공유 기능 - 모달 열기
+    // ?? 공유 기능 - 모달 열기
     const handleShare = (feed: any) => {
         openShareModal({
             postId: typeof feed.id === "string" ? feed.id : undefined,
@@ -1071,11 +1055,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             
             if (token) {
                 // API로 게시물 생성
-                const res = await fetch(`${API_URL}/api/posts`, {
+                const res = await fetchWithAuth(`/api/posts`, {
                     method: "POST",
                     headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`
+                        "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
                         image_urls: newPostImages,
@@ -1154,7 +1137,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         return true;
     });
 
-    // 📤 공유된 게시물 로딩 중일 때 로딩 UI만 표시
+    // ?? 공유된 게시물 로딩 중일 때 로딩 UI만 표시
     if (sharedPostLoading) {
         return (
             <div className="h-full bg-white flex flex-col items-center justify-center font-['Pretendard']">
@@ -1469,14 +1452,13 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 {selectedFeed.place && (
                                     <button 
                                         onClick={() => {
+                                            const postId = typeof selectedFeed.id === "string" ? selectedFeed.id : undefined;
+                                            recordAiAction("CLICK", selectedFeed.place?.id, postId);
                                             if (selectedFeed.place?.id) {
                                                 router.push(`/places/${selectedFeed.place.id}`);
                                                 return;
                                             }
                                             setIsPlaceModalOpen(true);
-                                            // 🤖 AI: 장소 상세 조회 기록
-                                            const postId = typeof selectedFeed.id === "string" ? selectedFeed.id : undefined;
-                                            recordAiAction("CLICK", selectedFeed.place?.id, postId);
                                         }}
                                         className="mt-3 w-full bg-gray-100 hover:bg-gray-200 rounded-xl p-3 flex items-center gap-3 transition-colors"
                                     >
@@ -1494,7 +1476,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                     </button>
                                 )}
                                 
-                                {/* 🔥 댓글 섹션 */}
+                                {/* ?? 댓글 섹션 */}
                                 {showComments && (
                                     <div className="mt-4 border-t pt-4">
                                         <h4 className="font-semibold text-sm mb-3">
@@ -2260,4 +2242,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         </div>
     )
 }
+
+
+
 

@@ -3,13 +3,13 @@
 import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { HomeTab } from "@/components/ui/home-tab"
-import { CommunityTab } from "@/components/ui/community-tab" 
 import { ChatTab } from "@/components/ui/chat-tab" 
 // 🌟 [수정 1] CalendarTab 제거하고 DiscoveryTab 추가
 import { DiscoveryTab } from "@/components/ui/discovery-tab" 
 import { MyPageTab } from "@/components/ui/mypage-tab"
+import { HotDealTab } from "@/components/ui/hotdeal-tab"
 // 🌟 [수정 2] 아이콘 변경: Calendar -> Compass (탐색용 나침반 아이콘)
-import { Map, MessageCircle, Compass, User, Users, Lock } from "lucide-react"
+import { Map, MessageCircle, Compass, User, Flame, Lock } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 
@@ -76,7 +76,7 @@ export default function Page() {
       {/* 메인 콘텐츠 영역 */}
       <main className="flex-1 overflow-hidden relative">
         {activeTab === "home" && <HomeTab />}
-        {activeTab === "community" && <CommunityTab />}
+        {activeTab === "hotdeals" && <HotDealTab />}
         {activeTab === "chat" && (
           <ChatTab 
             openRoomId={openRoomId} 
@@ -127,12 +127,12 @@ export default function Page() {
 
         {/* 3. 커뮤니티 (로그인 필요) */}
         <button 
-            onClick={() => handleTabChange("community")} 
+            onClick={() => handleTabChange("hotdeals")} 
             className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
-                activeTab === "community" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+                activeTab === "hotdeals" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
             }`}
         >
-          <Users className={`w-6 h-6 ${activeTab === "community" ? "fill-[#7C3AED]/10" : ""}`} />
+          <Flame className={`w-6 h-6 ${activeTab === "hotdeals" ? "fill-[#7C3AED]/10" : ""}`} />
           <span className="text-[10px] font-medium">커뮤니티</span>
         </button>
 

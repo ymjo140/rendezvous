@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge"
 import { motion } from "framer-motion"
 import { useQuery } from "@tanstack/react-query"
 import { fetchWithAuth } from "@/lib/api-client"
+import { logAction } from "@/lib/analytics-client"
+import { useDecisionCell } from "@/hooks/use-decision-cell"
 import { placeApi } from "@/lib/place-api"
 import { useMapLogic } from "@/hooks/use-map-logic"
 import { useRecommendation } from "@/hooks/use-recommendation"
@@ -76,6 +78,8 @@ export function HomeTab() {
 
   const { data: purposeConfig } = useSystemConfig()
 
+  const { decisionCell, requestId, resetRequestId } = useDecisionCell()
+
   const {
     recommendations,
     setRecommendations,
@@ -94,6 +98,8 @@ export function HomeTab() {
     myLocation,
     selectedFriends,
     manualInputs,
+    decisionCell,
+    requestId,
     labels: {
       noOriginMessage: "출발지를 1개 이상 입력해주세요.",
       errorMessage: "네트워크 오류가 발생했습니다.",
@@ -181,6 +187,7 @@ export function HomeTab() {
   }, [purposeConfig, selectedPurpose])
 
   const handleMidpointSearch = async () => {
+    resetRequestId()
     const result = await searchMidpoint()
     if (!result.ok) {
       alert(result.message || "추천에 실패했어요. 잠시 후 다시 시도해주세요.")
@@ -191,6 +198,7 @@ export function HomeTab() {
     if (!searchQuery || searchQuery.trim() === "") return
 
     try {
+      resetRequestId()
       const mainCategory = purposeConfig?.[selectedPurpose]?.mainCategory || ""
       const searchRegion = await searchByQuery(searchQuery, mainCategory)
       if (!searchRegion) {
@@ -282,6 +290,7 @@ export function HomeTab() {
   const handlePlaceClick = async (p: any) => {
     persistSearchState()
     if (p?.id) {
+      logAction({ action_type: "detail_view", place_id: p.id, source: "home_tab" })
       router.push(`/places/${p.id}`)
       return
     }
@@ -290,6 +299,7 @@ export function HomeTab() {
         const matches = await placeApi.searchDbOnly(p.name)
         const matched = matches.find((item: any) => item.name === p.name) || matches[0]
         if (matched?.id) {
+          logAction({ action_type: "detail_view", place_id: matched.id, source: "home_tab" })
           router.push(`/places/${matched.id}`)
           return
         }

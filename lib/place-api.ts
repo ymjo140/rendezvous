@@ -1,4 +1,5 @@
-import { fetchJson } from "./api-client";
+import { fetchWithAuthJson } from "./api-client";
+import type { DecisionCell } from "./decision-cell";
 
 export type PlaceSearchResult = {
     id?: number;
@@ -17,6 +18,8 @@ export type RecommendationPayload = {
     current_lat: number;
     current_lng: number;
     users: { location: { lat: number; lng: number } }[];
+    decision_cell?: DecisionCell;
+    request_id?: string;
 };
 
 export const placeApi = {
@@ -25,18 +28,18 @@ export const placeApi = {
         if (mainCategory) {
             params.set("main_category", mainCategory);
         }
-        return fetchJson<PlaceSearchResult[]>(`/api/places/search?${params.toString()}`);
+        return fetchWithAuthJson<PlaceSearchResult[]>(`/api/places/search?${params.toString()}`);
     },
     searchDbOnly: async (query: string) => {
         const params = new URLSearchParams({ query, db_only: "true" });
-        return fetchJson<PlaceSearchResult[]>(`/api/places/search?${params.toString()}`);
+        return fetchWithAuthJson<PlaceSearchResult[]>(`/api/places/search?${params.toString()}`);
     },
     autocomplete: async (query: string) => {
         const params = new URLSearchParams({ query });
-        return fetchJson<any[]>(`/api/places/autocomplete?${params.toString()}`);
+        return fetchWithAuthJson<any[]>(`/api/places/autocomplete?${params.toString()}`);
     },
     recommend: async (payload: RecommendationPayload) => {
-        return fetchJson<any[]>(`/api/recommend`, {
+        return fetchWithAuthJson<any[]>(`/api/recommend`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
