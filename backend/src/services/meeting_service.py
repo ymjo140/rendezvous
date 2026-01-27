@@ -190,7 +190,7 @@ class MeetingService:
                 if u_lat and u_lng and abs(float(u_lat)) > 1.0:
                     all_points.append({'lat': float(u_lat), 'lng': float(u_lng)})
 
-        print(f"?뱧 [Debug] ?몄떇??珥?異쒕컻吏 ?? {len(all_points)}媛?)
+        print(f"[Debug] 인식된 총 출발지 수: {len(all_points)}개")
 
         if len(all_points) < 2:
             base_lat = all_points[0]['lat'] if all_points else 37.5665
