@@ -103,6 +103,9 @@ class Place(Base):
     address = Column(String, nullable=True)
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
+
+    # Owner (merchant) linkage
+    owner_id = Column(String, nullable=True)
     
     # L3: Vibe/Theme Tags (분위기 태그만)
     vibe_tags = Column(JSON, default=[])  # ["데이트", "회식", "조용한", "혼밥"]
