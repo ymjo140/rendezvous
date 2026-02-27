@@ -1,11 +1,11 @@
-WeMeet Place (위밋플레이스) 📍
+랑데부 📍
 "약속 잡는 스트레스는 없애고, 만나는 즐거움만 남기다."
 
 
 AI 유틸리티와 게이미피케이션이 결합된 No.1 위치 기반 소셜 플랫폼
 
 📖 Introduction
-위밋플레이스는 월 160만 명의 트래픽이 증명한 '중간 지점 찾기' 기능을 넘어, 약속의 실행(Action)과 소비(Consumption)까지 완결하는 Playable O2O Platform입니다.
+랑데부는 월 160만 명의 트래픽이 증명한 '중간 지점 찾기' 기능을 넘어, 약속의 실행(Action)과 소비(Consumption)까지 완결하는 Playable O2O Platform입니다.
 
 기존의 단순 유틸리티 앱이 가진 '낮은 체류 시간(Low Retention)' 문제를 AI 큐레이션(편의성)과 코인 이코노미(재미)의 결합으로 해결하며, WeMeetBiz(B2B)와 Data Solution을 통해 지속 가능한 수익 모델을 구축했습니다.
 
