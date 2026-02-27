@@ -44,7 +44,7 @@ async def root():
 #     print("?좑툘 Events ?쇱슦???놁쓬")
 
 # 2. Routers ?대뜑 ?곌껐
-from api.routers import sync, auth, users, coins, meetings, community, chat, posts, system, offers
+from api.routers import sync, auth, users, coins, meetings, community, chat, posts, system, offers, merchant
 
 # ??[?섏젙] ?뚯씪 ?덉뿉 ?대? '/api/...' 寃쎈줈媛 ?덈뒗 ?좊뱾? prefix瑜?類띾땲??
 app.include_router(auth.router, tags=["auth"])
@@ -58,6 +58,7 @@ app.include_router(community.router, tags=["community"])
 app.include_router(posts.router, tags=["posts"])
 app.include_router(offers.router, tags=["offers"])
 app.include_router(system.router, tags=["system"])
+app.include_router(merchant.router, prefix="/api/merchant", tags=["merchant"])
 
 # ?뮶 ???怨듭쑀 ?쒖뒪???쇱슦??
 try:

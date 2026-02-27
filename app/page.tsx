@@ -111,7 +111,7 @@ export default function Page() {
             }`}
         >
           <Map className={`w-6 h-6 ${activeTab === "home" ? "fill-[#7C3AED]/10" : ""}`} />
-          <span className="text-[10px] font-bold">홈</span>
+          <span className="text-[10px] font-bold">?</span>
         </button>
 
         {/* 2. 채팅 (로그인 필요) */}
@@ -122,7 +122,7 @@ export default function Page() {
             }`}
         >
           <MessageCircle className={`w-6 h-6 ${activeTab === "chat" ? "fill-[#7C3AED]/10" : ""}`} />
-          <span className="text-[10px] font-medium">채팅</span>
+          <span className="text-[10px] font-medium">??</span>
         </button>
 
         {/* 3. 커뮤니티 (로그인 필요) */}
@@ -133,7 +133,7 @@ export default function Page() {
             }`}
         >
           <Flame className={`w-6 h-6 ${activeTab === "hotdeals" ? "fill-[#7C3AED]/10" : ""}`} />
-          <span className="text-[10px] font-medium">커뮤니티</span>
+          <span className="text-[10px] font-medium">??</span>
         </button>
 
         {/* 🌟 [수정 4] 일정 -> 탐색 (아이콘 및 텍스트 변경) */}
@@ -145,7 +145,7 @@ export default function Page() {
         >
           {/* Compass 아이콘 사용 */}
           <Compass className={`w-6 h-6 ${activeTab === "discovery" ? "fill-[#7C3AED]/10" : ""}`} />
-          <span className="text-[10px] font-medium">탐색</span>
+          <span className="text-[10px] font-medium">??</span>
         </button>
 
         {/* 5. 마이 (로그인 필요) */}
@@ -156,7 +156,7 @@ export default function Page() {
             }`}
         >
           <User className={`w-6 h-6 ${activeTab === "mypage" ? "fill-[#7C3AED]/10" : ""}`} />
-          <span className="text-[10px] font-medium">마이</span>
+          <span className="text-[10px] font-medium">?????</span>
         </button>
 
       </nav>

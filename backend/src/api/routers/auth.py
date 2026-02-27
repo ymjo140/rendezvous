@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -19,4 +19,15 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 @router.post("/api/auth/kakao")
 async def kakao_login(req: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
+    return await auth_service.kakao_login(db, req.code)
+
+# Frontend compatibility: /api/auth/kakao/callback
+@router.get("/api/auth/kakao/callback")
+async def kakao_callback_get(code: str = Query(...), db: Session = Depends(get_db)):
+    return await auth_service.kakao_login(db, code)
+
+@router.post("/api/auth/kakao/callback")
+async def kakao_callback_post(
+    req: schemas.KakaoLoginRequest, db: Session = Depends(get_db)
+):
     return await auth_service.kakao_login(db, req.code)

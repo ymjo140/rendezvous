@@ -130,6 +130,14 @@ class SimilarPlaceResponse(BaseModel):
     similarity: float
 
 
+class RecommendationRequest(BaseModel):
+    purpose: Optional[str] = None
+    limit: int = 10
+    exclude: Optional[List[int]] = None
+    request_id: Optional[str] = None
+    decision_cell: Optional[dict] = None
+
+
 # === API Endpoints ===
 
 @router.post("/api/ai/actions", response_model=ActionResponse)
@@ -287,6 +295,46 @@ def get_recommendations(
     except Exception as e:
         print(f"❌ 추천 오류: {e}")
         # 오류 시 빈 결과 반환 (서비스 중단 방지)
+        return RecommendationResponse(
+            recommendations=[],
+            algorithm="error",
+            total_count=0
+        )
+
+
+@router.post("/api/ai/recommendations", response_model=RecommendationResponse)
+def post_recommendations(
+    req: RecommendationRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user_id = current_user.id if current_user else 0
+    exclude_place_ids = req.exclude or []
+    try:
+        if user_id > 0:
+            recommendations, algorithm = ai_service.get_recommendations(
+                db=db,
+                user_id=user_id,
+                purpose=req.purpose,
+                limit=req.limit,
+                exclude_place_ids=exclude_place_ids
+            )
+        else:
+            recommendations = ai_service._get_popular_recommendations(
+                db=db,
+                purpose=req.purpose,
+                limit=req.limit,
+                exclude_place_ids=exclude_place_ids
+            )
+            algorithm = "popular"
+
+        return RecommendationResponse(
+            recommendations=[PlaceRecommendation(**r) for r in recommendations],
+            algorithm=algorithm,
+            total_count=len(recommendations)
+        )
+    except Exception as e:
+        print(f"POST 추천 오류: {e}")
         return RecommendationResponse(
             recommendations=[],
             algorithm="error",
