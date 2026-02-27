@@ -5,7 +5,7 @@ import Script from "next/script";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "WeMeet - 우리 만남의 시작",
+  title: "랑데부 - 우리 만남의 시작",
   description: "중간 지점 찾기 및 장소 추천 서비스",
 };
 
