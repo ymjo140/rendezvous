@@ -594,7 +594,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
             <Tabs value={rootTab} onValueChange={setRootTab} className="w-full">
                 <TabsList className="grid w-full grid-cols-2 h-10">
                     <TabsTrigger value="open">Open Chat</TabsTrigger>
-                    <TabsTrigger value="community">Community</TabsTrigger>
+                    <TabsTrigger value="community">핫딜</TabsTrigger>
                 </TabsList>
             </Tabs>
         </div>
