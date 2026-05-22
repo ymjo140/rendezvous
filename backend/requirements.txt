@@ -69,5 +69,3 @@ watchfiles==1.1.1
 websockets==15.0.1
 supabase>=2.0.0
 pgvector==0.4.2
-sentence-transformers>=2.2.0
-torch>=2.0.0
