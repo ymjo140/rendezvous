@@ -41,6 +41,8 @@ class VectorEmbeddingService:
     """Vector embedding generation and management service"""
     
     EMBEDDING_DIM = 768
+    # 저장 임베딩(배치)과 반드시 동일해야 함: 모델/task_type/차원이 다르면 유사도가 무의미.
+    EMBEDDING_MODEL = "models/gemini-embedding-001"
     DEFAULT_SCORE = 0.5
     
     def __init__(self):
@@ -77,15 +79,16 @@ class VectorEmbeddingService:
             return [0.0] * self.EMBEDDING_DIM
     
     def _gemini_embedding(self, text: str) -> List[float]:
-        """Use Google Gemini Embedding API"""
+        """Use Google Gemini Embedding API (gemini-embedding-001, 768차원 절단)"""
         try:
             result = self.gemini_model.embed_content(
-                model="models/text-embedding-004",
+                model=self.EMBEDDING_MODEL,
                 content=text,
-                task_type="SEMANTIC_SIMILARITY"
+                task_type="SEMANTIC_SIMILARITY",
+                output_dimensionality=self.EMBEDDING_DIM,
             )
             embedding = result['embedding']
-            
+
             if len(embedding) > self.EMBEDDING_DIM:
                 return embedding[:self.EMBEDDING_DIM]
             elif len(embedding) < self.EMBEDDING_DIM:
@@ -109,33 +112,60 @@ class VectorEmbeddingService:
             return [0.0] * self.EMBEDDING_DIM
     
     def generate_place_text(self, place: Dict) -> str:
-        """Convert place info to text for embedding"""
+        """장소 정보를 임베딩용 텍스트로 변환.
+
+        분위기/맥락 검색("조용한", "노트북 하기 좋은", "데이트")의 품질은
+        여기서 얼마나 풍부한 신호를 넣느냐로 결정된다. 카테고리 계층 +
+        지역 + 가격대 + 분위기/목적 태그 + 시설을 모두 포함한다.
+        """
+        def _as_list(v):
+            if isinstance(v, list):
+                return [str(x).strip() for x in v if str(x).strip()]
+            if isinstance(v, str) and v.strip():
+                return [v.strip()]
+            return []
+
         try:
             parts = []
-            
-            if place.get("category"):
-                parts.append(place["category"])
-            
+
+            # 1) 카테고리 계층 (대분류 > 음식장르 > 원본)
+            for key in ("main_category", "cuisine_type", "category"):
+                if place.get(key):
+                    parts.append(str(place[key]))
+
+            # 2) 이름
             if place.get("name"):
-                parts.append(place["name"])
-            
+                parts.append(str(place["name"]))
+
+            # 3) 지역 (주소 앞부분: 시/구/동 수준)
             if place.get("address"):
-                address = place["address"]
-                korean_keywords = ["gangnam", "hongdae", "sinchon", "itaewon", "myeongdong", 
-                                 "kondae", "seongsu", "apgujeong", "jamsil", "yeouido"]
-                for kw in korean_keywords:
-                    if kw in address.lower():
-                        parts.append(kw)
-                        break
-            
-            if place.get("tags"):
-                tags = place["tags"]
-                if isinstance(tags, list):
-                    parts.extend(tags[:5])
-                elif isinstance(tags, str):
-                    parts.append(tags)
-            
-            return " | ".join(parts) if parts else "place"
+                region = " ".join(str(place["address"]).split()[:3])
+                if region:
+                    parts.append(region)
+
+            # 4) 가격대
+            if place.get("price_range"):
+                parts.append(str(place["price_range"]))
+
+            # 5) 분위기/목적/검색 태그 (핵심 신호)
+            parts += _as_list(place.get("vibe_tags"))
+            parts += _as_list(place.get("tags"))
+            parts += _as_list(place.get("search_keywords"))
+
+            # 6) 시설 (features 중 True 인 것만: parking, wifi, private_room ...)
+            feats = place.get("features")
+            if isinstance(feats, dict):
+                parts += [str(k) for k, val in feats.items() if val is True]
+
+            # 순서 유지하며 중복 제거
+            seen, result = set(), []
+            for p in parts:
+                p = p.strip()
+                if p and p not in seen:
+                    seen.add(p)
+                    result.append(p)
+
+            return " | ".join(result) if result else "place"
         except Exception as e:
             print(f"[ERROR] generate_place_text failed: {e}")
             return "place"
@@ -317,27 +347,25 @@ class VectorEmbeddingService:
         limit: int = 10,
         exclude_place_ids: List[int] = None
     ) -> List[Tuple[int, float]]:
-        """Search similar places by vector similarity"""
+        """pgvector 코사인 거리(<=>)로 유사 장소 검색.
+
+        기존엔 모든 임베딩을 메모리로 올려 파이썬 루프로 계산했으나(전체 테이블
+        스캔), 이제 DB에서 <=> 연산자로 정렬·상위 N개만 가져온다(인덱스 활용).
+        """
         try:
             from domain.models import PlaceEmbedding
-            
-            embeddings = db.query(PlaceEmbedding).all()
-            
-            results = []
-            exclude_set = set(exclude_place_ids or [])
-            
-            for pe in embeddings:
-                if pe.place_id in exclude_set:
-                    continue
-                
-                if not pe.embedding:
-                    continue
-                
-                similarity = self.cosine_similarity(query_embedding, pe.embedding)
-                results.append((pe.place_id, similarity))
-            
-            results.sort(key=lambda x: x[1], reverse=True)
-            return results[:limit]
+
+            distance = PlaceEmbedding.embedding.cosine_distance(query_embedding)
+            q = (
+                db.query(PlaceEmbedding.place_id, distance.label("distance"))
+                .filter(PlaceEmbedding.embedding.isnot(None))
+            )
+            if exclude_place_ids:
+                q = q.filter(~PlaceEmbedding.place_id.in_(list(exclude_place_ids)))
+
+            rows = q.order_by(distance).limit(limit).all()
+            # similarity = 1 - cosine_distance
+            return [(pid, 1.0 - float(dist)) for pid, dist in rows]
         except Exception as e:
             print(f"[ERROR] get_similar_places failed: {e}")
             return []

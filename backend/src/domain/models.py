@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, JSON, ARRAY
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector  # pgvector 768-dim 임베딩 컬럼용
 from datetime import datetime
 import uuid
 import enum
@@ -579,14 +580,14 @@ class PlaceEmbedding(Base):
     id = Column(Integer, primary_key=True, index=True)
     place_id = Column(Integer, ForeignKey("places.id", ondelete="CASCADE"), unique=True, nullable=False)
     
-    # Embedding vector (JSON storage, pgvector handled by Supabase)
-    embedding = Column(JSON, default=[])  # 768 dim vector
-    
+    # Embedding vector (pgvector 768-dim, Supabase pgvector 확장)
+    embedding = Column(Vector(768), nullable=True)  # 768 dim vector
+
     # Embedding source text
     source_text = Column(String, nullable=True)
-    
+
     # Metadata
-    model_name = Column(String, default="ko-sbert-nli")
+    model_name = Column(String, default="text-embedding-004")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -598,8 +599,8 @@ class UserEmbedding(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     
     # User preference vector
-    preference_embedding = Column(JSON, default=[])  # 768 dim
-    recent_embedding = Column(JSON, default=[])  # Recent interest vector
+    preference_embedding = Column(Vector(768), nullable=True)  # 768 dim
+    recent_embedding = Column(Vector(768), nullable=True)  # Recent interest vector
     
     # Learning info
     action_count = Column(Integer, default=0)
