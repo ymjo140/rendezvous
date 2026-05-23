@@ -289,7 +289,7 @@ class VectorEmbeddingService:
             
             for action in recent_actions:
                 pe = pe_dict.get(action.place_id)
-                if pe and pe.embedding:
+                if pe is not None and pe.embedding is not None:
                     weight = action_weights.get(action.action_type, 1.0)
                     vec = np.array(pe.embedding)
                     weighted_sum += vec * weight
@@ -306,7 +306,7 @@ class VectorEmbeddingService:
             
             for action in recent_actions[:10]:
                 pe = pe_dict.get(action.place_id)
-                if pe and pe.embedding:
+                if pe is not None and pe.embedding is not None:
                     recent_sum += np.array(pe.embedding)
                     recent_count += 1
             
@@ -388,15 +388,16 @@ class VectorEmbeddingService:
             ).first()
             
             # Cold start handling
-            if not user_embedding or not user_embedding.preference_embedding:
+            if user_embedding is None or user_embedding.preference_embedding is None:
                 return ColdStartHandler.get_cold_start_recommendations(
                     db, context=context, limit=limit
                 )
-            
-            # Search similar places
+
+            # Search similar places (벡터를 list로 변환해 pgvector에 전달)
+            pref_vec = np.asarray(user_embedding.preference_embedding, dtype=float).tolist()
             similar = self.get_similar_places(
-                db, 
-                user_embedding.preference_embedding, 
+                db,
+                pref_vec,
                 limit=limit * 2  # Get more for re-ranking
             )
             

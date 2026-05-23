@@ -646,10 +646,10 @@ class RecommendationResult(Base):
     algorithm_type = Column(String, nullable=False)  # 'vector_similarity', 'collaborative', 'hybrid'
     model_version = Column(String, nullable=True)
     
-    # Recommendation results
-    recommended_place_ids = Column(JSON, default=[])
-    scores = Column(JSON, default=[])
-    
+    # Recommendation results (실제 DB는 integer[]/float[] — 마이그레이션과 정합)
+    recommended_place_ids = Column(ARRAY(Integer), default=[])
+    scores = Column(ARRAY(Float), default=[])
+
     # Performance measurement
     clicked_place_id = Column(Integer, nullable=True)
     clicked_position = Column(Integer, nullable=True)

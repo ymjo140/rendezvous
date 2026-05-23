@@ -55,6 +55,7 @@ class UserRecommendationResponse(BaseModel):
     algorithm: str
     recommendations: List[dict]
     user_embedding_exists: bool
+    recommendation_id: Optional[int] = None  # CTR 측정용(클릭 귀속 키)
     context: Optional[dict] = None
 
 class InteractionLogRequest(BaseModel):
@@ -262,6 +263,34 @@ def get_similar_places(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _log_recommendation_served(db, user_id, algorithm, recs, context):
+    """추천 노출을 recommendation_results에 기록 → recommendation_id 반환(CTR 측정용).
+
+    실패해도 추천 응답은 정상 반환(로깅은 부가 기능).
+    """
+    try:
+        place_ids = [r.get("place_id") for r in (recs or []) if r.get("place_id") is not None]
+        scores = [r.get("similarity_score", r.get("group_score", 0)) for r in (recs or [])]
+        row = models.RecommendationResult(
+            user_id=user_id,
+            algorithm_type=algorithm,
+            recommended_place_ids=place_ids,
+            scores=scores,
+            context=context or {},
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row.id
+    except Exception as e:
+        print(f"[WARN] _log_recommendation_served failed: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
+
+
 @router.get("/api/vector/recommendations", response_model=UserRecommendationResponse)
 def get_user_recommendations(
     limit: int = 10,
@@ -284,16 +313,20 @@ def get_user_recommendations(
             models.UserEmbedding.user_id == current_user.id
         ).first()
         
-        if not user_embedding or not user_embedding.preference_embedding:
+        if user_embedding is None or user_embedding.preference_embedding is None:
             # Cold start: use ML-based recommendations
             recommendations = ColdStartHandler.get_cold_start_recommendations(
                 db, context=context, limit=limit
             )
             
+            rec_id = _log_recommendation_served(
+                db, current_user.id, "cold_start_ml", recommendations, context
+            )
             return UserRecommendationResponse(
                 algorithm="cold_start_ml",
                 recommendations=recommendations,
                 user_embedding_exists=False,
+                recommendation_id=rec_id,
                 context={
                     "intent": context.get("predicted_intent"),
                     "is_weekend": context.get("is_weekend")
@@ -308,10 +341,14 @@ def get_user_recommendations(
             context=context
         )
         
+        rec_id = _log_recommendation_served(
+            db, current_user.id, "hybrid_vector_ml", recommendations, context
+        )
         return UserRecommendationResponse(
             algorithm="hybrid_vector_ml",
             recommendations=recommendations,
             user_embedding_exists=True,
+            recommendation_id=rec_id,
             context={
                 "intent": context.get("predicted_intent"),
                 "is_weekend": context.get("is_weekend")
@@ -359,6 +396,10 @@ def get_group_recommendations(
         member_ids = list(dict.fromkeys(req.user_ids))  # 중복 제거, 순서 유지
         result = service.get_group_recommendations(
             db, member_ids, limit=req.limit, context=context
+        )
+        result["recommendation_id"] = _log_recommendation_served(
+            db, current_user.id, result.get("algorithm", "group"),
+            result.get("recommendations", []), context
         )
         result["context"] = {
             "intent": context.get("predicted_intent"),
@@ -425,6 +466,20 @@ def log_interaction(
         db.commit()
         db.refresh(log)
 
+        # CTR: 추천 클릭 귀속 (어떤 추천을 클릭했는지)
+        if action_type == "CLICK" and req.recommendation_id:
+            try:
+                rr = db.query(models.RecommendationResult).filter(
+                    models.RecommendationResult.id == req.recommendation_id
+                ).first()
+                if rr is not None and rr.clicked_place_id is None:
+                    rr.clicked_place_id = req.place_id
+                    rr.clicked_position = req.position_in_list
+                    db.commit()
+            except Exception as e:
+                print(f"[WARN] CTR attribution failed: {e}")
+                db.rollback()
+
         # Sync action to AI recommendation engine
         background_tasks.add_task(
             _record_ai_action_background,
@@ -489,6 +544,44 @@ def update_user_embedding(
     except Exception as e:
         print(f"[ERROR] update_user_embedding: {e}")
         return {"message": f"Update failed: {str(e)}", "success": False}
+
+
+@router.get("/api/vector/recommendation-metrics")
+def recommendation_metrics(db: Session = Depends(get_db)):
+    """알고리즘별 추천 CTR (노출 대비 클릭). 추천 품질 측정·개선 근거."""
+    try:
+        from sqlalchemy import func
+
+        rows = (
+            db.query(
+                models.RecommendationResult.algorithm_type,
+                func.count(models.RecommendationResult.id),
+                func.count(models.RecommendationResult.clicked_place_id),
+            )
+            .group_by(models.RecommendationResult.algorithm_type)
+            .all()
+        )
+        by_algo = []
+        total_served = 0
+        total_clicked = 0
+        for algo, served, clicked in rows:
+            total_served += served
+            total_clicked += clicked
+            by_algo.append({
+                "algorithm": algo,
+                "served": served,
+                "clicked": clicked,
+                "ctr": round(clicked / served, 4) if served else 0.0,
+            })
+        return {
+            "by_algorithm": by_algo,
+            "total_served": total_served,
+            "total_clicked": total_clicked,
+            "overall_ctr": round(total_clicked / total_served, 4) if total_served else 0.0,
+        }
+    except Exception as e:
+        print(f"[ERROR] recommendation_metrics: {e}")
+        return {"by_algorithm": [], "total_served": 0, "total_clicked": 0, "overall_ctr": 0.0}
 
 
 @router.get("/api/vector/stats")
