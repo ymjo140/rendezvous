@@ -11,6 +11,7 @@ import { motion } from "framer-motion"
 import { useQuery } from "@tanstack/react-query"
 import { fetchWithAuth } from "@/lib/api-client"
 import { logAction } from "@/lib/analytics-client"
+import { logVectorInteraction, getGroupRecommendations } from "@/lib/recommend-client"
 import { useDecisionCell } from "@/hooks/use-decision-cell"
 import { placeApi } from "@/lib/place-api"
 import { useMapLogic } from "@/hooks/use-map-logic"
@@ -191,6 +192,41 @@ export function HomeTab() {
     const result = await searchMidpoint()
     if (!result.ok) {
       alert(result.message || "추천에 실패했어요. 잠시 후 다시 시도해주세요.")
+      return
+    }
+    // 그룹 취향 맞춤 추천을 맨 앞 지역으로 주입 (Group Vector AI)
+    try {
+      const memberIds: number[] = []
+      if (includeMe && myProfile?.id) memberIds.push(Number(myProfile.id))
+      selectedFriends.forEach((f: any) => { if (f?.id) memberIds.push(Number(f.id)) })
+      const uniqueIds = Array.from(new Set(memberIds.filter((n) => Number.isFinite(n))))
+      if (uniqueIds.length === 0) return
+
+      const grp = await getGroupRecommendations(uniqueIds, 8)
+      if (!grp || !grp.recommendations?.length) return
+
+      const center = (result as any).data?.[0]?.center ?? myLocation ?? null
+      const groupRegion = {
+        region_name: "✨ 우리 취향 맞춤",
+        center,
+        transit_info: null,
+        _recommendation_id: grp.recommendation_id,
+        places: grp.recommendations.map((r, i) => ({
+          id: r.place_id,
+          name: r.name,
+          category: r.category,
+          address: r.address,
+          tags: r.tags || [],
+          score: r.group_score,
+          _recommendation_id: grp.recommendation_id,
+          _position: i,
+        })),
+      }
+      setRecommendations((prev: any[]) => [groupRegion, ...prev])
+      setActiveTabIdx(0)
+      setCurrentDisplayRegion(groupRegion)
+    } catch (e) {
+      console.log("group rec inject failed:", e)
     }
   }
 
@@ -291,6 +327,11 @@ export function HomeTab() {
     persistSearchState()
     if (p?.id) {
       logAction({ action_type: "detail_view", place_id: p.id, source: "home_tab" })
+      // 추천 학습 + CTR: 클릭 기록 (그룹추천이면 recommendation_id로 귀속)
+      logVectorInteraction({
+        place_id: p.id, action_type: "CLICK",
+        recommendation_id: p._recommendation_id, position_in_list: p._position,
+      })
       router.push(`/places/${p.id}`)
       return
     }
@@ -300,6 +341,7 @@ export function HomeTab() {
         const matched = matches.find((item: any) => item.name === p.name) || matches[0]
         if (matched?.id) {
           logAction({ action_type: "detail_view", place_id: matched.id, source: "home_tab" })
+          logVectorInteraction({ place_id: matched.id, action_type: "CLICK" })
           router.push(`/places/${matched.id}`)
           return
         }
