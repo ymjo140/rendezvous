@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ChevronUp, Clock, ThumbsUp } from "lucide-react"
+import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ChevronUp, Clock, ThumbsUp, UserPlus } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { API_BASE_URL, fetchWithAuth } from "@/lib/api-client"
 import { useMe } from "@/hooks/use-me"
 import { CommunityTab } from "@/components/ui/community-tab"
@@ -485,7 +486,13 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     const [isConnected, setIsConnected] = useState(false)
     const scrollRef = useRef<HTMLDivElement>(null)
     const socketRef = useRef<WebSocket | null>(null)
-    
+
+    // 친구 초대
+    const [isInviteOpen, setIsInviteOpen] = useState(false)
+    const [friends, setFriends] = useState<any[]>([])
+    const [inviteLoading, setInviteLoading] = useState(false)
+    const [invitedIds, setInvitedIds] = useState<number[]>([])
+
     // 📤 공유된 아이템 클릭 → 탐색 탭으로 이동
     const handleSharedItemClick = (item: any) => {
         if (item.type === "post" && item.post_id) {
@@ -522,6 +529,42 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
             const res = await fetchChatAPI(`/api/chat/rooms`)
             if (res.ok) setRooms(await res.json())
         } catch(e) {}
+    }
+
+    const fetchFriends = async () => {
+        try {
+            const res = await fetchChatAPI(`/api/friends`)
+            if (res.ok) {
+                const data = await res.json()
+                setFriends(Array.isArray(data?.friends) ? data.friends : [])
+            }
+        } catch (e) {}
+    }
+
+    const openInvite = () => {
+        setInvitedIds([])
+        setIsInviteOpen(true)
+        fetchFriends()
+    }
+
+    const handleInvite = async (friend: any) => {
+        if (!activeRoom || !friend?.id) return
+        setInviteLoading(true)
+        try {
+            const res = await fetchChatAPI(`/api/chat/rooms/${activeRoom.id}/invite`, {
+                method: "POST",
+                body: JSON.stringify({ user_id: friend.id }),
+            })
+            if (res.ok) {
+                setInvitedIds(prev => [...prev, friend.id])
+            } else {
+                alert("초대 실패: 잠시 후 다시 시도해주세요.")
+            }
+        } catch (e) {
+            alert("초대 중 오류가 발생했습니다.")
+        } finally {
+            setInviteLoading(false)
+        }
     }
 
     const fetchMessages = async () => {
@@ -584,9 +627,23 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     };
 
     const handleSend = async () => {
-        if (!input.trim() || !activeRoom || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return
-        socketRef.current.send(input);
-        setInput("");
+        if (!input.trim() || !activeRoom) return
+        const text = input.trim()
+        setInput("")
+        try {
+            // REST로 전송 → 서버가 DB 저장 + 발신자 귀속 + 방 전체에 WebSocket 브로드캐스트
+            const res = await fetchChatAPI(`/api/chat/message`, {
+                method: "POST",
+                body: JSON.stringify({ room_id: String(activeRoom.id), content: text }),
+            })
+            if (!res.ok) { alert("메시지 전송 실패"); return }
+            // WebSocket 미연결 시에도 보이도록 폴백 새로고침
+            if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+                fetchMessages()
+            }
+        } catch (e) {
+            alert("메시지 전송 실패")
+        }
     }
 
     const renderTabHeader = () => (
@@ -661,9 +718,19 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                         AI 🤖
                     </Button>
                     
-                    <Button 
-                        size="icon" 
-                        variant="ghost" 
+                    <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={openInvite}
+                        className="h-8 w-8 text-gray-400 hover:text-[#7C3AED] hover:bg-purple-50"
+                        title="친구 초대"
+                    >
+                        <UserPlus className="w-4 h-4" />
+                    </Button>
+
+                    <Button
+                        size="icon"
+                        variant="ghost"
                         onClick={handleLeaveRoom}
                         className="h-8 w-8 text-gray-400 hover:text-red-500 hover:bg-red-50"
                         title="채팅방 나가기"
@@ -788,6 +855,39 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 </div>
                 </div>
             </div>
+
+            {/* 친구 초대 모달 */}
+            <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+                <DialogContent className="sm:max-w-sm rounded-3xl font-['Pretendard']">
+                    <DialogHeader>
+                        <DialogTitle>친구 초대</DialogTitle>
+                        <DialogDescription>이 채팅방에 초대할 친구를 선택하세요.</DialogDescription>
+                    </DialogHeader>
+                    <div className="py-2 max-h-[50vh] overflow-y-auto space-y-1">
+                        {friends.length === 0 ? (
+                            <div className="text-center text-sm text-gray-400 py-8">초대할 친구가 없어요.</div>
+                        ) : friends.map((f) => {
+                            const invited = invitedIds.includes(f.id)
+                            return (
+                                <div key={f.id} className="flex items-center justify-between p-2 rounded-xl hover:bg-gray-50">
+                                    <div className="flex items-center gap-2">
+                                        <Avatar className="w-9 h-9"><AvatarFallback className="bg-purple-50 text-[#7C3AED] text-xs font-bold">{f.name?.[0]}</AvatarFallback></Avatar>
+                                        <div className="text-sm font-medium text-gray-800">{f.name}</div>
+                                    </div>
+                                    <Button
+                                        size="sm"
+                                        disabled={invited || inviteLoading}
+                                        className={invited ? "bg-gray-100 text-gray-400 h-8 text-xs" : "bg-[#7C3AED] hover:bg-purple-700 h-8 text-xs"}
+                                        onClick={() => handleInvite(f)}
+                                    >
+                                        {invited ? "초대됨" : "초대"}
+                                    </Button>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

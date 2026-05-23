@@ -108,6 +108,47 @@ def leave_room(
     db.commit()
     return {"status": "left", "removed": bool(removed)}
 
+@router.post("/api/chat/rooms/{room_id}/invite")
+def invite_to_room(
+    room_id: str,
+    req: dict,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """채팅방에 친구 초대(멤버 추가). 초대자는 해당 방의 멤버여야 함."""
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    is_member = db.query(models.ChatRoomMember).filter(
+        models.ChatRoomMember.room_id == room_id,
+        models.ChatRoomMember.user_id == current_user.id,
+    ).first()
+    if not is_member:
+        raise HTTPException(status_code=403, detail="해당 채팅방의 멤버만 초대할 수 있습니다.")
+
+    user_id = req.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id가 필요합니다.")
+
+    target = db.query(models.User).filter(models.User.id == user_id).first()
+    if target is None:
+        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+
+    existing = db.query(models.ChatRoomMember).filter(
+        models.ChatRoomMember.room_id == room_id,
+        models.ChatRoomMember.user_id == user_id,
+    ).first()
+    if existing:
+        return {"status": "already_member", "user_id": user_id, "name": target.name}
+
+    db.add(models.ChatRoomMember(room_id=room_id, user_id=user_id))
+    room = db.query(models.ChatRoom).filter(models.ChatRoom.id == room_id).first()
+    if room is not None and not room.is_group:
+        room.is_group = True  # 1:1 → 그룹방으로 전환
+    db.commit()
+    return {"status": "invited", "user_id": user_id, "name": target.name}
+
+
 @router.get("/api/chat/rooms/{room_id}/available-dates")
 def get_available_dates(room_id: str):
     fallback_time = (datetime.now() + timedelta(hours=1)).strftime("%H:%M")
@@ -126,10 +167,11 @@ def parse_schedule(req: dict):
 
 @router.websocket("/api/ws/{room_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str):
+    # 수신 전용: 메시지 전송/저장/브로드캐스트는 REST(/api/chat/message)에서 처리.
+    # 기존엔 받은 텍스트를 'System'(user_id 0)으로 에코해 발신자 귀속/저장이 안 됐음.
     await manager.connect(websocket, room_id)
     try:
         while True:
-            data = await websocket.receive_text()
-            await manager.broadcast({"content": data, "user_id": 0, "name": "System"}, room_id)
+            await websocket.receive_text()  # ping 등 수신만 유지(연결 keep-alive)
     except WebSocketDisconnect:
         manager.disconnect(websocket, room_id)
