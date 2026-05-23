@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -256,4 +257,93 @@ async def delete_offer_rule(
     db.commit()
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+    return {"ok": True}
+
+
+# =========================================================
+# Generic merchant resources (store_id text 키 테이블)
+# 컬럼 화이트리스트 기반 — 테이블/컬럼명은 코드 고정값, 값만 파라미터화(인젝션 안전).
+# 머천트 프론트의 supabase 직접 쓰기를 대체.
+# =========================================================
+
+# 테이블별 허용 컬럼 (store_id는 항상 서버가 강제 주입)
+_RESOURCE_COLS: Dict[str, set] = {
+    "reservations": {"id", "guest_name", "guest_phone", "party_size", "date",
+                     "status", "unit_id", "unit_index", "start_time", "end_time",
+                     "notes", "source"},
+    "table_units": {"id", "name", "min_capacity", "max_capacity", "quantity", "is_private"},
+    "time_deals": {"id", "benefit_id", "title", "date", "start_time", "end_time"},
+    "store_menus": {"id", "name", "price", "category", "image_url", "is_recommended"},
+    "offer_benefits_catalog": {"id", "title", "category", "type", "value",
+                               "is_active", "metadata"},
+}
+
+
+def _check_resource(resource: str) -> set:
+    cols = _RESOURCE_COLS.get(resource)
+    if cols is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown resource")
+    return cols
+
+
+@router.post("/stores/{store_id}/r/{resource}")
+async def create_resource(
+    store_id: int,
+    resource: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    allowed = _check_resource(resource)
+    _assert_store_owner(db, store_id, current_user)
+
+    data = {k: v for k, v in payload.items() if k in allowed}
+    data["store_id"] = str(store_id)  # 클라이언트 값 무시, 소유권 검증된 store_id 강제
+    cols = list(data.keys())
+    collist = ", ".join(cols)
+    placeholders = ", ".join(f":{c}" for c in cols)
+    sql = text(f"INSERT INTO {resource} ({collist}) VALUES ({placeholders}) RETURNING id")
+    new_id = db.execute(sql, data).scalar()
+    db.commit()
+    return {"id": new_id}
+
+
+@router.patch("/stores/{store_id}/r/{resource}/{row_id}")
+async def update_resource(
+    store_id: int,
+    resource: str,
+    row_id: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    allowed = _check_resource(resource)
+    _assert_store_owner(db, store_id, current_user)
+
+    data = {k: v for k, v in payload.items() if k in allowed and k != "id"}
+    if not data:
+        return {"ok": True}
+    sets = ", ".join(f"{c} = :{c}" for c in data)
+    params = dict(data)
+    params["_rid"] = row_id
+    params["_sid"] = str(store_id)
+    sql = text(f"UPDATE {resource} SET {sets} WHERE id = :_rid AND store_id = :_sid")
+    db.execute(sql, params)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/stores/{store_id}/r/{resource}/{row_id}")
+async def delete_resource(
+    store_id: int,
+    resource: str,
+    row_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    _check_resource(resource)
+    _assert_store_owner(db, store_id, current_user)
+    sql = text(f"DELETE FROM {resource} WHERE id = :_rid AND store_id = :_sid")
+    db.execute(sql, {"_rid": row_id, "_sid": str(store_id)})
+    db.commit()
     return {"ok": True}
