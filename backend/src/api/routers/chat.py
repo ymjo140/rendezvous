@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict
 import json
@@ -93,8 +93,20 @@ async def send_message_api(req: dict, db: Session = Depends(get_db), current_use
 
 # --- 4. 기타 API ---
 @router.post("/api/chat/rooms/{room_id}/leave")
-def leave_room(room_id: str, db: Session = Depends(get_db)):
-    return {"status": "left"}
+def leave_room(
+    room_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """현재 사용자를 채팅방 멤버에서 제거(실제 나가기). 기존엔 no-op이라 새로고침 시 방이 다시 보였음."""
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    removed = db.query(models.ChatRoomMember).filter(
+        models.ChatRoomMember.room_id == room_id,
+        models.ChatRoomMember.user_id == current_user.id,
+    ).delete()
+    db.commit()
+    return {"status": "left", "removed": bool(removed)}
 
 @router.get("/api/chat/rooms/{room_id}/available-dates")
 def get_available_dates(room_id: str):

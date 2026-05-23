@@ -647,7 +647,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 <div className="flex items-center gap-2">
                     <Button variant="ghost" size="icon" onClick={() => setView('list')} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
                     <div>
-                        <h2 className="font-bold text-sm text-gray-900 truncate max-w-[150px]">{activeRoom?.name}</h2>
+                        <h2 className="font-bold text-sm text-gray-900 truncate max-w-[150px]">{activeRoom?.title || activeRoom?.name}</h2>
                         {isConnected ? <span className="text-[10px] text-green-500 font-bold block">● 실시간 연결됨</span> : <span className="text-[10px] text-red-500 font-bold block">● 연결 중...</span>}
                     </div>
                 </div>
