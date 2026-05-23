@@ -458,6 +458,123 @@ class VectorEmbeddingService:
             except:
                 return []
 
+    def get_group_recommendations(
+        self,
+        db: Session,
+        user_ids: List[int],
+        limit: int = 10,
+        context: Dict = None,
+    ) -> Dict:
+        """그룹 취향 합성 추천 (Group Vector AI).
+
+        멤버 개인 취향 벡터를 평균(Average)해 후보를 뽑고, 후보별 멤버 최소
+        만족도(Least Misery)로 재랭킹해 '아무도 싫어하지 않는' 곳을 우선한다.
+        멤버 누구든 블랙리스트한 장소는 제외.
+        """
+        from domain.models import UserEmbedding, User, Place, PlaceEmbedding
+        from core.ml_engine import ColdStartHandler
+
+        def _cold(members_with_taste: int, algo: str = "group_cold_start") -> Dict:
+            return {
+                "algorithm": algo,
+                "members_total": len(user_ids),
+                "members_with_taste": members_with_taste,
+                "recommendations": ColdStartHandler.get_cold_start_recommendations(
+                    db, context=context, limit=limit
+                ),
+            }
+
+        try:
+            # 1) 멤버 개인 벡터 수집
+            embeddings = (
+                db.query(UserEmbedding)
+                .filter(UserEmbedding.user_id.in_(user_ids))
+                .all()
+            )
+            member_vecs = [
+                np.asarray(e.preference_embedding, dtype=float)
+                for e in embeddings
+                if e.preference_embedding is not None
+            ]
+            members_with_taste = len(member_vecs)
+
+            # 취향 데이터가 없으면 cold start(인기)로
+            if members_with_taste == 0:
+                return _cold(0)
+
+            # 2) 평균 벡터로 후보 추출
+            group_vec = np.mean(member_vecs, axis=0)
+            candidates = self.get_similar_places(db, group_vec.tolist(), limit=limit * 3)
+            if not candidates:
+                return _cold(members_with_taste)
+
+            cand_ids = [c[0] for c in candidates]
+
+            # 3) 후보 임베딩 + 장소 정보 배치 로드
+            pes = (
+                db.query(PlaceEmbedding)
+                .filter(PlaceEmbedding.place_id.in_(cand_ids))
+                .all()
+            )
+            pe_map = {
+                pe.place_id: np.asarray(pe.embedding, dtype=float)
+                for pe in pes
+                if pe.embedding is not None
+            }
+            places = db.query(Place).filter(Place.id.in_(cand_ids)).all()
+            place_map = {p.id: p for p in places}
+
+            # 4) 멤버 블랙리스트 합집합 (누구든 싫어하면 제외)
+            users = db.query(User).filter(User.id.in_(user_ids)).all()
+            blacklist = set()
+            for u in users:
+                for pid in (u.blacklisted_place_ids or []):
+                    blacklist.add(pid)
+
+            # 5) 그룹 점수 = 평균 만족 0.6 + 최소 만족(Least Misery) 0.4
+            results = []
+            for pid, _avg in candidates:
+                if pid in blacklist:
+                    continue
+                pv = pe_map.get(pid)
+                place = place_map.get(pid)
+                if pv is None or place is None:
+                    continue
+                sims = [self.cosine_similarity(mv.tolist(), pv.tolist()) for mv in member_vecs]
+                min_sim = min(sims)
+                mean_sim = sum(sims) / len(sims)
+                group_score = 0.6 * mean_sim + 0.4 * min_sim
+                results.append({
+                    "place_id": place.id,
+                    "name": place.name,
+                    "category": place.category,
+                    "address": place.address,
+                    "group_score": round(group_score, 4),
+                    "min_member_score": round(min_sim, 4),
+                    "reason": f"{members_with_taste}명 취향 합성 · 최소 만족 {round(min_sim * 100)}%",
+                    "tags": place.tags or [],
+                    "rating": place.wemeet_rating,
+                })
+
+            results.sort(key=lambda x: x["group_score"], reverse=True)
+            return {
+                "algorithm": "group_vector_least_misery",
+                "members_total": len(user_ids),
+                "members_with_taste": members_with_taste,
+                "recommendations": results[:limit],
+            }
+        except Exception as e:
+            print(f"[ERROR] get_group_recommendations failed: {e}")
+            try:
+                return _cold(0, algo="group_fallback")
+            except Exception:
+                return {
+                    "algorithm": "group_error",
+                    "members_total": len(user_ids),
+                    "members_with_taste": 0,
+                    "recommendations": [],
+                }
+
 
 # Singleton instance
 _embedding_service = None

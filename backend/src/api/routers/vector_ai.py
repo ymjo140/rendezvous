@@ -330,6 +330,53 @@ def get_user_recommendations(
         )
 
 
+class GroupRecommendationRequest(BaseModel):
+    user_ids: List[int]
+    limit: int = 10
+
+
+@router.post("/api/vector/group-recommendations")
+def get_group_recommendations(
+    req: GroupRecommendationRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """그룹 취향 합성 추천 (Group Vector AI).
+
+    멤버 user_ids의 개인 취향 벡터를 합성(Average)해 후보를 뽑고, 멤버 최소
+    만족도(Least Misery)로 재랭킹한다.
+    """
+    try:
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Login required")
+        if not req.user_ids:
+            raise HTTPException(status_code=400, detail="user_ids required")
+
+        from services.vector_embedding_service import get_embedding_service
+
+        service = get_embedding_service()
+        context = get_current_context()
+        member_ids = list(dict.fromkeys(req.user_ids))  # 중복 제거, 순서 유지
+        result = service.get_group_recommendations(
+            db, member_ids, limit=req.limit, context=context
+        )
+        result["context"] = {
+            "intent": context.get("predicted_intent"),
+            "is_weekend": context.get("is_weekend"),
+        }
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] group-recommendations: {e}")
+        return {
+            "algorithm": "error",
+            "members_total": 0,
+            "members_with_taste": 0,
+            "recommendations": [],
+        }
+
+
 @router.post("/api/vector/interaction", response_model=InteractionLogResponse)
 def log_interaction(
     req: InteractionLogRequest,
