@@ -268,7 +268,17 @@ class MLScorer:
 
 class ColdStartHandler:
     """Handle cold start problem for new users"""
-    
+
+    # 시간대(intent) → 추천할 장소 대분류(main_category)
+    INTENT_MAIN_CATEGORIES = {
+        "BREAKFAST": ["CAFE", "RESTAURANT"],
+        "LUNCH": ["RESTAURANT"],
+        "CAFE": ["CAFE"],
+        "DINNER": ["RESTAURANT", "PUB"],
+        "LATE_NIGHT": ["PUB", "RESTAURANT"],
+        "GENERAL": [],
+    }
+
     @staticmethod
     def get_cold_start_recommendations(
         db_session,
@@ -279,67 +289,56 @@ class ColdStartHandler:
         Get recommendations for users with no history
         Uses time-based rules + popularity
         """
-        from domain.models import Place, PlaceEmbedding
+        from domain.models import Place
         from sqlalchemy import func
-        
+
         try:
             ctx = ContextAnalyzer.analyze(context)
             intent = ctx.get("predicted_intent", "GENERAL")
-            category_boosts = ctx.get("category_boosts", {})
-            
-            # Get popular places
-            query = db_session.query(Place).filter(
-                Place.wemeet_rating > 0
-            )
-            
-            # Apply category filter based on intent
-            if category_boosts:
-                top_categories = sorted(
-                    category_boosts.items(), 
-                    key=lambda x: x[1], 
-                    reverse=True
-                )[:3]
-                category_keywords = [c[0] for c in top_categories]
-                
-                # Simple filter - check if any category keyword is in place category
-                # This is a simplified approach
-            
-            # Order by rating and get results
-            places = query.order_by(
-                Place.wemeet_rating.desc(),
-                Place.review_count.desc()
-            ).limit(limit * 2).all()
-            
-            # Score and sort
+            main_cats = ColdStartHandler.INTENT_MAIN_CATEGORIES.get(intent, [])
+
+            # 주의: wemeet_rating·review_count는 크롤링 데이터라 전부 0 → 필터/정렬에 쓰지 않음.
+            # 시간대(intent)에 맞는 대분류로 좁히고, 변화를 위해 무작위 표본을 뽑아 맥락 점수화한다.
+            pool_size = max(limit * 5, 50)
+            query = db_session.query(Place)
+            if main_cats:
+                query = query.filter(Place.main_category.in_(main_cats))
+            places = query.order_by(func.random()).limit(pool_size).all()
+
+            # 카테고리 표본이 비면 카테고리 필터 없이 재시도(빈 결과 방지)
+            if not places:
+                places = db_session.query(Place).order_by(func.random()).limit(pool_size).all()
+
             scorer = MLScorer()
             scored_places = []
-            
+
             for place in places:
+                vibe = place.vibe_tags if isinstance(place.vibe_tags, list) else []
+                tags = place.tags if isinstance(place.tags, list) else []
                 features = {
-                    "category": place.category or "",
-                    "tags": place.tags or [],
+                    "category": place.cuisine_type or place.category or "",
+                    "tags": (vibe + tags)[:8],
                     "rating": place.wemeet_rating or 0,
-                    "review_count": place.review_count or 0
+                    "review_count": place.review_count or 0,
                 }
-                
+
                 score, reason = scorer.score_place(features, context=context)
-                
+
                 scored_places.append({
                     "place_id": place.id,
                     "name": place.name,
-                    "category": place.category,
+                    "category": place.category or place.cuisine_type,
                     "address": place.address,
                     "score": round(score, 4),
                     "reason": reason,
                     "rating": place.wemeet_rating,
-                    "tags": place.tags or []
+                    "tags": (vibe or tags),
                 })
-            
-            # Sort by score
+
             scored_places.sort(key=lambda x: x["score"], reverse=True)
-            
+
             return scored_places[:limit]
-            
+
         except Exception as e:
             print(f"[ColdStartHandler] Error: {e}")
             # Return empty list on error
