@@ -13,6 +13,11 @@ const PLACEHOLDER_IMAGE =
 
 const formatEndTime = (value?: string | null) => {
   if (!value) return "마감 시간 미정"
+  // "HH:MM" 또는 "HH:MM:SS" 형태(오퍼룰 시간블록)
+  const hhmm = /^(\d{1,2}):(\d{2})/.exec(value)
+  if (hhmm) {
+    return `~ ${hhmm[1].padStart(2, "0")}:${hhmm[2]}까지`
+  }
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "마감 시간 미정"
   const hours = String(date.getHours()).padStart(2, "0")

@@ -66,28 +66,31 @@ def _to_minutes(value: Optional[str]) -> Optional[int]:
         return None
 
 
-def _rule_active_now(rule: models.OfferRule, weekday: int, cur_min: int) -> bool:
-    """현재(요일/시각) 기준으로 룰이 진행 중인지.
-
-    day_of_week_mask는 머천트와 동일하게 월=bit0..일=bit6 (Python weekday()와 일치).
-    요일/시간 미지정이면 상시 노출로 간주.
-    """
+def _rule_active_today(rule: models.OfferRule, weekday: int) -> bool:
+    """오늘(요일) 노출 대상 룰인지. day_of_week_mask 월=bit0..일=bit6 (Python weekday와 일치).
+    요일 미지정이면 상시 노출. 시간대는 종일 노출하되 description에 표기('오늘의 핫딜')."""
     mask = getattr(rule, "day_of_week_mask", None) or 0
     if mask and not (mask & (1 << weekday)):
         return False
-
-    blocks = getattr(rule, "time_blocks_json", None) or []
-    if isinstance(blocks, list) and blocks:
-        def in_block(b: Dict[str, str]) -> bool:
-            start = _to_minutes(b.get("start"))
-            end = _to_minutes(b.get("end"))
-            if start is None or end is None:
-                return True
-            return start <= cur_min < end
-
-        if not any(in_block(b) for b in blocks if isinstance(b, dict)):
-            return False
     return True
+
+
+def _format_window(rule: models.OfferRule) -> str:
+    """룰의 적용 시간대를 사람이 읽기 좋게. 예: '오늘 18:00~20:00'."""
+    blocks = getattr(rule, "time_blocks_json", None) or []
+    parts = []
+    if isinstance(blocks, list):
+        for b in blocks:
+            if isinstance(b, dict) and b.get("start") and b.get("end"):
+                parts.append(f"{b['start']}~{b['end']}")
+    return "오늘 " + ", ".join(parts) if parts else "오늘 종일"
+
+
+def _rule_end_time(rule: models.OfferRule) -> Optional[str]:
+    """오늘 마지막 시간블록 end (프론트 만료 표시용)."""
+    blocks = getattr(rule, "time_blocks_json", None) or []
+    ends = [b.get("end") for b in blocks if isinstance(b, dict) and b.get("end")]
+    return max(ends) if ends else None
 
 
 def _resolve_place_image(place: models.Place) -> Optional[str]:
@@ -103,31 +106,43 @@ def _active_time_deals(db: Session, now: datetime) -> List[Dict[str, Any]]:
     today = now.strftime("%Y-%m-%d")
     sql = text(
         """
-        SELECT td.id AS deal_id, td.title AS title, td.end_time AS end_time,
+        SELECT td.id AS deal_id, td.title AS title, td.date AS deal_date,
+               td.start_time AS start_time, td.end_time AS end_time,
                p.id AS store_id, p.name AS store_name
         FROM time_deals td
         JOIN places p
           ON (td.store_id ~ '^[0-9]+$' AND p.id = CAST(td.store_id AS INTEGER))
-        WHERE td.date = :today
-          AND td.start_time <= :now
-          AND td.end_time >= :now
+        WHERE td.date >= :today
+        ORDER BY td.date, td.start_time
         """
     )
     try:
-        rows = db.execute(sql, {"today": today, "now": now}).mappings().all()
+        rows = db.execute(sql, {"today": today}).mappings().all()
     except Exception as exc:  # 테이블 부재/권한 등에도 핫딜 전체가 죽지 않도록
         print(f"[hotdeals] time_deals 조회 실패: {exc}")
         return []
 
+    def _fmt(value: Any) -> Optional[str]:
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if value is None:
+            return None
+        return str(value)
+
     deals: List[Dict[str, Any]] = []
     for r in rows:
-        end_time = r.get("end_time")
+        deal_date = str(r.get("deal_date")) if r.get("deal_date") is not None else None
+        start = _fmt(r.get("start_time"))
+        end = _fmt(r.get("end_time"))
+        day_label = "오늘" if deal_date == today else (deal_date or "")
+        window = f"{start}~{end}" if start and end else ""
+        description = f"{day_label} {window}".strip() or "타임 핫딜"
         deals.append(
             {
                 "deal_id": r.get("deal_id"),
                 "benefit_title": r.get("title") or "타임 핫딜",
-                "description": "지금 진행 중",
-                "end_time": end_time.isoformat() if isinstance(end_time, datetime) else end_time,
+                "description": description,
+                "end_time": end,
                 "store_id": r.get("store_id"),
                 "store_name": r.get("store_name"),
                 "image_url": None,
@@ -140,7 +155,6 @@ def _active_time_deals(db: Session, now: datetime) -> List[Dict[str, Any]]:
 def get_hot_deals(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
     now = datetime.now()
     weekday = now.weekday()  # 0=월 .. 6=일 (머천트 day_of_week_mask와 일치)
-    cur_min = now.hour * 60 + now.minute
 
     rows = (
         db.query(models.OfferRule, models.Place)
@@ -151,14 +165,19 @@ def get_hot_deals(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
 
     deals: List[Dict[str, Any]] = []
     for rule, place in rows:
-        if not _rule_active_now(rule, weekday, cur_min):
+        if not _rule_active_today(rule, weekday):
             continue
+        title = _resolve_rule_title(rule)
+        benefit = _resolve_rule_description(rule)
+        window = _format_window(rule)
+        # 혜택 문구가 타이틀과 중복되면 시간대만 노출
+        description = f"{benefit} · {window}" if benefit and benefit != title else window
         deals.append(
             {
                 "deal_id": rule.id,
-                "benefit_title": _resolve_rule_title(rule),
-                "description": _resolve_rule_description(rule),
-                "end_time": None,
+                "benefit_title": title,
+                "description": description,
+                "end_time": _rule_end_time(rule),
                 "store_id": place.id,
                 "store_name": place.name,
                 "image_url": _resolve_place_image(place),
