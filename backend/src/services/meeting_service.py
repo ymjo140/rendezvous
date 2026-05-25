@@ -139,7 +139,8 @@ class MeetingService:
 
             if place_candidates:
                 recommender = AdvancedRecommender(place_candidates)
-                ranked = recommender.recommend([{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], purpose, top_k=5)
+                # 프론트에서 추천순/평점순/거리순 재정렬할 수 있도록 넉넉히 반환
+                ranked = recommender.recommend([{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], purpose, top_k=15)
 
                 results.append({
                     "region_name": r["name"],
@@ -195,7 +196,7 @@ class MeetingService:
         if len(all_points) < 2:
             base_lat = all_points[0]['lat'] if all_points else 37.5665
             base_lng = all_points[0]['lng'] if all_points else 126.9780
-            top_3_regions = [{"name": "?ㅼ젙 ?꾩튂 二쇰?", "lat": base_lat, "lng": base_lng}]
+            top_3_regions = [{"name": "내 주변", "lat": base_lat, "lng": base_lng}]
         else:
             # (2?④퀎) 以묎컙吏???꾩텧 (TransportEngine)
             top_3_regions = TransportEngine.find_best_midpoints(db, all_points)

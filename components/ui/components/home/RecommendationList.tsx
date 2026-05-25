@@ -1,10 +1,28 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useMemo, useState } from "react"
 import { motion, AnimatePresence, type PanInfo } from "framer-motion"
 import { MapPin, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ShareRecommendationDialog } from "@/components/ui/components/home/ShareRecommendationDialog"
+
+// 정렬 옵션
+const SORT_OPTIONS = [
+  { key: "reco", label: "추천순" },
+  { key: "rating", label: "평점순" },
+  { key: "distance", label: "거리순" },
+] as const
+type SortKey = (typeof SORT_OPTIONS)[number]["key"]
+
+function distanceKm(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const R = 6371
+  const dLat = ((bLat - aLat) * Math.PI) / 180
+  const dLng = ((bLng - aLng) * Math.PI) / 180
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s))
+}
 
 type RecommendationListProps = {
   recommendations: any[]
@@ -58,6 +76,23 @@ export const RecommendationList = ({
 }: RecommendationListProps) => {
   const [shareOpen, setShareOpen] = useState(false)
   const [snap, setSnap] = useState<Snap>("half")
+  const [sortBy, setSortBy] = useState<SortKey>("reco")
+
+  // 추천순(엔진 기본 순서) / 평점순 / 거리순(중간지점에서 가까운 순)
+  const sortedPlaces = useMemo(() => {
+    const places: any[] = currentDisplayRegion?.places || []
+    const center = currentDisplayRegion?.center
+    const arr = places.map((p, i) => ({ p, i }))
+    if (sortBy === "rating") {
+      arr.sort((a, b) => (Number(b.p.wemeet_rating) || 0) - (Number(a.p.wemeet_rating) || 0) || a.i - b.i)
+    } else if (sortBy === "distance" && center?.lat && center?.lng) {
+      const d = (p: any) =>
+        p.lat && p.lng ? distanceKm(center.lat, center.lng, p.lat, p.lng) : Infinity
+      arr.sort((a, b) => d(a.p) - d(b.p) || a.i - b.i)
+    }
+    // "reco" → 엔진이 반환한 원래 순서 유지
+    return arr.map((x) => x.p)
+  }, [currentDisplayRegion, sortBy])
 
   // 핸들 탭: peek → half → full → peek 순환
   const cycleSnap = () => {
@@ -126,12 +161,29 @@ export const RecommendationList = ({
                 </button>
               ))}
             </div>
+
+            {/* 정렬: 추천순 / 평점순 / 거리순 */}
+            <div className="flex gap-1.5 mb-2">
+              {SORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setSortBy(opt.key)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                    sortBy === opt.key
+                      ? "bg-[#7C3AED] text-white"
+                      : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* 장소 목록 (스크롤) */}
           <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-3">
-            {currentDisplayRegion?.places?.map((p: any) => (
-              <PlaceCard key={p.id} place={p} onClick={() => onPlaceClick(p)} />
+            {sortedPlaces.map((p: any, idx: number) => (
+              <PlaceCard key={p.id ?? idx} place={p} onClick={() => onPlaceClick(p)} />
             ))}
           </div>
 
