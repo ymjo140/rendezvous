@@ -176,6 +176,35 @@ export function HomeTab() {
     restoreSearchState()
   }, [])
 
+  // 내 프로필/위치 로드 (마이페이지에서 저장한 위치 기준). 없으면 안내.
+  useEffect(() => {
+    let cancelled = false
+    const loadMe = async () => {
+      try {
+        const res = await fetchWithAuth("/api/users/me")
+        if (!res.ok) {
+          if (!cancelled) setMyLocationInput("위치 미설정 (마이페이지에서 설정)")
+          return
+        }
+        const me = await res.json()
+        if (cancelled) return
+        setMyProfile(me)
+        if (me?.lat && me?.lng && Math.abs(me.lat) > 1.0) {
+          setMyLocation({ lat: me.lat, lng: me.lng })
+          setMyLocationInput(me.location_name || "내 설정 위치")
+        } else {
+          setMyLocationInput("위치 미설정 (마이페이지에서 설정)")
+        }
+      } catch {
+        if (!cancelled) setMyLocationInput("위치 미설정 (마이페이지에서 설정)")
+      }
+    }
+    loadMe()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   useEffect(() => {
     if (!purposeConfig) return
     if (!selectedPurpose || !purposeConfig[selectedPurpose]) {
