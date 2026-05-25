@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from core.database import get_db
 from domain import models
+from schemas import user as user_schemas
 from api.dependencies import get_current_user
 
 router = APIRouter()
@@ -147,6 +148,76 @@ def invite_to_room(
         room.is_group = True  # 1:1 → 그룹방으로 전환
     db.commit()
     return {"status": "invited", "user_id": user_id, "name": target.name}
+
+
+def _find_or_create_dm(db: Session, user_a_id: int, user_b_id: int) -> models.ChatRoom:
+    """두 유저의 1:1 채팅방을 찾고, 없으면 생성."""
+    a_rooms = {m.room_id for m in db.query(models.ChatRoomMember).filter(models.ChatRoomMember.user_id == user_a_id).all()}
+    b_rooms = {m.room_id for m in db.query(models.ChatRoomMember).filter(models.ChatRoomMember.user_id == user_b_id).all()}
+    common = a_rooms & b_rooms
+    if common:
+        room = db.query(models.ChatRoom).filter(
+            models.ChatRoom.id.in_(common), models.ChatRoom.is_group == False
+        ).first()
+        if room:
+            return room
+    friend = db.query(models.User).filter(models.User.id == user_b_id).first()
+    room = models.ChatRoom(title=(friend.name if friend else "대화"), is_group=False)
+    db.add(room)
+    db.flush()
+    db.add(models.ChatRoomMember(room_id=room.id, user_id=user_a_id))
+    db.add(models.ChatRoomMember(room_id=room.id, user_id=user_b_id))
+    db.flush()
+    return room
+
+
+@router.post("/api/chat/share")
+async def share_to_friends(
+    req: user_schemas.ShareToFriends,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """추천 결과/장소를 인앱 친구(1:1 방) 또는 특정 방으로 공유.
+    chat-tab의 'shared_items' 렌더러가 카드로 표시함."""
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not req.items:
+        raise HTTPException(status_code=400, detail="공유할 항목이 없습니다.")
+
+    target_room_ids: List[str] = []
+    if req.room_id:
+        target_room_ids.append(req.room_id)
+    for fid in (req.friend_ids or []):
+        if not fid or fid == current_user.id:
+            continue
+        room = _find_or_create_dm(db, current_user.id, int(fid))
+        target_room_ids.append(room.id)
+
+    if not target_room_ids:
+        raise HTTPException(status_code=400, detail="공유 대상이 없습니다.")
+
+    content = json.dumps(
+        {"type": "shared_items", "message": req.message or "", "items": req.items},
+        ensure_ascii=False,
+    )
+    shared_rooms: List[str] = []
+    for rid in dict.fromkeys(target_room_ids):  # 중복 제거 + 순서 유지
+        msg = models.Message(room_id=rid, user_id=current_user.id, content=content)
+        db.add(msg)
+        db.flush()
+        shared_rooms.append(rid)
+        await manager.broadcast(
+            {
+                "id": msg.id,
+                "user_id": current_user.id,
+                "name": current_user.name,
+                "content": content,
+                "timestamp": datetime.now().strftime("%H:%M"),
+            },
+            rid,
+        )
+    db.commit()
+    return {"status": "shared", "rooms": shared_rooms}
 
 
 @router.get("/api/chat/rooms/{room_id}/available-dates")

@@ -28,6 +28,13 @@ export default function RootLayout({
   strategy="beforeInteractive"
   src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=kcplwdse1o"
 />
+        {/* 👇 3. 카카오 JS SDK (카톡 친구 초대 / 추천 공유). 키는 lib/kakao.ts에서 lazy init */}
+        <Script
+          strategy="afterInteractive"
+          src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"
+          integrity="sha384-TiCUE00h649CAMonG018J2ujOgDKW/kVWlChEuu4jK2vxfAAD0eZxzCKakxg55G4"
+          crossOrigin="anonymous"
+        />
       </body>
     </html>
   );

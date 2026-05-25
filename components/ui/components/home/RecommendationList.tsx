@@ -1,7 +1,10 @@
-﻿import React from "react"
+﻿"use client"
+
+import React, { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { MapPin } from "lucide-react"
+import { MapPin, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ShareRecommendationDialog } from "@/components/ui/components/home/ShareRecommendationDialog"
 
 type RecommendationListProps = {
   recommendations: any[]
@@ -48,6 +51,7 @@ export const RecommendationList = ({
   onPlaceClick,
   onReset,
 }: RecommendationListProps) => {
+  const [shareOpen, setShareOpen] = useState(false)
   return (
     <AnimatePresence>
       {recommendations.length > 0 && (
@@ -59,9 +63,17 @@ export const RecommendationList = ({
           <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4" />
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-bold text-lg">추천 지역</h3>
-            <button onClick={onReset} className="text-xs text-gray-400">
-              다시 찾기
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShareOpen(true)}
+                className="flex items-center gap-1 text-xs font-bold text-[#7C3AED]"
+              >
+                <Share2 className="w-3.5 h-3.5" /> 공유
+              </button>
+              <button onClick={onReset} className="text-xs text-gray-400">
+                다시 찾기
+              </button>
+            </div>
           </div>
 
           <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
@@ -83,6 +95,13 @@ export const RecommendationList = ({
               <PlaceCard key={p.id} place={p} onClick={() => onPlaceClick(p)} />
             ))}
           </div>
+
+          <ShareRecommendationDialog
+            open={shareOpen}
+            onOpenChange={setShareOpen}
+            regionName={currentDisplayRegion?.region_name}
+            places={currentDisplayRegion?.places || []}
+          />
         </motion.div>
       )}
     </AnimatePresence>

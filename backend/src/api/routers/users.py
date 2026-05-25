@@ -63,6 +63,14 @@ def request_friend(req: schemas.FriendRequest, current_user: models.User = Depen
 def accept_friend(req: schemas.FriendAccept, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     return user_service.accept_friend(db, current_user, req)
 
+@router.get("/api/friends/search")
+def search_friends(q: str = "", current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return user_service.search_users(db, current_user, q)
+
+@router.post("/api/friends/link-referral")
+def link_referral(req: schemas.FriendReferral, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return user_service.link_referral(db, current_user, req.inviter_id)
+
 # --- 리뷰 & 즐겨찾기 ---
 @router.post("/api/reviews")
 def create_review(review: schemas.ReviewCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):

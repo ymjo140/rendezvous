@@ -144,13 +144,23 @@ class UserService:
         return {"friends": friends, "requests": pending_requests}
 
     def request_friend(self, db: Session, user: models.User, req: schemas.FriendRequest):
-        target = self.repo.get_by_email(db, req.email)
+        # user_id 우선, 없으면 email로 대상 조회 (인앱 검색은 user_id 사용)
+        target = None
+        if req.user_id:
+            target = self.repo.get_by_id(db, req.user_id)
+        elif req.email:
+            target = self.repo.get_by_email(db, req.email)
         if not target: raise HTTPException(404, "유저를 찾을 수 없습니다.")
         if target.id == user.id: raise HTTPException(400, "자신에게 요청할 수 없습니다.")
-        
+
         existing = self.repo.get_friendship(db, user.id, target.id)
         if existing:
             if existing.status == "accepted": return {"message": "이미 친구입니다."}
+            # 상대가 나에게 보낸 요청이 이미 있으면 수락 처리
+            if existing.receiver_id == user.id:
+                existing.status = "accepted"
+                db.commit()
+                return {"message": "친구가 되었습니다."}
             return {"message": "이미 요청이 진행 중입니다."}
 
         self.repo.create_friendship(db, user.id, target.id)
@@ -163,6 +173,43 @@ class UserService:
         friendship.status = "accepted"
         db.commit()
         return {"message": "친구 수락 완료"}
+
+    def link_referral(self, db: Session, user: models.User, inviter_id: int):
+        """카톡 초대링크로 가입한 유저를 초대자와 즉시(accepted) 친구 연결."""
+        if inviter_id == user.id:
+            return {"message": "본인 초대링크는 사용할 수 없습니다.", "linked": False}
+        inviter = self.repo.get_by_id(db, inviter_id)
+        if not inviter:
+            return {"message": "초대한 사용자를 찾을 수 없습니다.", "linked": False}
+
+        existing = self.repo.get_friendship(db, user.id, inviter.id)
+        if existing:
+            if existing.status != "accepted":
+                existing.status = "accepted"
+                db.commit()
+            return {"message": "이미 연결되어 있습니다.", "linked": True, "inviter_name": inviter.name}
+
+        # 초대자가 requester가 되도록 생성 + 즉시 수락
+        self.repo.create_friendship(db, inviter.id, user.id, status="accepted")
+        db.commit()
+        return {"message": f"{inviter.name}님과 친구가 되었습니다.", "linked": True, "inviter_name": inviter.name}
+
+    def search_users(self, db: Session, user: models.User, query: str):
+        """이름으로 유저 검색 → 친구 추가용. 친구 상태(none/pending/accepted) 함께 반환."""
+        results = self.repo.search_by_name(db, query, exclude_id=user.id, limit=10)
+        out = []
+        for u in results:
+            rel = self.repo.get_friendship(db, user.id, u.id)
+            status = "none"
+            if rel:
+                status = "accepted" if rel.status == "accepted" else "pending"
+            out.append({
+                "id": u.id,
+                "name": u.name,
+                "location_name": u.location_name,
+                "status": status,
+            })
+        return out
 
     # --- 리뷰 & 즐겨찾기 ---
     def _normalize_image_urls(self, image_urls: List[str]):

@@ -44,10 +44,23 @@ class EquipRequest(BaseModel):
 
 # --- 친구 ---
 class FriendRequest(BaseModel):
-    email: str
+    # 이메일 또는 user_id 중 하나로 친구 요청 가능 (인앱 검색은 user_id 사용)
+    email: Optional[str] = None
+    user_id: Optional[int] = None
 
 class FriendAccept(BaseModel):
     request_id: int
+
+class FriendReferral(BaseModel):
+    # 카톡 초대링크로 들어온 신규 가입자가 초대자와 즉시 친구 연결
+    inviter_id: int
+
+class ShareToFriends(BaseModel):
+    # 추천 결과/장소를 인앱 친구(1:1 방) 또는 특정 방으로 공유
+    friend_ids: List[int] = []
+    room_id: Optional[str] = None
+    message: Optional[str] = None
+    items: List[Dict[str, Any]] = []
 
 # --- 리뷰 & 즐겨찾기 ---
 class ReviewCreate(BaseModel):

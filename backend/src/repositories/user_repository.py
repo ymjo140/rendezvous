@@ -80,10 +80,22 @@ class UserRepository:
             ((models.Friendship.requester_id == user2_id) & (models.Friendship.receiver_id == user1_id))
         ).first()
 
-    def create_friendship(self, db: Session, requester_id: int, receiver_id: int):
-        friendship = models.Friendship(requester_id=requester_id, receiver_id=receiver_id, status="pending")
+    def create_friendship(self, db: Session, requester_id: int, receiver_id: int, status: str = "pending"):
+        friendship = models.Friendship(requester_id=requester_id, receiver_id=receiver_id, status=status)
         db.add(friendship)
         return friendship
+
+    def search_by_name(self, db: Session, query: str, exclude_id: int, limit: int = 10):
+        # 이름 부분일치 검색 (카카오 자동생성 닉네임 User_xxxx 제외하지 않음)
+        q = (query or "").strip()
+        if not q:
+            return []
+        return (
+            db.query(models.User)
+            .filter(models.User.name.ilike(f"%{q}%"), models.User.id != exclude_id)
+            .limit(limit)
+            .all()
+        )
 
     # --- 리뷰 ---
     def create_review(self, db: Session, review_data: models.Review):

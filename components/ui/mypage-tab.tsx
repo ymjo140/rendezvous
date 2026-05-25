@@ -21,6 +21,7 @@ import {
 import { CalendarTab } from "@/components/ui/calendar-tab"
 
 import { PreferenceModal } from "@/components/ui/preference-modal"
+import { FriendsPanel } from "@/components/ui/components/friends/FriendsPanel"
 import { fetchWithAuth } from "@/lib/api-client"
 import { logAction } from "@/lib/analytics-client"
 
@@ -573,6 +574,11 @@ export function MyPageTab() {
           </div>
         );
       })()}
+
+      {/* 1-3. 내 친구 (카톡 초대 / 검색 추가 / 요청 수락) */}
+      <div className="px-5 mb-2">
+        <FriendsPanel myId={user.id} myName={user.name} />
+      </div>
 
       {/* 2. 탭 영역 (캘린더 추가됨) */}
       <div className="px-5">

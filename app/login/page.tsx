@@ -1,9 +1,18 @@
 "use client"
 
-import React from "react"
+import React, { useEffect } from "react"
 import { MessageCircle } from "lucide-react"
 
 export default function LoginPage() {
+  // 카톡 초대링크(?ref=초대자id)로 들어온 경우, 로그인 후 친구 연결을 위해 저장
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const ref = new URLSearchParams(window.location.search).get("ref")
+    if (ref && /^\d+$/.test(ref)) {
+      window.localStorage.setItem("invite_ref", ref)
+    }
+  }, [])
+
   const kakaoRestApiKey =
     process.env.NEXT_PUBLIC_KAKAO_REST_API_KEY ?? "ee65ae84782ed20fc6df3256de747e74"
   const redirectUri =
