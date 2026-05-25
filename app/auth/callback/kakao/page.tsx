@@ -53,11 +53,13 @@ function KakaoCallbackContent() {
               }
             })
         } else {
-          alert("로그인 실패")
+          console.error("kakao login failed:", data)
+          alert(`로그인 실패: ${data?.detail || "잠시 후 다시 시도해주세요."}`)
           router.push("/login")
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error(err)
         alert("서버 오류가 발생했습니다.")
         router.push("/login")
       })

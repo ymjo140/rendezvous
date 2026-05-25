@@ -94,12 +94,17 @@ class AuthService:
         
         async with httpx.AsyncClient() as client:
             token_res = await client.post(token_url, data=data)
-            if token_res.status_code != 200: raise HTTPException(400, "카카오 토큰 실패")
-            access_token = token_res.json().get("access_token")
+            token_json = token_res.json()
+            if token_res.status_code != 200 or "access_token" not in token_json:
+                # 실제 원인(redirect_uri 불일치 KOE006, code 만료 등)을 로그+응답에 노출
+                print(f"[kakao] 토큰 교환 실패: {token_res.status_code} {token_json}")
+                detail = token_json.get("error_description") or token_json.get("error") or "카카오 토큰 실패"
+                raise HTTPException(400, f"카카오 토큰 실패: {detail}")
+            access_token = token_json.get("access_token")
 
             user_info_res = await client.get("https://kapi.kakao.com/v2/user/me", headers={"Authorization": f"Bearer {access_token}"})
             user_info = user_info_res.json()
-            
+
             kakao_id = str(user_info.get("id"))
             nickname = user_info.get("properties", {}).get("nickname") or f"User_{kakao_id[-4:]}"
             email = f"kakao_{kakao_id}@wemeet.com"
@@ -112,9 +117,10 @@ class AuthService:
                     user_repo.create_default_avatar(db, user.id)
                     db.commit()
                     db.refresh(user)
-                except:
+                except Exception as e:
                     db.rollback()
-                    raise HTTPException(500, "Login Failed")
+                    print(f"[kakao] 신규 가입 실패: {e}")
+                    raise HTTPException(500, f"가입 처리 실패: {e}")
 
             return { 
                 "access_token": create_access_token(data={"sub": user.email}), 

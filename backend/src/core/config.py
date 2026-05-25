@@ -31,6 +31,10 @@ class Settings:
     KAKAO_REST_API_KEY: str = os.getenv("KAKAO_REST_API_KEY")
     KAKAO_REDIRECT_URI: str = os.getenv("KAKAO_REDIRECT_URI")
 
+    # 신규 가입 보너스 코인. 미정의 시 settings.SIGNUP_BONUS_AMOUNT 접근에서
+    # AttributeError → 카카오 신규가입이 "Login Failed"로 실패했음(기존 유저는 정상).
+    SIGNUP_BONUS_AMOUNT: int = int(os.getenv("SIGNUP_BONUS_AMOUNT", "1000"))
+
     # 목적/필터 설정 (프론트에 전달용)
     PURPOSE_CONFIG = {
         "식사": {
