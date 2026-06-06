@@ -10,11 +10,17 @@ import {
   MapPin,
   Phone,
   Star,
+  CalendarCheck,
+  Wallet,
+  Loader2,
+  X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { createReservation, getWallet, won } from "@/lib/wallet"
+import { recordActivity } from "@/lib/game"
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "")
 
@@ -99,6 +105,72 @@ export default function PlaceDetailPage() {
   const [reviewImages, setReviewImages] = useState<string[]>([])
   const [reviewImageError, setReviewImageError] = useState<string | null>(null)
   const reviewFileInputRef = useRef<HTMLInputElement>(null)
+
+  // 캐시 예약 상태
+  const [reserveOpen, setReserveOpen] = useState(false)
+  const [cashBalance, setCashBalance] = useState<number>(0)
+  const [reserveDate, setReserveDate] = useState("")
+  const [reserveTime, setReserveTime] = useState("19:00")
+  const [partySize, setPartySize] = useState(2)
+  const [reserveSubmitting, setReserveSubmitting] = useState(false)
+  const [reserveError, setReserveError] = useState<string | null>(null)
+  const [reserveSuccess, setReserveSuccess] = useState<string | null>(null)
+  const DEPOSIT_PER_PERSON = 5000
+  const depositAmount = partySize * DEPOSIT_PER_PERSON
+
+  const openReserve = async () => {
+    setReserveError(null)
+    setReserveSuccess(null)
+    if (!localStorage.getItem("token")) {
+      alert("로그인이 필요합니다.")
+      return
+    }
+    if (!reserveDate) {
+      const d = new Date()
+      d.setDate(d.getDate() + 1)
+      setReserveDate(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+      )
+    }
+    setReserveOpen(true)
+    try {
+      const w = await getWallet()
+      setCashBalance(w.balance)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const handleReserve = async () => {
+    if (!place) return
+    if (!reserveDate || !reserveTime) {
+      setReserveError("날짜와 시간을 선택해주세요.")
+      return
+    }
+    if (cashBalance < depositAmount) {
+      setReserveError(`캐시가 부족해요. (필요 ${won(depositAmount)} / 보유 ${won(cashBalance)}) 마이페이지에서 충전해주세요.`)
+      return
+    }
+    setReserveSubmitting(true)
+    setReserveError(null)
+    try {
+      await createReservation({
+        place_id: place.id,
+        place_name: place.name,
+        date: reserveDate,
+        time: reserveTime,
+        party_size: partySize,
+        deposit_amount: depositAmount,
+      })
+      setReserveSuccess(`예약 완료! 예약금 ${won(depositAmount)}이 캐시에서 결제됐어요.`)
+      recordActivity("reserve") // 게임 XP/퀘스트
+      setTimeout(() => setReserveOpen(false), 1400)
+    } catch (err: any) {
+      setReserveError(err?.message || "예약에 실패했습니다.")
+    } finally {
+      setReserveSubmitting(false)
+    }
+  }
 
   useEffect(() => {
     if (!placeId) return
@@ -238,6 +310,7 @@ export default function PlaceDetailPage() {
       }
 
       setReviewSuccess("리뷰가 등록되었습니다.")
+      recordActivity("review") // 게임 XP/퀘스트
       setTagsInput("")
       setComment("")
       setReason("")
@@ -625,27 +698,120 @@ export default function PlaceDetailPage() {
 
       <div className="fixed bottom-0 left-0 right-0 border-t border-gray-100 bg-white/95 backdrop-blur">
         <div className="max-w-3xl mx-auto px-4 py-3 flex gap-3">
-          {place.phone && (
-            <Button variant="outline" className="flex-1" asChild>
-              <a href={`tel:${place.phone}`}>전화</a>
-            </Button>
-          )}
-          <Button
-            className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-            asChild
-          >
+          <Button variant="outline" className="flex-1" asChild>
             <a href={reservationLink} target="_blank" rel="noreferrer">
               {reservationLabel}
               <ExternalLink className="w-4 h-4 ml-2" />
             </a>
           </Button>
+          <Button
+            onClick={openReserve}
+            className="flex-[1.4] bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+          >
+            <CalendarCheck className="w-4 h-4 mr-2" />
+            캐시로 예약
+          </Button>
         </div>
-        {!place.external_link && (
-          <p className="text-[11px] text-gray-400 text-center pb-2">
-            예약 링크가 없어 지도 검색으로 이동합니다.
-          </p>
-        )}
+        <p className="text-[11px] text-gray-400 text-center pb-2">
+          캐시로 예약금을 결제하고, 취소하면 자동 환불돼요.
+        </p>
       </div>
+
+      {/* 캐시 예약 모달 */}
+      {reserveOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center"
+          onClick={() => !reserveSubmitting && setReserveOpen(false)}
+        >
+          <div
+            className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-5 font-['Pretendard']"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">{place.name} 예약</h3>
+              <button onClick={() => !reserveSubmitting && setReserveOpen(false)} className="text-gray-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500">날짜</label>
+                <Input
+                  type="date"
+                  value={reserveDate}
+                  onChange={(e) => setReserveDate(e.target.value)}
+                  className="h-10 text-sm mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500">시간</label>
+                <Input
+                  type="time"
+                  value={reserveTime}
+                  onChange={(e) => setReserveTime(e.target.value)}
+                  className="h-10 text-sm mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500">인원</label>
+                <div className="flex items-center gap-3 mt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 w-9 p-0"
+                    onClick={() => setPartySize((p) => Math.max(1, p - 1))}
+                  >
+                    −
+                  </Button>
+                  <span className="text-base font-bold w-10 text-center">{partySize}명</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 w-9 p-0"
+                    onClick={() => setPartySize((p) => Math.min(20, p + 1))}
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-gray-50 p-3 space-y-1.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-500">예약금 ({won(DEPOSIT_PER_PERSON)} × {partySize})</span>
+                  <span className="font-bold text-gray-900">{won(depositAmount)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-400 flex items-center gap-1">
+                    <Wallet className="w-3 h-3" /> 보유 캐시
+                  </span>
+                  <span className={cashBalance < depositAmount ? "text-rose-500 font-semibold" : "text-gray-500"}>
+                    {won(cashBalance)}
+                  </span>
+                </div>
+              </div>
+
+              {reserveError && <p className="text-xs text-rose-500">{reserveError}</p>}
+              {reserveSuccess && <p className="text-xs text-green-600">{reserveSuccess}</p>}
+
+              <Button
+                onClick={handleReserve}
+                disabled={reserveSubmitting || !!reserveSuccess}
+                className="w-full h-12 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-bold"
+              >
+                {reserveSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  `${won(depositAmount)} 결제하고 예약하기`
+                )}
+              </Button>
+              <p className="text-[11px] text-gray-400 text-center">
+                예약금은 캐시에서 결제되며 취소 시 환불됩니다.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

@@ -10,9 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
-import { 
-    Settings, Bell, LogOut, Palette, Coins, ShoppingBag, 
-    Heart, Star, MessageSquare, Pencil, Check, X, Utensils, 
+import {
+    Bell, LogOut,
+    Heart, Star, MessageSquare, Pencil, Check, X, Utensils,
     ChevronRight, MapPin, Search, Loader2, Calendar, Grid3X3, Trash2
 } from "lucide-react"
 
@@ -22,23 +22,14 @@ import { CalendarTab } from "@/components/ui/calendar-tab"
 
 import { PreferenceModal } from "@/components/ui/preference-modal"
 import { FriendsPanel } from "@/components/ui/components/friends/FriendsPanel"
+import { CashWalletCard } from "@/components/ui/components/wallet/CashWalletCard"
+import { GameProfileCard } from "@/components/ui/components/game/GameProfileCard"
 import { fetchWithAuth } from "@/lib/api-client"
 import { logAction } from "@/lib/analytics-client"
 import { getTasteType } from "@/lib/taste-persona"
 
-// --- 상수 및 타입 정의 ---
-const CATEGORIES = [
-  { id: "hair", label: "헤어", icon: "💇" },
-  { id: "eyes", label: "눈", icon: "👀" },
-  { id: "eyebrows", label: "눈썹", icon: "🤨" },
-  { id: "top", label: "상의", icon: "👕" },
-  { id: "bottom", label: "하의", icon: "👖" },
-  { id: "shoes", label: "신발", icon: "👟" },
-  { id: "body", label: "피부", icon: "🎨" },
-];
-
-interface AvatarItem { id: string; category: string; name: string; image_url: string; price_coin: number; }
-interface UserInfo { 
+// --- 타입 정의 ---
+interface UserInfo {
     id: number; name: string; email: string; wallet_balance: number; 
     location_name?: string; lat?: number; lng?: number; 
     avatar: { level: number; equipped: Record<string, string | null>; inventory: string[]; }; 
@@ -121,12 +112,6 @@ export function MyPageTab() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [isGuest, setIsGuest] = useState(false);
 
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [shopItems, setShopItems] = useState<AvatarItem[]>([]);
-  const [activeTab, setActiveTab] = useState("inventory");
-  const [activeCategory, setActiveCategory] = useState("hair");
-  const [previewEquipped, setPreviewEquipped] = useState<Record<string, string | null>>({});
-
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [targetPlace, setTargetPlace] = useState<any>(null);
   const [scores, setScores] = useState({ taste: 3, service: 3, price: 3, vibe: 3 });
@@ -181,8 +166,7 @@ export function MyPageTab() {
           if (res.ok) {
               const data = await res.json();
               setUser(data);
-              setNewName(data.name); 
-              if (data.avatar) setPreviewEquipped(data.avatar.equipped || {});
+              setNewName(data.name);
 
               if (!data.preferences || !data.preferences.foods || data.preferences.foods.length === 0) {
                   setIsPreferenceModalOpen(true);
@@ -191,9 +175,6 @@ export function MyPageTab() {
       } catch (e) { setIsGuest(true); }
   };
 
-  const fetchShopItems = async () => {
-      try { const res = await fetchWithAuth(`/api/shop/items`); if (res.ok) setShopItems(await res.json()); } catch (e) {}
-  };
 
   const fetchMyPosts = async () => {
       const token = localStorage.getItem("token");
@@ -293,30 +274,9 @@ export function MyPageTab() {
   };
 
   useEffect(() => { fetchMyInfo(); fetchSaveFolders(); }, []);
-  useEffect(() => { if (isEditorOpen) fetchShopItems(); }, [isEditorOpen]);
   useEffect(() => { if (user && !isGuest) fetchMyPosts(); }, [user, isGuest]);
 
   // --- Handlers ---
-  const handleBuy = async (item: AvatarItem) => {
-      if (!user) return;
-      if (user.wallet_balance < item.price_coin) { alert("코인이 부족합니다! 열심히 활동해서 모아보세요."); return; }
-      if (confirm(`${item.name}을(를) ${item.price_coin}코인에 구매하시겠습니까?`)) {
-          const token = localStorage.getItem("token");
-          const res = await fetchWithAuth(`/api/shop/buy`, {
-              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item_id: item.id })
-          });
-          if (res.ok) { alert("구매 완료! 인벤토리에서 확인하세요."); fetchMyInfo(); }
-      }
-  };
-
-  const handleEquip = async (item: AvatarItem) => {
-      const token = localStorage.getItem("token");
-      const res = await fetchWithAuth(`/api/avatar/equip`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category: item.category, item_id: item.id })
-      });
-      if (res.ok) { const data = await res.json(); setPreviewEquipped(data.equipped); fetchMyInfo(); }
-  };
-
   const handleSubmitReview = async () => {
       if (!targetPlace) return;
       const token = localStorage.getItem("token");
@@ -385,24 +345,8 @@ export function MyPageTab() {
       finally { setLocLoading(false); }
   };
 
-  const currentItems = activeTab === "shop" ? shopItems.filter(i => i.category === activeCategory) : shopItems.filter(i => i.category === activeCategory && user?.avatar?.inventory?.includes(i.id));
-
-  const renderAvatarLayered = (equippedState: Record<string, string | null>, height: number = 300) => {
-      const width = height / 2; 
-      const getUrl = (id: string | null | undefined) => { if (!id) return null; const item = shopItems.find(i => i.id === id); return item ? item.image_url : `/assets/avatar/${id}.png`; };
-      const bodyId = equippedState.body || "body_basic"; const eyesId = equippedState.eyes || "eyes_normal"; const browsId = equippedState.eyebrows || "brows_basic";
-      const layers = [
-          { id: 'body', url: getUrl(bodyId), z: 1 }, { id: 'eyes', url: getUrl(eyesId), z: 2 }, { id: 'eyebrows', url: getUrl(browsId), z: 3 },
-          { id: 'bottom', url: getUrl(equippedState.bottom), z: 4 }, { id: 'top', url: getUrl(equippedState.top), z: 5 },
-          { id: 'shoes', url: getUrl(equippedState.shoes), z: 6, style: { bottom: 0, left: '10%', width: '80%', height: '15%', objectFit: 'contain' } }, 
-          { id: 'hair', url: getUrl(equippedState.hair), z: 7 }, { id: 'pet', url: getUrl(equippedState.pet), z: 8 }, 
-      ];
-      return (
-          <div style={{ width: width, height: height, position: 'relative', margin: '0 auto' }}>
-              {layers.map((layer) => { if (layer.id === 'pet') return null; return layer.url ? (<img key={layer.id} src={layer.url} alt={layer.id} style={{position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: layer.z, ...layer.style} as React.CSSProperties} onError={(e) => e.currentTarget.style.display='none'} />) : null })}
-          </div>
-      );
-  };
+  // 프로필 캐릭터 = 취향 페르소나 이모지 (드레스업 아바타 대체)
+  const personaEmoji = getTasteType(user?.preferences)?.emoji ?? "🍽️";
 
   // --- UI Rendering ---
   
@@ -412,7 +356,7 @@ export function MyPageTab() {
               <div className="text-center space-y-3">
                   <div className="text-6xl mb-4">🔒</div>
                   <h2 className="text-2xl font-bold text-gray-800">로그인이 필요해요</h2>
-                  <p className="text-gray-500 leading-relaxed">나만의 아바타를 꾸미고<br/>친구들과의 약속을 더 편하게 잡아보세요.</p>
+                  <p className="text-gray-500 leading-relaxed">내 취향을 분석받고<br/>친구들과의 약속을 더 편하게 잡아보세요.</p>
               </div>
               <Button className="w-full max-w-xs h-12 rounded-xl bg-[#FEE500] hover:bg-[#FEE500]/90 text-black font-bold text-base shadow-sm" onClick={() => router.push("/login")}>
                   카카오로 3초만에 시작하기
@@ -433,8 +377,8 @@ export function MyPageTab() {
 
             <CardContent className="relative p-6 z-10">
                 <div className="flex items-center gap-5">
-                    <div className="w-24 h-24 rounded-full border-4 border-white/30 shadow-inner bg-white/20 backdrop-blur-md overflow-hidden flex items-center justify-center relative flex-shrink-0">
-                          {renderAvatarLayered(user.avatar?.equipped || {}, 96)}
+                    <div className="w-24 h-24 rounded-full border-4 border-white/30 shadow-inner bg-white/25 backdrop-blur-md overflow-hidden flex items-center justify-center relative flex-shrink-0">
+                          <span className="text-5xl leading-none select-none">{personaEmoji}</span>
                     </div>
                     
                     <div className="flex-1 min-w-0">
@@ -453,12 +397,14 @@ export function MyPageTab() {
                             </div>
                         )}
                         <div className="flex items-center gap-2 flex-wrap">
-                            <Badge className="bg-black/20 hover:bg-black/30 text-xs border-0 backdrop-blur-md px-3 py-1 rounded-full text-white font-medium">
-                                Lv.{user.avatar?.level || 1} 탐험가
-                            </Badge>
-                            <Badge className="bg-white/20 text-white border-0 px-2 py-1 rounded-full flex items-center gap-1 font-bold">
-                                <Coins className="w-3 h-3 text-yellow-300" /> {(user.wallet_balance || 0).toLocaleString()}
-                            </Badge>
+                            {(() => {
+                                const t = getTasteType(user.preferences);
+                                return (
+                                    <Badge className="bg-black/20 hover:bg-black/30 text-xs border-0 backdrop-blur-md px-3 py-1 rounded-full text-white font-medium">
+                                        {t ? `${t.emoji} ${t.title}` : "🍽️ 취향 분석 전"}
+                                    </Badge>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>
@@ -476,12 +422,9 @@ export function MyPageTab() {
                     </button>
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                    <Button className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-md h-12 rounded-xl text-sm font-medium transition-all" onClick={() => setIsEditorOpen(true)}>
-                        <Palette className="w-4 h-4 mr-2" /> 아바타 꾸미기
-                    </Button>
-                    <Button className="bg-white text-[#7C3AED] hover:bg-gray-50 border-0 h-12 rounded-xl text-sm font-bold shadow-md transition-all" onClick={() => { setIsEditorOpen(true); setActiveTab('shop'); }}>
-                        <ShoppingBag className="w-4 h-4 mr-2" /> 아이템 상점
+                <div className="mt-3">
+                    <Button className="w-full bg-white text-[#7C3AED] hover:bg-gray-50 border-0 h-12 rounded-xl text-sm font-bold shadow-md transition-all" onClick={() => setIsPreferenceModalOpen(true)}>
+                        <Utensils className="w-4 h-4 mr-2" /> 내 취향 설정하기
                     </Button>
                 </div>
             </CardContent>
@@ -540,6 +483,12 @@ export function MyPageTab() {
           </div>
         );
       })()}
+
+      {/* 1-2-4. 게임 진행도 (🔥스트릭 / XP·레벨 / 일일퀘스트 / 뱃지) */}
+      <GameProfileCard />
+
+      {/* 1-2-5. 충전 캐시 + 내 예약 */}
+      <CashWalletCard />
 
       {/* 1-3. 내 친구 (카톡 초대 / 검색 추가 / 요청 수락) */}
       <div className="px-5 mb-2">
@@ -859,73 +808,6 @@ export function MyPageTab() {
                   {locLoading && <div className="mt-4 text-center text-xs text-gray-400 flex justify-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> 저장 중...</div>}
               </div>
           </DialogContent>
-      </Dialog>
-
-      {/* 5. 아바타 꾸미기 모달 */}
-      <Dialog open={isEditorOpen} onOpenChange={setIsEditorOpen}>
-        <DialogContent className="sm:max-w-md h-[85vh] flex flex-col p-0 gap-0 overflow-hidden rounded-3xl border-0 font-['Pretendard']">
-            <DialogHeader className="px-6 pt-5 pb-3 bg-white border-b border-gray-100 flex-shrink-0">
-                <DialogTitle className="text-lg font-bold text-gray-800">아바타 스타일링</DialogTitle>
-                <DialogDescription className="text-xs text-gray-400">나만의 개성을 표현해보세요!</DialogDescription>
-            </DialogHeader>
-            
-            <div className="bg-gradient-to-b from-purple-50 to-white p-6 flex flex-col items-center justify-center border-b border-gray-100 flex-shrink-0 relative">
-                {renderAvatarLayered(previewEquipped, 220)}
-                <div className="absolute top-4 right-4 bg-white/80 backdrop-blur px-3 py-1.5 rounded-full text-sm font-bold flex items-center gap-1 shadow-sm border border-gray-100">
-                    <Coins className="w-4 h-4 text-yellow-400" /> {(user.wallet_balance || 0).toLocaleString()}
-                </div>
-            </div>
-
-            <div className="flex-1 flex flex-col bg-white overflow-hidden">
-                <Tabs defaultValue="inventory" className="flex-1 flex flex-col" onValueChange={setActiveTab}>
-                    <div className="px-4 pt-3 border-b border-gray-100">
-                        <TabsList className="w-full grid grid-cols-2 h-11 bg-gray-100 rounded-xl p-1">
-                            <TabsTrigger value="inventory" className="rounded-lg text-xs font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">내 아이템</TabsTrigger>
-                            <TabsTrigger value="shop" className="rounded-lg text-xs font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm text-[#7C3AED]">상점 (구매)</TabsTrigger>
-                        </TabsList>
-                        
-                        <div className="flex gap-2 overflow-x-auto py-3 scrollbar-hide">
-                            {CATEGORIES.map(cat => (
-                                <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${activeCategory === cat.id ? "bg-[#7C3AED] text-white border-[#7C3AED] shadow-sm" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"}`}>
-                                    <span>{cat.icon}</span> {cat.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-4 bg-[#F9FAFB]">
-                        <div className="grid grid-cols-3 gap-3">
-                            {currentItems.map(item => {
-                                const isEquipped = previewEquipped[item.category] === item.id; 
-                                const isOwned = user.avatar?.inventory?.includes(item.id);
-                                return (
-                                    <div 
-                                        key={item.id} 
-                                        className={`relative bg-white rounded-xl p-2 border-2 transition-all cursor-pointer hover:shadow-md ${isEquipped ? "border-[#7C3AED] bg-purple-50" : "border-transparent shadow-sm"}`} 
-                                        onClick={() => activeTab === 'inventory' ? handleEquip(item) : null}
-                                    >
-                                        <div className="aspect-square bg-gray-50 rounded-lg mb-2 overflow-hidden flex items-center justify-center relative">
-                                            <img src={item.image_url} alt={item.name} className="w-full h-full object-contain" />
-                                            {isEquipped && <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-[#7C3AED]"></div>}
-                                        </div>
-                                        <div className="text-xs font-bold truncate text-gray-800">{item.name}</div>
-                                        {activeTab === 'shop' && !isOwned ? (
-                                            <Button size="sm" className="w-full mt-2 h-8 text-[10px] bg-[#FEE500] hover:bg-[#FEE500]/90 text-black font-bold shadow-sm" onClick={(e) => { e.stopPropagation(); handleBuy(item); }}>
-                                                {item.price_coin} C
-                                            </Button>
-                                        ) : (
-                                            <div className="mt-2 text-[10px] text-center font-bold text-gray-400 py-1 bg-gray-50 rounded-md">
-                                                {isEquipped ? "장착 중" : (isOwned ? "보유 중" : "")}
-                                            </div>
-                                        )}
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    </div>
-                </Tabs>
-            </div>
-        </DialogContent>
       </Dialog>
 
       {/* 6. 리뷰 작성 모달 */}

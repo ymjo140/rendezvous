@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import React, { useState, useRef, useEffect } from "react"
+import React, { useState, useRef, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { 
     Search, MapPin, Heart, MessageCircle, Share2, Star, ChevronLeft, 
@@ -19,6 +19,7 @@ import { PhotoEditor } from "@/components/ui/photo-editor"
 import { fetchWithAuth } from "@/lib/api-client"
 import { useDecisionCell } from "@/hooks/use-decision-cell"
 import { logAction } from "@/lib/analytics-client"
+import { recordActivity } from "@/lib/game"
 
 // 폴더 타입
 interface SaveFolder {
@@ -157,6 +158,23 @@ const MOCK_FEEDS = [
     },
 ];
 
+// 필터 카테고리 그룹 (main_category 문자열 부분일치로 일반화)
+const CATEGORY_GROUPS: Record<string, RegExp> = {
+    food: /한식|중식|일식|양식|분식|고기|구이|아시안|치킨|피자|국밥|찌개|곱창|해산물|면|밥|쌀국수|족발|보쌈|뷔페/,
+    cafe: /카페|까페|커피|coffee|브런치|차/,
+    pub: /술|바|bar|포차|펍|호프|주점|이자카야|와인|칵테일|맥주/,
+    dessert: /디저트|디져트|베이커리|빵|케이크|도넛|아이스크림|와플|마카롱|크로플/,
+}
+
+const DISCOVERY_FILTERS: { key: string; label: string; reels?: boolean }[] = [
+    { key: "all", label: "전체" },
+    { key: "video", label: "릴스", reels: true },
+    { key: "food", label: "맛집" },
+    { key: "cafe", label: "카페" },
+    { key: "pub", label: "술집" },
+    { key: "dessert", label: "디저트" },
+]
+
 // 인스타그램 탐색탭 그리드 사이즈 패턴 (큰 이미지와 작은 이미지 믹스)
 const getGridClass = (index: number) => {
     const pattern = index % 10;
@@ -198,6 +216,11 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [isPosting, setIsPosting] = useState(false);
     const [selectedFilter, setSelectedFilter] = useState("all");
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // 🔍 검색(장소) + 취향 발견 피드 상태
+    const [searchPlaceHits, setSearchPlaceHits] = useState<any[]>([]);
+    const [searchPlaceLoading, setSearchPlaceLoading] = useState(false);
+    const [myPrefTags, setMyPrefTags] = useState<string[]>([]);
     
     // 사진 편집 관련 상태
     const [isPhotoEditorOpen, setIsPhotoEditorOpen] = useState(false);
@@ -340,20 +363,19 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         const fetchAiRecommendations = async () => {
             try {
                 setAiLoading(true);
-                const payload = { limit: 30, decision_cell: decisionCell, request_id: requestId };
-                let res = await fetchWithAuth("/api/ai/recommendations", {
-                    method: "POST",
-                    body: JSON.stringify(payload)
-                });
-                if (!res.ok) {
-                    res = await fetchWithAuth(`/api/ai/recommendations?limit=30`);
-                }
-                
+                // 개인 취향 벡터 추천(Gemini-free, 이유 포함). 미로그인/빈결과면 섹션 숨김.
+                const res = await fetchWithAuth("/api/vector/recommendations?limit=20");
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.recommendations && data.recommendations.length > 0) {
-                        setAiRecommendations(data.recommendations);
-                    }
+                    const recs = (data.recommendations || []).map((r: any) => ({
+                        place_id: r.place_id ?? r.id,
+                        place_name: r.name || r.place_name || "추천 장소",
+                        category: r.category || "",
+                        avg_rating: r.rating ?? r.avg_rating ?? 0,
+                        score: r.similarity_score ?? r.score ?? 0,
+                        reason: r.reason || "취향 맞춤",
+                    }));
+                    setAiRecommendations(recs);
                 }
             } catch (error) {
                 console.log("AI 추천 로드 오류:", error);
@@ -361,9 +383,53 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 setAiLoading(false);
             }
         };
-        
+
         fetchAiRecommendations();
-    }, [sharedPostId, decisionCell, requestId]);
+    }, [sharedPostId]);
+
+    // 🔍 장소 키워드 검색(검색바 입력 시) — 게시물 외 장소 바로가기 결과
+    useEffect(() => {
+        const q = searchQuery.trim();
+        if (q.length < 2) {
+            setSearchPlaceHits([]);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            setSearchPlaceLoading(true);
+            try {
+                const res = await fetchWithAuth(`/api/places/search?query=${encodeURIComponent(q)}&db_only=true`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setSearchPlaceHits(Array.isArray(data) ? data.slice(0, 12) : []);
+                }
+            } catch (error) {
+                console.log("장소 검색 오류:", error);
+            } finally {
+                setSearchPlaceLoading(false);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    // 취향 발견 피드용: 내 취향 태그 로드(음식/분위기/주류)
+    useEffect(() => {
+        const loadPrefs = async () => {
+            try {
+                const res = await fetchWithAuth("/api/users/me");
+                if (!res.ok) return;
+                const me = await res.json();
+                const p = me?.preferences || {};
+                const tags: string[] = [];
+                for (const k of ["foods", "vibes", "alcohol"]) {
+                    if (Array.isArray(p[k])) tags.push(...p[k].map((x: any) => String(x)));
+                }
+                setMyPrefTags(tags);
+            } catch {
+                /* 무시 */
+            }
+        };
+        loadPrefs();
+    }, []);
 
     useEffect(() => {
         if (!aiRecommendations.length) return;
@@ -837,6 +903,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         // AI: 게시물 조회 기록 (장소 또는 게시물 ID)
         const postId = typeof feed.id === "string" ? feed.id : undefined;
         recordAiAction("VIEW", feed.place?.id, postId);
+        // 게임: 탐험 활동(일일 퀘스트/XP)
+        recordActivity("explore");
     };
 
     const closeDetail = () => {
@@ -1128,14 +1196,69 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         setFeeds(prev => [newPost as any, ...prev]);
     };
 
-    // 필터된 피드
-    const filteredFeeds = feeds.filter(feed => {
-        if (selectedFilter === "all") return true;
-        if (selectedFilter === "video") return feed.type === "video";
-        if (selectedFilter === "food") return feed.place?.category === "한식" || feed.place?.category === "양식";
-        if (selectedFilter === "cafe") return feed.place?.category === "카페";
-        return true;
-    });
+    // 필터 + 검색 + 취향 정렬된 피드
+    const filteredFeeds = useMemo(() => {
+        let list = [...feeds];
+
+        // 1) 카테고리 필터 (main_category 그룹 부분일치)
+        if (selectedFilter === "video") {
+            list = list.filter((f) => f.type === "video");
+        } else if (selectedFilter !== "all") {
+            const re = CATEGORY_GROUPS[selectedFilter];
+            if (re) {
+                list = list.filter((f) => {
+                    const cat = String(f.place?.category || "");
+                    return cat && re.test(cat);
+                });
+            }
+        }
+
+        // 2) 검색어 필터 (내용/장소명/카테고리/지역/태그)
+        const q = searchQuery.trim().toLowerCase();
+        if (q) {
+            list = list.filter((f) => {
+                const hay = [
+                    f.content,
+                    f.place?.name,
+                    f.place?.category,
+                    (f as any).locationName,
+                    ...((f.place?.tags as string[]) || []),
+                ]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLowerCase();
+                return hay.includes(q);
+            });
+        }
+
+        // 3) 취향 발견 피드: 검색어 없을 때 내 취향 매칭 우선 정렬
+        if (!q && myPrefTags.length > 0) {
+            const tagSet = new Set(myPrefTags);
+            const scoreOf = (f: any) => {
+                const cand = new Set<string>(
+                    [...((f.place?.tags as string[]) || []), f.place?.category].filter(Boolean)
+                );
+                let s = 0;
+                for (const t of tagSet) if (cand.has(t)) s += 1;
+                return s;
+            };
+            list = list
+                .map((f, i) => ({ f, i, s: scoreOf(f) }))
+                .sort((a, b) => b.s - a.s || a.i - b.i)
+                .map((x) => x.f);
+        }
+
+        return list;
+    }, [feeds, selectedFilter, searchQuery, myPrefTags]);
+
+    // 취향 매칭 여부(그리드 배지용)
+    const isTasteMatch = (feed: any) => {
+        if (!myPrefTags.length) return false;
+        const cand = new Set<string>(
+            [...((feed.place?.tags as string[]) || []), feed.place?.category].filter(Boolean)
+        );
+        return myPrefTags.some((t) => cand.has(t));
+    };
 
     // ?? 공유된 게시물 로딩 중일 때 로딩 UI만 표시
     if (sharedPostLoading) {
@@ -1175,52 +1298,23 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                     />
                 </div>
                 
-                {/* 필터 탭 */}
+                {/* 필터 탭 (main_category 기반 일반화) */}
                 <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-                    <Badge 
-                        variant={selectedFilter === "all" ? "default" : "outline"}
-                        className={`px-4 py-2 rounded-full cursor-pointer transition-all ${
-                            selectedFilter === "all" 
-                                ? "bg-black text-white" 
-                                : "text-gray-600 border-gray-200 hover:bg-gray-100"
-                        }`}
-                        onClick={() => setSelectedFilter("all")}
-                    >
-                        전체
-                    </Badge>
-                    <Badge 
-                        variant={selectedFilter === "video" ? "default" : "outline"}
-                        className={`px-4 py-2 rounded-full cursor-pointer transition-all ${
-                            selectedFilter === "video" 
-                                ? "bg-black text-white" 
-                                : "text-gray-600 border-gray-200 hover:bg-gray-100"
-                        }`}
-                        onClick={() => setSelectedFilter("video")}
-                    >
-                        <Play className="w-3 h-3 mr-1" /> 릴스
-                    </Badge>
-                    <Badge 
-                        variant={selectedFilter === "food" ? "default" : "outline"}
-                        className={`px-4 py-2 rounded-full cursor-pointer transition-all ${
-                            selectedFilter === "food" 
-                                ? "bg-black text-white" 
-                                : "text-gray-600 border-gray-200 hover:bg-gray-100"
-                        }`}
-                        onClick={() => setSelectedFilter("food")}
-                    >
-                        맛집
-                    </Badge>
-                    <Badge 
-                        variant={selectedFilter === "cafe" ? "default" : "outline"}
-                        className={`px-4 py-2 rounded-full cursor-pointer transition-all ${
-                            selectedFilter === "cafe" 
-                                ? "bg-black text-white" 
-                                : "text-gray-600 border-gray-200 hover:bg-gray-100"
-                        }`}
-                        onClick={() => setSelectedFilter("cafe")}
-                    >
-                        카페
-                    </Badge>
+                    {DISCOVERY_FILTERS.map((f) => (
+                        <Badge
+                            key={f.key}
+                            variant={selectedFilter === f.key ? "default" : "outline"}
+                            className={`px-4 py-2 rounded-full cursor-pointer transition-all whitespace-nowrap ${
+                                selectedFilter === f.key
+                                    ? "bg-black text-white"
+                                    : "text-gray-600 border-gray-200 hover:bg-gray-100"
+                            }`}
+                            onClick={() => setSelectedFilter(f.key)}
+                        >
+                            {f.reels && <Play className="w-3 h-3 mr-1" />}
+                            {f.label}
+                        </Badge>
+                    ))}
                 </div>
             </div>
 
@@ -1281,8 +1375,45 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 </div>
             )}
 
+            {/* 2-1. 장소 검색 결과 (검색바 입력 시) */}
+            {searchQuery.trim().length >= 2 && (searchPlaceHits.length > 0 || searchPlaceLoading) && (
+                <div className="px-4 py-3 border-b border-gray-100 bg-white">
+                    <div className="flex items-center gap-2 mb-2">
+                        <MapPin className="w-3.5 h-3.5 text-purple-500" />
+                        <span className="text-xs font-bold text-gray-600">장소 바로가기</span>
+                        {searchPlaceLoading && <span className="text-[10px] text-gray-400">검색 중...</span>}
+                    </div>
+                    <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+                        {searchPlaceHits.map((p: any, i: number) => (
+                            <button
+                                key={p.id ?? `${p.name}_${i}`}
+                                onClick={() => {
+                                    if (p.id) {
+                                        recordAiAction("CLICK", p.id);
+                                        router.push(`/places/${p.id}`);
+                                    }
+                                }}
+                                className="flex-shrink-0 w-40 text-left bg-gray-50 hover:bg-gray-100 rounded-xl p-3 border border-gray-100 transition-colors"
+                            >
+                                <div className="font-bold text-xs text-gray-800 truncate">{p.name}</div>
+                                <div className="text-[10px] text-gray-500 truncate mt-0.5">
+                                    {[p.category, p.address].filter(Boolean).join(" · ") || "장소"}
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* 3. 인스타그램 탐색탭 스타일 그리드 */}
             <div className="flex-1 overflow-y-auto bg-white">
+                {filteredFeeds.length === 0 && !isLoading && (
+                    <div className="py-16 text-center text-sm text-gray-400">
+                        {searchQuery.trim()
+                            ? `'${searchQuery.trim()}' 검색 결과가 없어요`
+                            : "표시할 게시물이 없어요"}
+                    </div>
+                )}
                 <div className="grid grid-cols-3 gap-0.5 p-0.5">
                     {filteredFeeds.map((feed, index) => (
                         <div 
@@ -1290,12 +1421,19 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             onClick={() => handleFeedClick(feed)}
                             className={`relative aspect-square cursor-pointer group overflow-hidden ${getGridClass(index)}`}
                         >
-                            <img 
-                                src={feed.images[0]} 
-                                alt="" 
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" 
+                            <img
+                                src={feed.images[0]}
+                                alt=""
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                             />
-                            
+
+                            {/* 취향 매칭 배지(검색어 없을 때만) */}
+                            {!searchQuery.trim() && isTasteMatch(feed) && (
+                                <div className="absolute top-1.5 left-1.5 bg-purple-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+                                    ✨ 취향
+                                </div>
+                            )}
+
                             {/* 비디오 아이콘 */}
                             {feed.type === "video" && (
                                 <div className="absolute top-2 right-2">

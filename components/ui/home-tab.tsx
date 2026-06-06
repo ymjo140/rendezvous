@@ -24,6 +24,7 @@ import { RecommendationList } from "@/components/ui/components/home/Recommendati
 import { FilterDialog } from "@/components/ui/components/home/FilterDialog"
 import { FriendModal } from "@/components/ui/components/home/FriendModal"
 import { getPersonaLabel } from "@/lib/taste-persona"
+import { recordActivity } from "@/lib/game"
 
 const HOME_STATE_KEY = "home_tab_state_v1"
 
@@ -224,6 +225,7 @@ export function HomeTab() {
       alert(result.message || "추천에 실패했어요. 잠시 후 다시 시도해주세요.")
       return
     }
+    recordActivity("recommend") // 게임: 맞춤 추천 받기 퀘스트/XP
     // 그룹 취향 맞춤 추천을 맨 앞 지역으로 주입 (Group Vector AI)
     try {
       const memberIds: number[] = []
@@ -321,12 +323,8 @@ export function HomeTab() {
     if (!nearbyPlace) return
     setInteractionLoading(true)
     try {
-      await fetchWithAuth("/api/coins/check-in", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ place_name: nearbyPlace.name, lat: nearbyPlace.lat, lng: nearbyPlace.lng })
-      })
-      alert("체크인 완료! +50 코인")
+      // 체크인 = 탐험 활동(게임 XP/퀘스트). 캐시(현금)가 아니라 XP로 보상.
+      await recordActivity("explore")
       setNearbyPlace(null)
     } catch (e) {
       alert("오류가 발생했어요.")
@@ -339,12 +337,8 @@ export function HomeTab() {
     if (!nearbyLoot) return
     setInteractionLoading(true)
     try {
-      await fetchWithAuth("/api/coins/claim-loot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ loot_id: nearbyLoot.id, amount: nearbyLoot.amount })
-      })
-      alert(`${nearbyLoot.amount} 코인 획득!`)
+      // 지도 보물찾기 = 탐험 XP 보상(놀이처럼). 축하 연출은 전역 GameCelebration이 처리.
+      await recordActivity("explore")
       setLoots(p => p.filter(l => l.id !== nearbyLoot.id))
       setNearbyLoot(null)
     } catch (e) {

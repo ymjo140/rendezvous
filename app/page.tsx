@@ -12,6 +12,7 @@ import { CommunityTab as HotDealTab } from "@/components/ui/community-tab"
 import { Map, MessageCircle, Compass, User, Flame, Lock } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { GameCelebration } from "@/components/ui/components/game/GameCelebration"
 
 export default function Page() {
   const router = useRouter()
@@ -72,7 +73,10 @@ export default function Page() {
 
   return (
     <div className="flex h-screen w-full flex-col bg-[#F3F4F6] mx-auto max-w-md shadow-2xl overflow-hidden font-['Pretendard']">
-      
+
+      {/* 게임 축하 연출(레벨업/뱃지/퀘스트) — 전역 */}
+      <GameCelebration />
+
       {/* 메인 콘텐츠 영역 */}
       <main className="flex-1 overflow-hidden relative">
         {activeTab === "home" && <HomeTab />}
