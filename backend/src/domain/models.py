@@ -45,7 +45,15 @@ class User(Base):
     
     review_count = Column(Integer, default=0)
     avg_rating_given = Column(Float, default=0.0)
-    
+
+    # 🎮 게이미피케이션(듀오링고식) — 캐시(wallet_balance)와 분리된 게임 진행도
+    xp = Column(Integer, default=0)
+    level = Column(Integer, default=1)
+    streak_count = Column(Integer, default=0)       # 현재 연속 활동일
+    best_streak = Column(Integer, default=0)         # 최고 연속 기록
+    last_activity_date = Column(String, nullable=True)  # YYYY-MM-DD (마지막 활동일)
+    game_state = Column(JSON, default={})            # 일일 퀘스트 진행 등
+
     avatar_info = relationship("UserAvatar", uselist=False, back_populates="user")
 
 class UserAvatar(Base):
@@ -245,8 +253,31 @@ class CoinHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     amount = Column(Integer)
-    type = Column(String) # charge, use, reward
+    type = Column(String) # charge, use, reward, refund
     description = Column(String)
+    created_at = Column(DateTime, default=datetime.now)
+
+class UserBadge(Base):
+    """획득한 뱃지(업적). 정의는 코드 상수, 여기엔 획득 기록만."""
+    __tablename__ = "user_badges"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    badge_key = Column(String, index=True)
+    earned_at = Column(DateTime, default=datetime.now)
+
+
+class Reservation(Base):
+    """B2C 유저 예약(캐시 결제). 머천트 reservations 테이블과 구분해 user_reservations 사용."""
+    __tablename__ = "user_reservations"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    place_id = Column(Integer, nullable=True)
+    place_name = Column(String)
+    date = Column(String)          # YYYY-MM-DD
+    time = Column(String)          # HH:MM
+    party_size = Column(Integer, default=2)
+    deposit_amount = Column(Integer, default=0)  # 캐시 예약금(원)
+    status = Column(String, default="confirmed")  # confirmed, cancelled, completed
     created_at = Column(DateTime, default=datetime.now)
 
 class Campaign(Base):

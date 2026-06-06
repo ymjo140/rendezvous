@@ -12,14 +12,34 @@ class CoinService:
         history = self.repo.get_history(db, user.id)
         return {"balance": user.wallet_balance, "history": history}
 
+    @staticmethod
+    def charge_bonus(amount: int) -> int:
+        """충전 보너스(예치금 float 적립 촉진). 금액 클수록 보너스율↑."""
+        amount = int(amount or 0)
+        if amount >= 100000:
+            return int(amount * 0.10)
+        if amount >= 50000:
+            return int(amount * 0.05)
+        if amount >= 30000:
+            return int(amount * 0.03)
+        return 0
+
     def charge_coins(self, db: Session, user: models.User, req: schemas.CoinChargeRequest):
         # 실제 PG사 연동 로직이 들어갈 자리 (여기선 성공 가정)
         try:
-            user.wallet_balance += req.amount
+            bonus = self.charge_bonus(req.amount)
+            user.wallet_balance = (user.wallet_balance or 0) + req.amount + bonus
             self.repo.create_history(db, user.id, req.amount, "charge", f"{req.payment_method} 충전")
+            if bonus > 0:
+                self.repo.create_history(db, user.id, bonus, "reward", f"충전 보너스 (+{bonus}원)")
             db.commit()
             db.refresh(user)
-            return {"message": "Charge successful", "balance": user.wallet_balance}
+            return {
+                "message": "Charge successful",
+                "balance": user.wallet_balance,
+                "charged": req.amount,
+                "bonus": bonus,
+            }
         except Exception:
             db.rollback()
             raise HTTPException(status_code=500, detail="Transaction failed")
