@@ -17,6 +17,14 @@ class UserService:
     def __init__(self):
         self.repo = UserRepository()
 
+    def _seed_taste_embedding(self, db: Session, user: models.User, preferences: dict):
+        """취향 저장 시 UserEmbedding 시드(개인화 추천 첫 사용부터 작동). 실패해도 무시."""
+        try:
+            from services.vector_embedding_service import VectorEmbeddingService
+            VectorEmbeddingService().seed_user_embedding_from_preferences(db, user.id, preferences or {})
+        except Exception as e:
+            print(f"[WARN] taste embedding seed skipped: {e}")
+
     def get_my_info(self, db: Session, user: models.User):
         avatar = self.repo.get_avatar_info(db, user.id)
         avatar_data = {}
@@ -55,6 +63,8 @@ class UserService:
         user.preferences = preferences
         flag_modified(user, "preferences")
         db.commit()
+        # 취향 → 임베딩 시드 (첫 추천부터 개인화)
+        self._seed_taste_embedding(db, user, preferences)
         return {"message": "Onboarding completed", "user": {"name": user.name, "preferences": preferences}}
 
     def update_location(self, db: Session, user: models.User, req: schemas.LocationUpdate):
@@ -75,6 +85,8 @@ class UserService:
         user.preferences = prefs.dict()
         flag_modified(user, "preferences")
         db.commit()
+        # 취향 변경 → 임베딩 재시드/블렌드
+        self._seed_taste_embedding(db, user, user.preferences)
         return {"message": "Updated"}
 
     # --- 상점 ---
@@ -244,8 +256,10 @@ class UserService:
             updated_prefs = AdvancedRecommender.train_user_model(current_prefs, req.tags, avg_rating, req.reason)
             user.preferences = updated_prefs
             flag_modified(user, "preferences")
-            
+
         db.commit()
+        # 리뷰로 갱신된 취향을 임베딩에 반영(학습 일원화)
+        self._seed_taste_embedding(db, user, user.preferences)
         return {"message": "Review saved", "avg_rating": avg_rating}
 
     def get_place_reviews(self, db: Session, place_name: str):

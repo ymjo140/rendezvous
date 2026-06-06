@@ -225,8 +225,14 @@ def get_places_by_category(
     } for p in places]
 
 @router.post("/api/recommend")
-def get_recommendation(req: schemas.RecommendRequest, db: Session = Depends(get_db)):
-    return meeting_service.get_recommendations_direct(db, req)
+def get_recommendation(
+    req: schemas.RecommendRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # 로그인 시 개인 취향 벡터로 재랭킹(미로그인이면 None → 지리/태그 추천 유지)
+    user_id = current_user.id if current_user else None
+    return meeting_service.get_recommendations_direct(db, req, user_id=user_id)
 
 # --- 회의/모임 흐름 ---
 @router.post("/api/meeting-flow")

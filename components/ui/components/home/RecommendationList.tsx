@@ -31,6 +31,7 @@ type RecommendationListProps = {
   currentDisplayRegion: any
   onPlaceClick: (place: any) => void
   onReset: () => void
+  personaLabel?: { emoji: string; title: string } | null
 }
 
 // 바텀시트 스냅 높이 (뷰포트 대비 %). peek=지도 거의 보임, full=거의 전체.
@@ -59,6 +60,12 @@ const PlaceCard = ({ place, onClick }: { place: any; onClick: () => void }) => (
         {place.tags && <span className="text-gray-400">| {place.tags.slice(0, 2).join(", ")}</span>}
       </div>
       <div className="text-[10px] text-gray-400 mt-1">{place.address}</div>
+      {place.reason && (
+        <div className="text-[11px] font-bold text-[#7C3AED] mt-1.5 flex items-center gap-1">
+          <span>✨</span>
+          <span className="truncate">{place.reason}</span>
+        </div>
+      )}
     </div>
     <Button size="sm" variant="outline" className="ml-2 h-8 text-xs">
       상세
@@ -73,10 +80,17 @@ export const RecommendationList = ({
   currentDisplayRegion,
   onPlaceClick,
   onReset,
+  personaLabel,
 }: RecommendationListProps) => {
   const [shareOpen, setShareOpen] = useState(false)
   const [snap, setSnap] = useState<Snap>("half")
   const [sortBy, setSortBy] = useState<SortKey>("reco")
+
+  // 현재 지역이 개인 취향 반영됐는지 (백엔드 personalized 플래그 또는 그룹취향 지역)
+  const isPersonalized =
+    !!currentDisplayRegion?.personalized ||
+    (typeof currentDisplayRegion?.region_name === "string" &&
+      currentDisplayRegion.region_name.includes("취향"))
 
   // 추천순(엔진 기본 순서) / 평점순 / 거리순(중간지점에서 가까운 순)
   const sortedPlaces = useMemo(() => {
@@ -133,6 +147,16 @@ export const RecommendationList = ({
 
           {/* 헤더 + 지역 탭 (고정) */}
           <div className="px-5 shrink-0">
+            {isPersonalized && (
+              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-purple-50 px-3 py-1 text-xs font-bold text-[#7C3AED]">
+                <span>✨</span>
+                <span>
+                  {personaLabel
+                    ? `${personaLabel.emoji} ${personaLabel.title}님 취향 반영됨`
+                    : "내 취향 반영됨"}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-bold text-lg">추천 지역</h3>
               <div className="flex items-center gap-3">

@@ -23,6 +23,7 @@ import { MidpointSelector } from "@/components/ui/components/home/MidpointSelect
 import { RecommendationList } from "@/components/ui/components/home/RecommendationList"
 import { FilterDialog } from "@/components/ui/components/home/FilterDialog"
 import { FriendModal } from "@/components/ui/components/home/FriendModal"
+import { getPersonaLabel } from "@/lib/taste-persona"
 
 const HOME_STATE_KEY = "home_tab_state_v1"
 
@@ -247,6 +248,7 @@ export function HomeTab() {
           address: r.address,
           tags: r.tags || [],
           score: r.group_score,
+          reason: r.reason,
           _recommendation_id: grp.recommendation_id,
           _position: i,
         })),
@@ -449,6 +451,7 @@ export function HomeTab() {
         currentDisplayRegion={currentDisplayRegion}
         onPlaceClick={handlePlaceClick}
         onReset={handleResetSearch}
+        personaLabel={getPersonaLabel(myProfile?.preferences)}
       />
 
       {isLoading && (

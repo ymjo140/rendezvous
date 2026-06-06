@@ -11,6 +11,7 @@ import os
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
 # Environment variables
@@ -192,9 +193,163 @@ class VectorEmbeddingService:
             return 0.0
     
     # ========================================
+    # Preference seed (온보딩 취향 → 임베딩)
+    # ========================================
+
+    def preferences_to_text(self, preferences: Dict) -> str:
+        """유저 취향(JSON)을 place_text와 같은 어휘로 변환 → 같은 벡터공간에 안착.
+
+        장소 임베딩 텍스트(generate_place_text)와 동일 토큰(음식/분위기/가격대)을 써야
+        코사인 유사도가 의미를 가진다. 싫어하는 음식은 시드에서 제외.
+        """
+        if not isinstance(preferences, dict):
+            return ""
+        parts: List[str] = []
+
+        def _extend(key: str):
+            v = preferences.get(key)
+            if isinstance(v, list):
+                parts.extend(str(x).strip() for x in v if str(x).strip())
+            elif isinstance(v, str) and v.strip():
+                parts.append(v.strip())
+
+        _extend("foods")
+        _extend("vibes")
+        _extend("alcohol")
+        _extend("conditions")
+
+        spend = preferences.get("avg_spend")
+        try:
+            spend = float(spend) if spend is not None else 0.0
+        except (TypeError, ValueError):
+            spend = 0.0
+        if spend >= 50000:
+            parts.append("하이엔드 고급")
+        elif spend >= 30000:
+            parts.append("미디엄 가격대")
+        elif spend > 0:
+            parts.append("가성비")
+
+        seen, result = set(), []
+        for p in parts:
+            p = p.strip()
+            if p and p not in seen:
+                seen.add(p)
+                result.append(p)
+        return " | ".join(result)
+
+    def _preference_terms(self, preferences: Dict) -> List[str]:
+        """preferences에서 매칭용 취향 토큰(음식/분위기/주류/조건) 추출."""
+        if not isinstance(preferences, dict):
+            return []
+        terms = []
+        for key in ("foods", "vibes", "alcohol", "conditions"):
+            v = preferences.get(key)
+            if isinstance(v, list):
+                terms += [str(x).strip() for x in v if str(x).strip()]
+            elif isinstance(v, str) and v.strip():
+                terms.append(v.strip())
+        # dedupe preserve order
+        seen, out = set(), []
+        for t in terms:
+            if t not in seen:
+                seen.add(t)
+                out.append(t)
+        return out
+
+    def seed_vector_from_preferences(self, db: Session, preferences: Dict) -> Optional[List[float]]:
+        """취향에 맞는 장소들의 '저장된 임베딩 평균'으로 시드 벡터 생성 (Gemini 불필요).
+
+        장소 벡터(12만건 적재완료)와 동일 공간이라 코사인 검색이 바로 의미를 가진다.
+        Gemini 임베딩 호출/크레딧이 필요 없다.
+        """
+        terms = self._preference_terms(preferences)
+        if not terms:
+            return None
+        try:
+            from domain.models import PlaceEmbedding
+
+            # 1) 취향 토큰과 매칭되는 장소 id (category/cuisine/tags/vibe_tags ILIKE)
+            term_clauses, params = [], {}
+            for i, t in enumerate(terms[:8]):
+                params[f"t{i}"] = f"%{t}%"
+                term_clauses += [
+                    f"category ILIKE :t{i}",
+                    f"cuisine_type ILIKE :t{i}",
+                    f"tags::text ILIKE :t{i}",
+                    f"vibe_tags::text ILIKE :t{i}",
+                ]
+            sql = sql_text(
+                f"SELECT id FROM places WHERE ({' OR '.join(term_clauses)}) LIMIT 150"
+            )
+            ids = [r[0] for r in db.execute(sql, params).fetchall()]
+            if not ids:
+                return None
+
+            # 2) 매칭 장소들의 저장 임베딩 평균
+            rows = (
+                db.query(PlaceEmbedding.embedding)
+                .filter(PlaceEmbedding.place_id.in_(ids), PlaceEmbedding.embedding.isnot(None))
+                .limit(100)
+                .all()
+            )
+            vecs = [np.asarray(r[0], dtype=float) for r in rows if r[0] is not None]
+            if not vecs:
+                return None
+
+            seed = np.mean(vecs, axis=0)
+            norm = np.linalg.norm(seed)
+            return (seed / norm).tolist() if norm else seed.tolist()
+        except Exception as e:
+            print(f"[ERROR] seed_vector_from_preferences failed: {e}")
+            return None
+
+    def seed_user_embedding_from_preferences(self, db: Session, user_id: int, preferences: Dict) -> bool:
+        """온보딩/취향수정/리뷰 시 호출. 취향→매칭장소 벡터평균으로 UserEmbedding 시드/블렌드.
+
+        - 기존 임베딩이 없으면(=신규/콜드) 시드를 그대로 저장 → 첫 추천부터 개인화.
+        - 행동기반 임베딩이 이미 있으면(action_count>0) 명시 취향을 0.5 가중으로 블렌드.
+        Gemini 불필요(저장된 장소 벡터 평균). 예외는 삼켜 메인 플로우를 깨지 않음.
+        """
+        try:
+            from domain.models import UserEmbedding
+
+            seed = self.seed_vector_from_preferences(db, preferences)
+            if not seed or not any(seed):  # 매칭 장소 없음 → 시드 스킵(cold-start)
+                return False
+
+            existing = db.query(UserEmbedding).filter(UserEmbedding.user_id == user_id).first()
+            if existing is None:
+                db.add(UserEmbedding(
+                    user_id=user_id,
+                    preference_embedding=seed,
+                    recent_embedding=seed,
+                    action_count=0,
+                    last_action_at=None,
+                ))
+            elif existing.action_count and existing.preference_embedding is not None:
+                prev = np.asarray(existing.preference_embedding, dtype=float)
+                s = np.asarray(seed, dtype=float)
+                blended = 0.5 * prev + 0.5 * s
+                norm = np.linalg.norm(blended)
+                existing.preference_embedding = (blended / norm).tolist() if norm else seed
+                existing.updated_at = datetime.now()
+            else:
+                # 임베딩 행은 있으나 행동이 없음(순수 시드 상태) → 최신 취향으로 갱신
+                existing.preference_embedding = seed
+                existing.updated_at = datetime.now()
+
+            db.commit()
+            return True
+        except Exception as e:
+            print(f"[ERROR] seed_user_embedding_from_preferences failed: {e}")
+            db.rollback()
+            return False
+
+    # ========================================
     # Database integration methods (Optimized)
     # ========================================
-    
+
     def embed_place(self, db: Session, place_id: int, place_data: Dict) -> bool:
         """Generate and save place embedding"""
         try:
@@ -297,9 +452,21 @@ class VectorEmbeddingService:
             
             if total_weight == 0:
                 return False
-            
-            preference_embedding = (weighted_sum / total_weight).tolist()
-            
+
+            behavior_vec = weighted_sum / total_weight
+
+            # 기존 임베딩(온보딩 시드/이전 학습 포함)과 EMA 블렌드 → 명시 취향이 한번에 사라지지 않음.
+            existing_pref = db.query(UserEmbedding).filter(
+                UserEmbedding.user_id == user_id
+            ).first()
+            if existing_pref is not None and existing_pref.preference_embedding is not None:
+                prev = np.asarray(existing_pref.preference_embedding, dtype=float)
+                blended = 0.7 * behavior_vec + 0.3 * prev
+            else:
+                blended = behavior_vec
+            norm = np.linalg.norm(blended)
+            preference_embedding = (blended / norm).tolist() if norm else behavior_vec.tolist()
+
             # Recent embedding from last 10 actions
             recent_sum = np.zeros(self.EMBEDDING_DIM)
             recent_count = 0
@@ -545,6 +712,15 @@ class VectorEmbeddingService:
                 min_sim = min(sims)
                 mean_sim = sum(sims) / len(sims)
                 group_score = 0.6 * mean_sim + 0.4 * min_sim
+
+                # 사람이 읽기 좋은 그룹 추천 이유(최소 만족도 기준)
+                if min_sim >= 0.6:
+                    reason = "모두의 취향에 딱 맞아요"
+                elif min_sim >= 0.45:
+                    reason = "다 같이 만족할 만한 곳이에요"
+                else:
+                    reason = f"{members_with_taste}명이 함께 가기 좋아요"
+
                 results.append({
                     "place_id": place.id,
                     "name": place.name,
@@ -552,7 +728,7 @@ class VectorEmbeddingService:
                     "address": place.address,
                     "group_score": round(group_score, 4),
                     "min_member_score": round(min_sim, 4),
-                    "reason": f"{members_with_taste}명 취향 합성 · 최소 만족 {round(min_sim * 100)}%",
+                    "reason": reason,
                     "tags": place.tags or [],
                     "rating": place.wemeet_rating,
                 })

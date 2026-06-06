@@ -27,10 +27,114 @@ class MeetingService:
     # ============================================================
     # ?뙚 1. AI ?μ냼 異붿쿇 濡쒖쭅 (?듭떖 ?섏젙??
     # ============================================================
-    def _format_recommendations(self, db: Session, regions: list, req: schemas.RecommendRequest) -> List[Dict[str, Any]]:
+    @staticmethod
+    def _cosine(a, b) -> float:
+        try:
+            a = np.asarray(a, dtype=float)
+            b = np.asarray(b, dtype=float)
+            na = np.linalg.norm(a)
+            nb = np.linalg.norm(b)
+            if na == 0 or nb == 0:
+                return 0.0
+            return float(np.dot(a, b) / (na * nb))
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _build_reason(poi, sim: float, pref_tags: list, session_tags: list, purpose: str = "") -> str:
+        """추천 근거 한 줄(규칙 기반, Gemini 불필요).
+        장기취향/세션태그가 장소 태그·카테고리와 겹치면 그걸로, 없으면 벡터 유사도로."""
+        cand = set(t for t in (getattr(poi, "tags", None) or []) if t)
+        cat = getattr(poi, "category", None)
+        if cat:
+            cand.add(str(cat))
+        matched = []
+        for t in list(pref_tags or []) + list(session_tags or []):
+            if t and t in cand and t not in matched:
+                matched.append(t)
+        matched = matched[:2]
+        if matched:
+            suffix = "취향과 잘 맞아요" if pref_tags else "조건에 맞아요"
+            return f"{' · '.join(matched)} {suffix}"
+        if sim >= 0.6:
+            return "내 취향과 잘 맞는 분위기예요"
+        if sim >= 0.45:
+            return "취향에 맞을 만한 곳이에요"
+        if purpose:
+            return f"{purpose} 추천"
+        return ""
+
+    def _personalized_rerank(self, db: Session, candidates: list, user_vec, session_tags: list, pref_tags: list, top_k: int = 15) -> list:
+        """후보(POI)를 개인 취향 벡터로 재랭킹하고 (POI, 추천이유) 페어를 반환.
+        점수 = 0.65*벡터유사도(장기취향) + 0.35*세션태그매칭(현재의도).
+        임베딩 없는 후보(외부/id=0)는 벡터 0으로 처리되어 태그매칭만 반영."""
+        from domain.models import PlaceEmbedding
+
+        ids = [c.id for c in candidates if getattr(c, "id", 0)]
+        pe_map = {}
+        if ids:
+            try:
+                rows = db.query(PlaceEmbedding.place_id, PlaceEmbedding.embedding).filter(
+                    PlaceEmbedding.place_id.in_(ids),
+                    PlaceEmbedding.embedding.isnot(None),
+                ).all()
+                pe_map = {pid: emb for pid, emb in rows}
+            except Exception as e:
+                print(f"[Debug] place embedding batch load skipped: {e}")
+
+        tagset = set(t for t in (session_tags or []) if t)
+
+        scored = []
+        for c in candidates:
+            emb = pe_map.get(getattr(c, "id", 0))
+            v_sim = max(0.0, self._cosine(user_vec, emb)) if emb is not None else 0.0
+            tag_hits = sum(1 for t in (getattr(c, "tags", None) or []) if t in tagset)
+            tag_score = min(tag_hits / 3.0, 1.0) if tagset else 0.0
+            scored.append((0.65 * v_sim + 0.35 * tag_score, v_sim, c))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [
+            (c, self._build_reason(c, v_sim, pref_tags, session_tags))
+            for _s, v_sim, c in scored[:top_k]
+        ]
+
+    def _format_recommendations(self, db: Session, regions: list, req: schemas.RecommendRequest, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
         results = []
         raw_prefs = req.user_selected_tags or []
         purpose = (req.purpose or "").strip()
+
+        # 로그인 유저의 개인 취향 벡터(있으면 후보를 코사인 유사도로 재랭킹)
+        # 장기취향(preference) 0.7 + 최근관심(recent) 0.3 블렌드 → '요즘 끌리는' 반영
+        user_vec = None
+        if user_id:
+            try:
+                ue = db.query(models.UserEmbedding).filter(
+                    models.UserEmbedding.user_id == user_id
+                ).first()
+                if ue is not None and ue.preference_embedding is not None:
+                    pref = np.asarray(ue.preference_embedding, dtype=float)
+                    if ue.recent_embedding is not None:
+                        recent = np.asarray(ue.recent_embedding, dtype=float)
+                        blended = 0.7 * pref + 0.3 * recent
+                        norm = np.linalg.norm(blended)
+                        user_vec = (blended / norm) if norm else pref
+                    else:
+                        user_vec = pref
+            except Exception as e:
+                print(f"[Debug] user embedding load skipped: {e}")
+
+        # 장기 취향 태그(추천 이유 생성용): foods/vibes/alcohol
+        pref_tags = []
+        if user_id:
+            try:
+                u = db.query(models.User).filter(models.User.id == user_id).first()
+                if u is not None and isinstance(u.preferences, dict):
+                    for k in ("foods", "vibes", "alcohol"):
+                        v = u.preferences.get(k)
+                        if isinstance(v, list):
+                            pref_tags += [str(x).strip() for x in v if str(x).strip()]
+            except Exception as e:
+                print(f"[Debug] user preferences load skipped: {e}")
 
         # Normalize and dedupe tags to expand matching coverage.
         user_prefs = []
@@ -138,14 +242,20 @@ class MeetingService:
                         ))
 
             if place_candidates:
-                recommender = AdvancedRecommender(place_candidates)
-                # 프론트에서 추천순/평점순/거리순 재정렬할 수 있도록 넉넉히 반환
-                ranked = recommender.recommend([{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], purpose, top_k=15)
+                if user_vec is not None:
+                    # 개인 취향 벡터 재랭킹: 장기취향(벡터) + 현재의도(선택태그) 결합
+                    ranked_pairs = self._personalized_rerank(db, place_candidates, user_vec, user_prefs, pref_tags, top_k=15)
+                else:
+                    recommender = AdvancedRecommender(place_candidates)
+                    # 프론트에서 추천순/평점순/거리순 재정렬할 수 있도록 넉넉히 반환
+                    ranked = recommender.recommend([{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], purpose, top_k=15)
+                    ranked_pairs = [(p, self._build_reason(p, 0.0, [], user_prefs, purpose)) for p in ranked]
 
                 results.append({
                     "region_name": r["name"],
                     "center": {"lat": r["lat"], "lng": r["lng"]},
                     "travel_times": r.get("travel_times", []),
+                    "personalized": user_vec is not None,
                     "places": [{
                         "id": p.id,
                         "name": p.name,
@@ -153,12 +263,13 @@ class MeetingService:
                         "category": p.category,
                         "lat": float(p.location[0]),
                         "lng": float(p.location[1]),
-                        "wemeet_rating": p.avg_rating
-                    } for p in ranked]
+                        "wemeet_rating": p.avg_rating,
+                        "reason": reason,
+                    } for p, reason in ranked_pairs]
                 })
         return results
 
-    def get_recommendations_direct(self, db: Session, req: schemas.RecommendRequest) -> List[Dict[str, Any]]:
+    def get_recommendations_direct(self, db: Session, req: schemas.RecommendRequest, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """(1-2?④퀎) n媛쒖쓽 異쒕컻吏瑜??몄떇?섍퀬 以묎컙 吏?먯쓣 ?꾩텧?⑸땲??"""
         all_points = []
         
@@ -201,7 +312,7 @@ class MeetingService:
             # (2?④퀎) 以묎컙吏???꾩텧 (TransportEngine)
             top_3_regions = TransportEngine.find_best_midpoints(db, all_points)
             
-        return self._format_recommendations(db, top_3_regions, req)
+        return self._format_recommendations(db, top_3_regions, req, user_id=user_id)
 
     # ============================================================
     # 2. ?먮룞?꾩꽦 諛?寃??(湲곗〈 濡쒖쭅 ?좎?)
