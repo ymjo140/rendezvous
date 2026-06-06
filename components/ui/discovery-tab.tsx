@@ -1233,13 +1233,18 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
 
         // 3) 취향 발견 피드: 검색어 없을 때 내 취향 매칭 우선 정렬
         if (!q && myPrefTags.length > 0) {
-            const tagSet = new Set(myPrefTags);
+            // tsconfig target이 낮아 Set 직접 순회 불가 → 배열로 처리
+            const prefTags = Array.from(new Set(myPrefTags));
             const scoreOf = (f: any) => {
-                const cand = new Set<string>(
-                    [...((f.place?.tags as string[]) || []), f.place?.category].filter(Boolean)
-                );
+                const candList = [
+                    ...((f.place?.tags as string[]) || []),
+                    f.place?.category,
+                ].filter(Boolean) as string[];
+                const cand = new Set<string>(candList);
                 let s = 0;
-                for (const t of tagSet) if (cand.has(t)) s += 1;
+                prefTags.forEach((t) => {
+                    if (cand.has(t)) s += 1;
+                });
                 return s;
             };
             list = list
