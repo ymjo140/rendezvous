@@ -66,13 +66,36 @@ def _to_minutes(value: Optional[str]) -> Optional[int]:
         return None
 
 
-def _rule_active_today(rule: models.OfferRule, weekday: int) -> bool:
-    """오늘(요일) 노출 대상 룰인지. day_of_week_mask 월=bit0..일=bit6 (Python weekday와 일치).
-    요일 미지정이면 상시 노출. 시간대는 종일 노출하되 description에 표기('오늘의 핫딜')."""
+def _rule_active_today(rule: models.OfferRule, weekday: int, today: str = "") -> bool:
+    """오늘 노출 대상 룰인지. 요일(day_of_week_mask) + 유효기간(valid_from~to) + 수량(inventory)을 모두 통과해야 함.
+    - 요일 미지정이면 상시. 유효기간 미지정이면 무제한. inventory_cap=0이면 무제한.
+    - 소진(used>=cap) 또는 기간 만료 시 자동으로 노출 제외(운영루프)."""
     mask = getattr(rule, "day_of_week_mask", None) or 0
     if mask and not (mask & (1 << weekday)):
         return False
+    # 유효기간
+    vf = getattr(rule, "valid_from", None)
+    vt = getattr(rule, "valid_to", None)
+    if today:
+        if vf and today < vf:
+            return False
+        if vt and today > vt:
+            return False
+    # 수량 소진
+    cap = getattr(rule, "inventory_cap", 0) or 0
+    used = getattr(rule, "inventory_used", 0) or 0
+    if cap > 0 and used >= cap:
+        return False
     return True
+
+
+def _rule_remaining(rule: models.OfferRule) -> Optional[int]:
+    """남은 수량(무제한이면 None)."""
+    cap = getattr(rule, "inventory_cap", 0) or 0
+    if cap <= 0:
+        return None
+    used = getattr(rule, "inventory_used", 0) or 0
+    return max(0, cap - used)
 
 
 def _format_window(rule: models.OfferRule) -> str:
@@ -155,6 +178,7 @@ def _active_time_deals(db: Session, now: datetime) -> List[Dict[str, Any]]:
 def get_hot_deals(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
     now = datetime.now()
     weekday = now.weekday()  # 0=월 .. 6=일 (머천트 day_of_week_mask와 일치)
+    today = now.strftime("%Y-%m-%d")
 
     rows = (
         db.query(models.OfferRule, models.Place)
@@ -165,7 +189,7 @@ def get_hot_deals(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
 
     deals: List[Dict[str, Any]] = []
     for rule, place in rows:
-        if not _rule_active_today(rule, weekday):
+        if not _rule_active_today(rule, weekday, today):  # 요일+유효기간+수량 통과만
             continue
         title = _resolve_rule_title(rule)
         benefit = _resolve_rule_description(rule)
@@ -175,12 +199,14 @@ def get_hot_deals(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
         deals.append(
             {
                 "deal_id": rule.id,
+                "offer_rule_id": rule.id,          # 예약 시 수량 차감용
                 "benefit_title": title,
                 "description": description,
                 "end_time": _rule_end_time(rule),
                 "store_id": place.id,
                 "store_name": place.name,
                 "image_url": _resolve_place_image(place),
+                "remaining": _rule_remaining(rule),  # 남은 수량(무제한이면 None)
             }
         )
 

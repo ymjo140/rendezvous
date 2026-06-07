@@ -167,7 +167,7 @@ class MLScorer:
             
         except Exception as e:
             print(f"[MLScorer] Error scoring place: {e}")
-            return self.DEFAULT_SCORE, "Recommended for you"
+            return self.DEFAULT_SCORE, "지금 인기 있는 곳"
     
     def _score_by_context(self, features: Dict, ctx: Dict) -> Tuple[float, str]:
         """Score based on context (time, day)"""
@@ -256,14 +256,17 @@ class MLScorer:
         """Get default reason based on context"""
         intent = ctx.get("predicted_intent", "GENERAL")
         reasons = {
-            "BREAKFAST": "Good for morning",
-            "LUNCH": "Popular for lunch",
-            "CAFE": "Nice cafe spot",
-            "DINNER": "Great for dinner",
-            "LATE_NIGHT": "Open late",
-            "GENERAL": "Recommended for you"
+            "BREAKFAST": "아침에 가기 좋아요",
+            "LUNCH": "점심 인기 장소",
+            "CAFE": "분위기 좋은 카페",
+            "DINNER": "저녁 모임에 추천",
+            "LATE_NIGHT": "늦게까지 영업",
+            "GENERAL": "지금 인기 있는 곳",
+            "식사": "식사하기 좋은 곳",
+            "카페": "분위기 좋은 카페",
+            "술": "한잔하기 좋은 곳",
         }
-        return reasons.get(intent, "Recommended for you")
+        return reasons.get(intent, "지금 인기 있는 곳")
 
 
 class ColdStartHandler:

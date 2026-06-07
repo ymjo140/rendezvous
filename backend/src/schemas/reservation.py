@@ -10,6 +10,7 @@ class ReservationCreate(BaseModel):
     time: str            # HH:MM
     party_size: int = 2
     deposit_amount: int = 0   # 캐시 예약금(원)
+    offer_rule_id: Optional[int] = None  # 핫딜 예약이면 수량 차감 대상
 
 
 class ReservationResponse(BaseModel):
@@ -21,6 +22,7 @@ class ReservationResponse(BaseModel):
     party_size: int
     deposit_amount: int
     status: str
+    offer_rule_id: Optional[int] = None
     created_at: datetime
 
     class Config:

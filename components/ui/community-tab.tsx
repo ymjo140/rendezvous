@@ -1,6 +1,7 @@
 "use client"
 
 import React from "react"
+import { useRouter } from "next/navigation"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useHotDeals } from "@/hooks/use-hot-deals"
 
@@ -26,7 +27,14 @@ const formatEndTime = (value?: string | null) => {
 }
 
 export function CommunityTab({ source: _source }: CommunityTabProps = {}) {
+  const router = useRouter()
   const { data = [], isLoading, error } = useHotDeals()
+
+  const goReserve = (deal: any) => {
+    if (!deal?.store_id) return
+    const offer = deal.offer_rule_id ?? deal.deal_id
+    router.push(`/places/${deal.store_id}?offer=${offer}`)
+  }
 
   return (
     <div className="flex flex-col h-full bg-slate-50 font-['Pretendard']">
@@ -80,7 +88,20 @@ export function CommunityTab({ source: _source }: CommunityTabProps = {}) {
                   </div>
                   <div className="p-4 space-y-2">
                     {deal.description && <p className="text-sm text-gray-600">{deal.description}</p>}
-                    <p className="text-xs text-gray-400">{formatEndTime(deal.end_time)}</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-400">{formatEndTime(deal.end_time)}</p>
+                      {typeof deal.remaining === "number" && (
+                        <span className={`text-[11px] font-bold ${deal.remaining <= 3 ? "text-rose-500" : "text-gray-500"}`}>
+                          {deal.remaining > 0 ? `${deal.remaining}개 남음` : "마감"}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => goReserve(deal)}
+                      className="w-full mt-1 h-10 rounded-xl bg-[#7C3AED] text-white text-sm font-bold hover:bg-purple-700 transition-colors"
+                    >
+                      예약하기
+                    </button>
                   </div>
                 </div>
               )

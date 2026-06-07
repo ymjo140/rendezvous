@@ -132,7 +132,7 @@ class MLEngine:
         """
         try:
             base_score = self.predict(features)
-            reason = "Recommended for you"
+            reason = "지금 인기 있는 곳"
             
             if context:
                 # Time-based adjustments
@@ -156,7 +156,7 @@ class MLEngine:
             
         except Exception as e:
             print(f"[MLEngine] Context prediction error: {e}")
-            return self.DEFAULT_SCORE, "Recommended for you"
+            return self.DEFAULT_SCORE, "지금 인기 있는 곳"
     
     def get_model_info(self) -> Dict:
         """Get model information"""
@@ -209,7 +209,7 @@ class PlaceScorer:
             
         except Exception as e:
             print(f"[PlaceScorer] Error: {e}")
-            return 0.5, "Recommended"
+            return 0.5, "추천"
     
     def score_places_batch(
         self, 

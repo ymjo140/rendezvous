@@ -53,16 +53,17 @@ class MeetingService:
             if t and t in cand and t not in matched:
                 matched.append(t)
         matched = matched[:2]
+        # 지리추천 후보는 항상 중간지점 반경 내 → '중간지점 근처'를 기본 설명 요소로 결합(설명가능성↑)
         if matched:
             suffix = "취향과 잘 맞아요" if pref_tags else "조건에 맞아요"
-            return f"{' · '.join(matched)} {suffix}"
+            return f"중간지점 근처 · {' · '.join(matched)} {suffix}"
         if sim >= 0.6:
-            return "내 취향과 잘 맞는 분위기예요"
+            return "중간지점 근처 · 내 취향과 잘 맞는 분위기예요"
         if sim >= 0.45:
-            return "취향에 맞을 만한 곳이에요"
+            return "중간지점 근처 · 취향에 맞을 만한 곳이에요"
         if purpose:
-            return f"{purpose} 추천"
-        return ""
+            return f"중간지점 근처 · {purpose} 추천"
+        return "중간지점에서 가까운 곳이에요"
 
     def _personalized_rerank(self, db: Session, candidates: list, user_vec, session_tags: list, pref_tags: list, top_k: int = 15) -> list:
         """후보(POI)를 개인 취향 벡터로 재랭킹하고 (POI, 추천이유) 페어를 반환.

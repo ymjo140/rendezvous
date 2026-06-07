@@ -71,6 +71,7 @@ export async function createReservation(payload: {
   time: string
   party_size: number
   deposit_amount: number
+  offer_rule_id?: number | null
 }): Promise<Reservation> {
   const res = await fetchWithAuth("/api/reservations", {
     method: "POST",

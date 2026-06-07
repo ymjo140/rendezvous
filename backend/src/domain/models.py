@@ -278,6 +278,7 @@ class Reservation(Base):
     party_size = Column(Integer, default=2)
     deposit_amount = Column(Integer, default=0)  # 캐시 예약금(원)
     status = Column(String, default="confirmed")  # confirmed, cancelled, completed
+    offer_rule_id = Column(Integer, nullable=True)  # 핫딜 예약이면 해당 offer_rule(수량 차감용)
     created_at = Column(DateTime, default=datetime.now)
 
 class Campaign(Base):
@@ -324,6 +325,11 @@ class OfferRule(Base):
     lead_time_thresholds_json = Column(JSON, default={})
     base_benefit_json = Column(JSON, default={})
     enabled = Column(Boolean, default=True)
+    # 핫딜 운영루프: 수량/유효기간 (소진·만료 시 B2C 노출 자동 중단)
+    inventory_cap = Column(Integer, default=0)     # 0 = 무제한
+    inventory_used = Column(Integer, default=0)
+    valid_from = Column(String, nullable=True)     # YYYY-MM-DD (포함)
+    valid_to = Column(String, nullable=True)       # YYYY-MM-DD (포함)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

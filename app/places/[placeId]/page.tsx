@@ -84,6 +84,8 @@ export default function PlaceDetailPage() {
   const searchParams = useSearchParams()
   const rawPlaceId = params?.placeId
   const placeId = Array.isArray(rawPlaceId) ? rawPlaceId[0] : rawPlaceId
+  const offerParam = searchParams?.get("offer")
+  const offerRuleId = offerParam && /^\d+$/.test(offerParam) ? Number(offerParam) : null
 
   const [place, setPlace] = useState<PlaceDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -161,6 +163,7 @@ export default function PlaceDetailPage() {
         time: reserveTime,
         party_size: partySize,
         deposit_amount: depositAmount,
+        offer_rule_id: offerRuleId,
       })
       setReserveSuccess(`예약 완료! 예약금 ${won(depositAmount)}이 캐시에서 결제됐어요.`)
       recordActivity("reserve") // 게임 XP/퀘스트
@@ -212,6 +215,11 @@ export default function PlaceDetailPage() {
       const target = document.getElementById("review-form")
       target?.scrollIntoView({ behavior: "smooth", block: "start" })
     }
+    // 핫딜에서 '예약하기'로 진입(?offer=) → 예약 모달 자동 오픈
+    if (offerRuleId && !reserveOpen && !reserveSuccess) {
+      openReserve()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [place, searchParams])
 
   const toggleTag = (tag: string) => {

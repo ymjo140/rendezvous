@@ -32,6 +32,24 @@ export default function Page() {
     const token = localStorage.getItem("token")
     setIsLoggedIn(!!token)
   }, [])
+
+  // 🔐 토큰 만료(401) 감지 → 세션 정리 후 로그인 안내 (한 번만)
+  useEffect(() => {
+    let handled = false
+    const onExpired = () => {
+      if (handled) return
+      handled = true
+      setIsLoggedIn(false)
+      setActiveTab("home")
+      setShowLoginModal(true)
+      // 만료 안내는 모달로(시연 중 갑작스런 페이지 이동 방지). 게스트가 볼 수 있는 홈으로 복귀.
+      setTimeout(() => {
+        handled = false
+      }, 3000)
+    }
+    window.addEventListener("auth:expired", onExpired)
+    return () => window.removeEventListener("auth:expired", onExpired)
+  }, [])
   
   // 📤 공유된 게시물 이동 이벤트 리스너
   useEffect(() => {

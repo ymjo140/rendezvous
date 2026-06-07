@@ -65,7 +65,20 @@ export function CashWalletCard() {
     }
   }
 
-  const activeReservations = reservations.filter((r) => r.status === "confirmed")
+  // 과거 취소건은 숨기고, 그 외(확정/완료/노쇼)는 상태 배지와 함께 노출 → 사장님 상태변경이 보임
+  const STATUS_LABEL: Record<string, string> = {
+    confirmed: "예약 확정",
+    completed: "방문 완료",
+    cancelled: "취소됨",
+    no_show: "노쇼",
+  }
+  const STATUS_STYLE: Record<string, string> = {
+    confirmed: "bg-purple-100 text-purple-700",
+    completed: "bg-emerald-100 text-emerald-700",
+    cancelled: "bg-gray-100 text-gray-400",
+    no_show: "bg-rose-100 text-rose-600",
+  }
+  const visibleReservations = reservations.filter((r) => r.status !== "cancelled")
 
   return (
     <div className="px-5 mb-2 space-y-3">
@@ -104,33 +117,40 @@ export function CashWalletCard() {
         </CardContent>
       </Card>
 
-      {/* 내 예약 */}
-      {activeReservations.length > 0 && (
+      {/* 내 예약 (상태 배지 — 사장님이 확정/완료/취소 시 반영됨) */}
+      {visibleReservations.length > 0 && (
         <Card className="border-none shadow-sm rounded-3xl overflow-hidden">
           <CardContent className="p-5">
             <div className="flex items-center gap-2 mb-3">
               <CalendarCheck className="w-4 h-4 text-[#14B8A6]" />
               <span className="text-sm font-bold text-gray-800">내 예약</span>
-              <span className="text-xs text-gray-400">{activeReservations.length}</span>
+              <span className="text-xs text-gray-400">{visibleReservations.length}</span>
             </div>
             <div className="space-y-2">
-              {activeReservations.map((r) => (
+              {visibleReservations.map((r) => (
                 <div key={r.id} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2.5">
                   <div className="min-w-0">
-                    <div className="text-sm font-bold text-gray-800 truncate">{r.place_name}</div>
-                    <div className="text-[11px] text-gray-500">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-bold text-gray-800 truncate">{r.place_name}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${STATUS_STYLE[r.status] || "bg-gray-100 text-gray-500"}`}>
+                        {STATUS_LABEL[r.status] || r.status}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">
                       {r.date} {r.time} · {r.party_size}명
                       {r.deposit_amount > 0 && ` · ${won(r.deposit_amount)}`}
                     </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleCancel(r)}
-                    className="text-rose-500 hover:bg-rose-50 h-8 text-xs flex-shrink-0"
-                  >
-                    취소
-                  </Button>
+                  {r.status === "confirmed" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleCancel(r)}
+                      className="text-rose-500 hover:bg-rose-50 h-8 text-xs flex-shrink-0"
+                    >
+                      취소
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
