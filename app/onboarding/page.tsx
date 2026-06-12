@@ -115,7 +115,7 @@ export default function OnboardingPage() {
         <label className="text-sm font-bold text-gray-700">성별</label>
         <div className="flex gap-2">
           {["남성", "여성", "기타"].map(g => (
-            <button key={g} onClick={() => setGender(g)} className={`flex-1 h-12 rounded-xl border-2 font-bold transition-all ${gender === g ? "border-[#7C3AED] bg-purple-50 text-[#7C3AED]" : "border-gray-100 bg-white text-gray-400"}`}>
+            <button key={g} onClick={() => setGender(g)} className={`flex-1 h-12 rounded-xl border-2 font-bold transition-all ${gender === g ? "border-[#F5A623] bg-amber-50 text-[#F5A623]" : "border-gray-100 bg-white text-gray-400"}`}>
               {g}
             </button>
           ))}
@@ -126,7 +126,7 @@ export default function OnboardingPage() {
         <label className="text-sm font-bold text-gray-700">연령대</label>
         <div className="grid grid-cols-5 gap-1">
           {AGE_GROUPS.map(a => (
-            <button key={a} onClick={() => setAgeGroup(a)} className={`h-10 rounded-lg text-xs font-bold transition-all ${ageGroup === a ? "bg-[#7C3AED] text-white" : "bg-gray-100 text-gray-500"}`}>
+            <button key={a} onClick={() => setAgeGroup(a)} className={`h-10 rounded-lg text-xs font-bold transition-all ${ageGroup === a ? "bg-[#F5A623] text-white" : "bg-gray-100 text-gray-500"}`}>
               {a}
             </button>
           ))}
@@ -136,12 +136,12 @@ export default function OnboardingPage() {
       <div className="space-y-2">
         <label className="text-sm font-bold text-gray-700">직업 (AI 추천 참고용)</label>
         <div className="flex gap-2">
-          <button onClick={() => setJobStatus("student")} className={`flex-1 h-12 rounded-xl border-2 font-bold ${jobStatus === "student" ? "border-[#7C3AED] text-[#7C3AED]" : "border-gray-100 text-gray-400"}`}>학생</button>
-          <button onClick={() => setJobStatus("worker")} className={`flex-1 h-12 rounded-xl border-2 font-bold ${jobStatus === "worker" ? "border-[#7C3AED] text-[#7C3AED]" : "border-gray-100 text-gray-400"}`}>직장인</button>
+          <button onClick={() => setJobStatus("student")} className={`flex-1 h-12 rounded-xl border-2 font-bold ${jobStatus === "student" ? "border-[#F5A623] text-[#F5A623]" : "border-gray-100 text-gray-400"}`}>학생</button>
+          <button onClick={() => setJobStatus("worker")} className={`flex-1 h-12 rounded-xl border-2 font-bold ${jobStatus === "worker" ? "border-[#F5A623] text-[#F5A623]" : "border-gray-100 text-gray-400"}`}>직장인</button>
         </div>
       </div>
 
-      <Button className="w-full h-14 rounded-xl bg-[#7C3AED] text-white font-bold text-lg mt-4" onClick={() => {
+      <Button className="w-full h-14 rounded-xl bg-[#F5A623] text-white font-bold text-lg mt-4" onClick={() => {
         if (!name || !gender || !ageGroup) return alert("정보를 모두 입력해주세요.")
         setStep(2)
       }}>다음으로 <ChevronRight className="w-5 h-5" /></Button>
@@ -151,14 +151,14 @@ export default function OnboardingPage() {
   const renderStep2 = () => (
     <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300">
       <div className="text-center py-6">
-        <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4 text-[#7C3AED]">
+        <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4 text-[#F5A623]">
           <MapPin className="w-10 h-10" />
         </div>
         <h3 className="text-lg font-bold text-gray-800">어디에 주로 활동하시나요?</h3>
         <p className="text-sm text-gray-500 mt-1">거주지 또는 자주 가는 곳을 설정해주세요.</p>
       </div>
 
-      <Button variant="outline" className={`w-full h-16 rounded-xl justify-start px-4 gap-3 border-2 ${coords.lat !== 0 ? "border-[#7C3AED] bg-purple-50 text-[#7C3AED]" : "border-dashed border-gray-300"}`} onClick={handleGetLocation}>
+      <Button variant="outline" className={`w-full h-16 rounded-xl justify-start px-4 gap-3 border-2 ${coords.lat !== 0 ? "border-[#F5A623] bg-amber-50 text-[#F5A623]" : "border-dashed border-gray-300"}`} onClick={handleGetLocation}>
         {locLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <MapPin className="w-6 h-6" />}
         <div className="flex-1 text-left">
           <div className="font-bold text-sm">현재 위치로 설정</div>
@@ -167,7 +167,7 @@ export default function OnboardingPage() {
         {coords.lat !== 0 && <Check className="w-5 h-5" />}
       </Button>
 
-      <Button className="w-full h-14 rounded-xl bg-[#7C3AED] text-white font-bold text-lg mt-8" onClick={() => {
+      <Button className="w-full h-14 rounded-xl bg-[#F5A623] text-white font-bold text-lg mt-8" onClick={() => {
         if (coords.lat === 0) return alert("위치를 설정해주세요.")
         setStep(3)
       }}>다음으로 <ChevronRight className="w-5 h-5" /></Button>
@@ -177,10 +177,10 @@ export default function OnboardingPage() {
   const renderStep3 = () => (
     <div className="space-y-8 animate-in slide-in-from-right-4 fade-in duration-300 pb-10">
       <div className="space-y-3">
-        <label className="flex items-center gap-2 text-sm font-bold text-gray-800"><Utensils className="w-4 h-4 text-[#7C3AED]" /> 좋아하는 음식 (복수 선택)</label>
+        <label className="flex items-center gap-2 text-sm font-bold text-gray-800"><Utensils className="w-4 h-4 text-[#F5A623]" /> 좋아하는 음식 (복수 선택)</label>
         <div className="flex flex-wrap gap-2">
           {FOOD_TAGS.map(t => (
-            <Badge key={t} variant="outline" onClick={() => toggleSelection(selectedFoods, setSelectedFoods, t)} className={`cursor-pointer px-3 py-2 rounded-lg transition-all ${selectedFoods.includes(t) ? "bg-[#7C3AED] text-white border-transparent" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
+            <Badge key={t} variant="outline" onClick={() => toggleSelection(selectedFoods, setSelectedFoods, t)} className={`cursor-pointer px-3 py-2 rounded-lg transition-all ${selectedFoods.includes(t) ? "bg-[#F5A623] text-white border-transparent" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
               {t}
             </Badge>
           ))}
@@ -212,7 +212,7 @@ export default function OnboardingPage() {
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <label className="flex items-center gap-2 text-sm font-bold text-gray-800"><Wallet className="w-4 h-4 text-green-500" /> 1인당 평균 예산</label>
-          <span className="text-sm font-bold text-[#7C3AED]">{budget[0].toLocaleString()}원</span>
+          <span className="text-sm font-bold text-[#F5A623]">{budget[0].toLocaleString()}원</span>
         </div>
         <Slider defaultValue={[20000]} max={100000} step={5000} min={5000} onValueChange={setBudget} className="py-2" />
         <div className="flex justify-between text-xs text-gray-400 px-1">
@@ -221,7 +221,7 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      <Button className="w-full h-14 rounded-xl bg-gradient-to-r from-[#7C3AED] to-[#14B8A6] text-white font-bold text-lg shadow-lg mt-6" onClick={handleSubmit} disabled={loading}>
+      <Button className="w-full h-14 rounded-xl bg-gradient-to-r from-[#F5A623] to-[#14B8A6] text-white font-bold text-lg shadow-lg mt-6" onClick={handleSubmit} disabled={loading}>
         {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : "WeMeet 시작하기! 🚀"}
       </Button>
     </div>
@@ -230,7 +230,7 @@ export default function OnboardingPage() {
   return (
     <div className="flex min-h-screen flex-col bg-white font-['Pretendard']">
       <div className="w-full h-1 bg-gray-100 fixed top-0 left-0 z-10">
-        <div className="h-full bg-[#7C3AED] transition-all duration-500" style={{ width: `${(step / 3) * 100}%` }}></div>
+        <div className="h-full bg-[#F5A623] transition-all duration-500" style={{ width: `${(step / 3) * 100}%` }}></div>
       </div>
 
       <div className="p-6 mt-4 flex-1 overflow-y-auto">

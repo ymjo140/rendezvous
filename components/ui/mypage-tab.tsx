@@ -81,7 +81,7 @@ function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
 
     return (
         <div className="relative w-full">
-            <div className="flex items-center border rounded-xl px-3 bg-gray-50 focus-within:border-[#7C3AED] focus-within:ring-1 focus-within:ring-[#7C3AED]/20 transition-all">
+            <div className="flex items-center border rounded-xl px-3 bg-gray-50 focus-within:border-[#F5A623] focus-within:ring-1 focus-within:ring-[#F5A623]/20 transition-all">
                 <Search className="w-4 h-4 text-gray-400 mr-2"/>
                 <Input 
                     value={query} 
@@ -397,7 +397,7 @@ export function MyPageTab() {
       {/* 1. 상단 프로필 카드 */}
       <div className="p-5 pt-8">
           <Card className="relative overflow-hidden border-none shadow-xl text-white rounded-3xl">
-            <div className="absolute inset-0 bg-gradient-to-br from-[#7C3AED] to-[#14B8A6]"></div>
+            <div className="absolute inset-0 bg-gradient-to-br from-[#F5A623] to-[#14B8A6]"></div>
             <div className="absolute inset-0 bg-white/10 backdrop-blur-[1px]"></div>
 
             <CardContent className="relative p-6 z-10">
@@ -448,7 +448,7 @@ export function MyPageTab() {
                 </div>
 
                 <div className="mt-3">
-                    <Button className="w-full bg-white text-[#7C3AED] hover:bg-gray-50 border-0 h-12 rounded-xl text-sm font-bold shadow-md transition-all" onClick={() => setIsPreferenceModalOpen(true)}>
+                    <Button className="w-full bg-white text-[#F5A623] hover:bg-gray-50 border-0 h-12 rounded-xl text-sm font-bold shadow-md transition-all" onClick={() => setIsPreferenceModalOpen(true)}>
                         <Utensils className="w-4 h-4 mr-2" /> 내 취향 설정하기
                     </Button>
                 </div>
@@ -468,16 +468,16 @@ export function MyPageTab() {
                     <div className="flex items-center gap-3">
                       <div className="text-4xl">{t.emoji}</div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-bold text-[#7C3AED]">내 취향 유형</div>
+                        <div className="text-[11px] font-bold text-[#F5A623]">내 취향 유형</div>
                         <div className="text-lg font-bold text-gray-800 truncate">{t.title}</div>
                         <div className="text-xs text-gray-500">{t.desc}</div>
                       </div>
-                      <button onClick={() => setIsPreferenceModalOpen(true)} className="text-gray-400 hover:text-[#7C3AED] flex-shrink-0 p-1.5 rounded-full hover:bg-purple-50 transition-colors">
+                      <button onClick={() => setIsPreferenceModalOpen(true)} className="text-gray-400 hover:text-[#F5A623] flex-shrink-0 p-1.5 rounded-full hover:bg-amber-50 transition-colors">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-1.5">
-                      {t.spendLabel && <Badge className="bg-purple-100 text-purple-600 text-[10px] font-bold">💰 {t.spendLabel}</Badge>}
+                      {t.spendLabel && <Badge className="bg-amber-100 text-amber-600 text-[10px] font-bold">💰 {t.spendLabel}</Badge>}
                       {t.vibes.slice(0, 4).map((v) => (
                         <Badge key={`v-${v}`} variant="secondary" className="bg-gray-100 text-gray-600 text-[10px]">{v}</Badge>
                       ))}
@@ -498,7 +498,7 @@ export function MyPageTab() {
                         <div className="text-xs text-gray-500">취향을 설정하면 유형을 분석해드려요</div>
                       </div>
                     </div>
-                    <Button size="sm" className="bg-[#7C3AED] hover:bg-purple-700 rounded-xl flex-shrink-0" onClick={() => setIsPreferenceModalOpen(true)}>
+                    <Button size="sm" className="bg-[#F5A623] hover:bg-amber-700 rounded-xl flex-shrink-0" onClick={() => setIsPreferenceModalOpen(true)}>
                       분석하기
                     </Button>
                   </div>
@@ -527,19 +527,19 @@ export function MyPageTab() {
             <TabsList className="w-full h-14 bg-white rounded-2xl p-1.5 shadow-sm mb-6 grid grid-cols-4 border border-gray-100">
                 <TabsTrigger 
                     value="posts" 
-                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-500 data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
+                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-orange-500 data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
                 >
                    <Grid3X3 className="w-4 h-4 mr-1"/> 게시물
                 </TabsTrigger>
                 <TabsTrigger 
                     value="calendar" 
-                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#7C3AED] data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
+                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#F5A623] data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
                 >
                    <Calendar className="w-4 h-4 mr-1"/> 일정
                 </TabsTrigger>
                 <TabsTrigger 
                     value="reviews" 
-                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#7C3AED] data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
+                    className="rounded-xl h-full text-gray-500 data-[state=active]:bg-[#F5A623] data-[state=active]:text-white font-bold transition-all shadow-none text-xs sm:text-sm"
                 >
                     활동
                 </TabsTrigger>
@@ -555,7 +555,7 @@ export function MyPageTab() {
             <TabsContent value="posts" className="space-y-4">
                 {postsLoading ? (
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
-                        <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-500 mb-2" />
+                        <Loader2 className="w-6 h-6 animate-spin mx-auto text-amber-500 mb-2" />
                         <p className="text-sm text-gray-400">게시물 불러오는 중...</p>
                     </div>
                 ) : myPosts.length > 0 ? (
@@ -563,10 +563,10 @@ export function MyPageTab() {
                         {/* 통계 헤더 */}
                         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <Grid3X3 className="w-5 h-5 text-purple-500" />
+                                <Grid3X3 className="w-5 h-5 text-amber-500" />
                                 <span className="font-bold text-gray-800">내 게시물</span>
                             </div>
-                            <Badge className="bg-purple-100 text-purple-600 font-bold">{myPosts.length}개</Badge>
+                            <Badge className="bg-amber-100 text-amber-600 font-bold">{myPosts.length}개</Badge>
                         </div>
                         
                         {/* 그리드 */}
@@ -613,13 +613,13 @@ export function MyPageTab() {
                     </div>
                 ) : (
                     <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center space-y-3">
-                        <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                            <Grid3X3 className="w-8 h-8 text-purple-500" />
+                        <div className="w-16 h-16 bg-gradient-to-br from-amber-100 to-orange-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <Grid3X3 className="w-8 h-8 text-amber-500" />
                         </div>
                         <div className="text-gray-800 font-bold">아직 게시물이 없어요</div>
                         <div className="text-gray-400 text-sm">탐색 탭에서 첫 게시물을 올려보세요!</div>
                         <Button 
-                            className="mt-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold rounded-xl"
+                            className="mt-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold rounded-xl"
                             onClick={() => {/* 탐색 탭으로 이동하는 로직 추가 가능 */}}
                         >
                             게시물 올리기
@@ -685,7 +685,7 @@ export function MyPageTab() {
                         {/* 폴더 아이템 목록 */}
                         {folderItemsLoading ? (
                             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
-                                <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-500 mb-2" />
+                                <Loader2 className="w-6 h-6 animate-spin mx-auto text-amber-500 mb-2" />
                                 <p className="text-sm text-gray-400">불러오는 중...</p>
                             </div>
                         ) : folderItems.length > 0 ? (
@@ -704,8 +704,8 @@ export function MyPageTab() {
                                                     className="w-full h-full object-cover"
                                                 />
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100">
-                                                    <Heart className="w-8 h-8 text-purple-300" />
+                                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-amber-100 to-orange-100">
+                                                    <Heart className="w-8 h-8 text-amber-300" />
                                                 </div>
                                             )}
                                             {/* 삭제 버튼 */}
@@ -741,7 +741,7 @@ export function MyPageTab() {
                     <>
                         {foldersLoading ? (
                             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
-                                <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-500 mb-2" />
+                                <Loader2 className="w-6 h-6 animate-spin mx-auto text-amber-500 mb-2" />
                                 <p className="text-sm text-gray-400">폴더 불러오는 중...</p>
                             </div>
                         ) : saveFolders.length > 0 ? (
@@ -789,7 +789,7 @@ export function MyPageTab() {
                 className="w-full flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors border-b border-gray-50 text-left"
                 onClick={() => setIsPreferenceModalOpen(true)}
             >
-                <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-[#7C3AED]">
+                <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center text-[#F5A623]">
                     <Utensils className="w-5 h-5" />
                 </div>
                 <div className="flex-1">
@@ -841,7 +841,7 @@ export function MyPageTab() {
               <DialogHeader>
                   <DialogTitle className="text-lg">✍️ 생생한 후기 남기기</DialogTitle>
                   <DialogDescription className="text-xs">
-                      <span className="font-bold text-[#7C3AED]">{targetPlace?.name}</span>에서의 경험은 어떠셨나요?
+                      <span className="font-bold text-[#F5A623]">{targetPlace?.name}</span>에서의 경험은 어떠셨나요?
                   </DialogDescription>
               </DialogHeader>
               <div className="py-4 space-y-6">
@@ -855,7 +855,7 @@ export function MyPageTab() {
                                       {key === 'price' && '💰 가격/가성비'}
                                       {key === 'vibe' && '✨ 분위기'}
                                   </span>
-                                  <span className="text-[#7C3AED]">{(scores as any)[key]}점</span>
+                                  <span className="text-[#F5A623]">{(scores as any)[key]}점</span>
                               </div>
                               <Slider 
                                   defaultValue={[3]} 
@@ -870,11 +870,11 @@ export function MyPageTab() {
                       placeholder="다른 사용자들에게 도움이 되는 자세한 후기를 남겨주세요." 
                       value={reviewText} 
                       onChange={(e) => setReviewText(e.target.value)} 
-                      className="resize-none h-24 text-sm border-gray-200 focus:border-[#7C3AED] rounded-xl bg-gray-50" 
+                      className="resize-none h-24 text-sm border-gray-200 focus:border-[#F5A623] rounded-xl bg-gray-50" 
                   />
               </div>
               <DialogFooter>
-                  <Button onClick={handleSubmitReview} className="w-full bg-[#7C3AED] hover:bg-purple-700 h-12 rounded-xl text-base font-bold shadow-lg">
+                  <Button onClick={handleSubmitReview} className="w-full bg-[#F5A623] hover:bg-amber-700 h-12 rounded-xl text-base font-bold shadow-lg">
                       리뷰 등록하기
                   </Button>
               </DialogFooter>
@@ -956,7 +956,7 @@ export function MyPageTab() {
                                           취소
                                       </Button>
                                       <Button
-                                          className="flex-1 bg-[#7C3AED] hover:bg-purple-700 rounded-xl"
+                                          className="flex-1 bg-[#F5A623] hover:bg-amber-700 rounded-xl"
                                           disabled={postSaving}
                                           onClick={handleUpdatePost}
                                       >

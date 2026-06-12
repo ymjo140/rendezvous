@@ -47,7 +47,7 @@ export const FilterDialog = ({
                   key={purposeKey}
                   variant={selectedPurpose === purposeKey ? "default" : "outline"}
                   className={`rounded-full h-8 text-xs flex-shrink-0 ${
-                    selectedPurpose === purposeKey ? "bg-[#7C3AED] text-white" : "text-gray-600"
+                    selectedPurpose === purposeKey ? "bg-[#F5A623] text-white" : "text-gray-600"
                   }`}
                   onClick={() => onSelectPurpose(purposeKey)}
                 >
@@ -80,7 +80,7 @@ export const FilterDialog = ({
                           variant={selectedFilters[tabKey]?.includes(opt) ? "default" : "outline"}
                           className={`h-auto py-2 px-1 text-xs break-keep ${
                             selectedFilters[tabKey]?.includes(opt)
-                              ? "bg-purple-50 text-[#7C3AED] border-[#7C3AED]"
+                              ? "bg-amber-50 text-[#F5A623] border-[#F5A623]"
                               : "text-gray-600 border-gray-200"
                           }`}
                           onClick={() => onToggleFilter(tabKey, opt)}
@@ -101,7 +101,7 @@ export const FilterDialog = ({
           )}
         </div>
         <DialogFooter className="p-4 border-t bg-white">
-          <Button className="w-full bg-[#7C3AED] hover:bg-purple-700 font-bold" onClick={() => onOpenChange(false)}>
+          <Button className="w-full bg-[#F5A623] hover:bg-amber-700 font-bold" onClick={() => onOpenChange(false)}>
             적용
           </Button>
         </DialogFooter>

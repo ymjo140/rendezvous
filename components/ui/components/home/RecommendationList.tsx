@@ -47,7 +47,7 @@ const PlaceCard = ({ place, onClick }: { place: any; onClick: () => void }) => (
     <div className="flex-1">
       <div className="font-bold text-gray-800 flex items-center gap-2">
         {place.name || place.title}
-        <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
+        <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
           {place.wemeet_rating
             ? `⭐${place.wemeet_rating.toFixed(1)}`
             : place.score
@@ -61,7 +61,7 @@ const PlaceCard = ({ place, onClick }: { place: any; onClick: () => void }) => (
       </div>
       <div className="text-[10px] text-gray-400 mt-1">{place.address}</div>
       {place.reason && (
-        <div className="text-[11px] font-bold text-[#7C3AED] mt-1.5 flex items-center gap-1">
+        <div className="text-[11px] font-bold text-[#F5A623] mt-1.5 flex items-center gap-1">
           <span>✨</span>
           <span className="truncate">{place.reason}</span>
         </div>
@@ -148,7 +148,7 @@ export const RecommendationList = ({
           {/* 헤더 + 지역 탭 (고정) */}
           <div className="px-5 shrink-0">
             {isPersonalized && (
-              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-purple-50 px-3 py-1 text-xs font-bold text-[#7C3AED]">
+              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-[#F5A623]">
                 <span>✨</span>
                 <span>
                   {personaLabel
@@ -162,7 +162,7 @@ export const RecommendationList = ({
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setShareOpen(true)}
-                  className="flex items-center gap-1 text-xs font-bold text-[#7C3AED]"
+                  className="flex items-center gap-1 text-xs font-bold text-[#F5A623]"
                 >
                   <Share2 className="w-3.5 h-3.5" /> 공유
                 </button>
@@ -178,7 +178,7 @@ export const RecommendationList = ({
                   key={i}
                   onClick={() => onSelectTab(i)}
                   className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${
-                    activeTabIdx === i ? "bg-[#7C3AED] text-white shadow-md" : "bg-gray-100 text-gray-500"
+                    activeTabIdx === i ? "bg-[#F5A623] text-white shadow-md" : "bg-gray-100 text-gray-500"
                   }`}
                 >
                   {r.region_name}
@@ -194,7 +194,7 @@ export const RecommendationList = ({
                   onClick={() => setSortBy(opt.key)}
                   className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
                     sortBy === opt.key
-                      ? "bg-[#7C3AED] text-white"
+                      ? "bg-[#F5A623] text-white"
                       : "bg-gray-100 text-gray-500 hover:bg-gray-200"
                   }`}
                 >

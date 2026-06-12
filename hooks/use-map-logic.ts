@@ -188,7 +188,7 @@ export const useMapLogic = ({
                 const lng = myProfile?.location?.lng || myLocation?.lng;
                 const name = myProfile?.name || fallbackName;
                 if (lat && lng) {
-                    origins.push({ lat, lng, color: "#7C3AED", name });
+                    origins.push({ lat, lng, color: "#F5A623", name });
                 }
             }
 

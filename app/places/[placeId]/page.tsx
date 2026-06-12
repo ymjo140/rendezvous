@@ -434,7 +434,7 @@ export default function PlaceDetailPage() {
       <main className="min-h-screen bg-gray-50 font-['Pretendard'] flex items-center justify-center">
         <div className="text-center space-y-3">
           <p className="text-sm text-gray-500">잘못된 접근입니다.</p>
-          <Link href="/" className="text-sm text-purple-600">
+          <Link href="/" className="text-sm text-amber-600">
             홈으로 이동
           </Link>
         </div>
@@ -446,7 +446,7 @@ export default function PlaceDetailPage() {
     return (
       <main className="min-h-screen bg-gray-50 font-['Pretendard'] flex items-center justify-center">
         <div className="text-center space-y-3">
-          <div className="animate-spin rounded-full h-8 w-8 border-4 border-purple-500 border-t-transparent mx-auto"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-amber-500 border-t-transparent mx-auto"></div>
           <p className="text-sm text-gray-500">장소 정보를 불러오는 중...</p>
         </div>
       </main>
@@ -463,7 +463,7 @@ export default function PlaceDetailPage() {
           <button
             type="button"
             onClick={() => setRetryKey((prev) => prev + 1)}
-            className="text-sm text-purple-600"
+            className="text-sm text-amber-600"
           >
             다시 시도
           </button>
@@ -521,12 +521,12 @@ export default function PlaceDetailPage() {
                   disabled={savingPlace}
                   className={`rounded-full border p-2 transition-colors ${
                     savedPlace
-                      ? "border-purple-200 bg-purple-50 text-purple-600"
-                      : "border-gray-200 bg-white text-gray-400 hover:text-purple-500"
+                      ? "border-amber-200 bg-amber-50 text-amber-600"
+                      : "border-gray-200 bg-white text-gray-400 hover:text-amber-500"
                   }`}
                   title={savedPlace ? "저장됨" : "저장"}
                 >
-                  <Bookmark className={`h-4 w-4 ${savedPlace ? "fill-purple-600" : ""}`} />
+                  <Bookmark className={`h-4 w-4 ${savedPlace ? "fill-amber-600" : ""}`} />
                 </button>
               </div>
             </div>
@@ -628,7 +628,7 @@ export default function PlaceDetailPage() {
                         [item.key]: Number(event.target.value),
                       }))
                     }
-                    className="w-full accent-purple-500"
+                    className="w-full accent-amber-500"
                   />
                 </div>
               ))}
@@ -648,8 +648,8 @@ export default function PlaceDetailPage() {
                       onClick={() => toggleTag(tag)}
                       className={`px-3 py-1 rounded-full text-xs border transition ${
                         selected
-                          ? "bg-purple-600 text-white border-purple-600"
-                          : "bg-white text-gray-500 border-gray-200 hover:border-purple-200"
+                          ? "bg-amber-600 text-white border-amber-600"
+                          : "bg-white text-gray-500 border-gray-200 hover:border-amber-200"
                       }`}
                     >
                       #{tag}
@@ -682,7 +682,7 @@ export default function PlaceDetailPage() {
                 <button
                   type="button"
                   onClick={() => reviewFileInputRef.current?.click()}
-                  className="text-purple-600"
+                  className="text-amber-600"
                 >
                   추가
                 </button>
@@ -737,7 +737,7 @@ export default function PlaceDetailPage() {
             )}
             <Button
               type="submit"
-              className="w-full bg-purple-600 hover:bg-purple-700"
+              className="w-full bg-amber-600 hover:bg-amber-700"
               disabled={reviewSubmitting}
             >
               {reviewSubmitting ? "등록 중..." : "리뷰 등록"}
@@ -816,7 +816,7 @@ export default function PlaceDetailPage() {
           </Button>
           <Button
             onClick={openReserve}
-            className="flex-[1.4] bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+            className="flex-[1.4] bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
           >
             <CalendarCheck className="w-4 h-4 mr-2" />
             캐시로 예약
@@ -858,11 +858,11 @@ export default function PlaceDetailPage() {
                         onClick={() => setReserveDate(c.date)}
                         className={`flex w-12 flex-shrink-0 flex-col items-center rounded-xl border py-2 transition-colors ${
                           selected
-                            ? "border-purple-500 bg-purple-600 text-white"
-                            : "border-gray-200 bg-white text-gray-700 hover:border-purple-200"
+                            ? "border-amber-500 bg-amber-600 text-white"
+                            : "border-gray-200 bg-white text-gray-700 hover:border-amber-200"
                         }`}
                       >
-                        <span className={`text-[10px] ${selected ? "text-purple-100" : "text-gray-400"}`}>
+                        <span className={`text-[10px] ${selected ? "text-amber-100" : "text-gray-400"}`}>
                           {c.dow}
                         </span>
                         <span className="text-sm font-bold">{c.day}</span>
@@ -887,8 +887,8 @@ export default function PlaceDetailPage() {
                         onClick={() => setReserveTime(slot)}
                         className={`rounded-lg border py-2 text-xs font-semibold transition-colors ${
                           selected
-                            ? "border-purple-500 bg-purple-600 text-white"
-                            : "border-gray-200 bg-white text-gray-700 hover:border-purple-200"
+                            ? "border-amber-500 bg-amber-600 text-white"
+                            : "border-gray-200 bg-white text-gray-700 hover:border-amber-200"
                         }`}
                       >
                         {slot}
@@ -941,7 +941,7 @@ export default function PlaceDetailPage() {
               <Button
                 onClick={handleReserve}
                 disabled={reserveSubmitting || !!reserveSuccess}
-                className="w-full h-12 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-bold"
+                className="w-full h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 font-bold"
               >
                 {reserveSubmitting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

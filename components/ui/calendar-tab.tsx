@@ -244,9 +244,9 @@ export function CalendarTab() {
                         <Button variant="ghost" size="icon" onClick={() => setViewMode('month')} className="-ml-2"><ArrowLeft className="w-5 h-5"/></Button>
                     )}
                     <h1 className="text-xl font-bold">{viewMode === 'month' ? '내 일정' : '이번 주'}</h1>
-                    {isAutoSyncing && (<span className="text-[10px] text-[#7C3AED] bg-purple-50 px-2 py-1 rounded-full animate-pulse flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> 동기화 중...</span>)}
+                    {isAutoSyncing && (<span className="text-[10px] text-[#F5A623] bg-amber-50 px-2 py-1 rounded-full animate-pulse flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> 동기화 중...</span>)}
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setIsSyncOpen(true)} className="h-8 text-xs gap-1 border-purple-200 text-purple-600 bg-purple-50"><RefreshCw className="w-3 h-3"/> 외부 일정</Button>
+                <Button variant="outline" size="sm" onClick={() => setIsSyncOpen(true)} className="h-8 text-xs gap-1 border-amber-200 text-amber-600 bg-amber-50"><RefreshCw className="w-3 h-3"/> 외부 일정</Button>
             </div>
 
             <ScrollArea className="flex-1 px-5 pb-4">
@@ -269,7 +269,7 @@ export function CalendarTab() {
                                     const hasEvent = eventsOnDate(d).length > 0;
                                     const isSelected = formatDateLocal(d) === formatDateLocal(selectedDate);
                                     return (
-                                        <div key={i} onClick={() => handleDateClick(d)} className={`relative w-8 h-8 flex items-center justify-center mx-auto cursor-pointer rounded-full ${isSelected ? 'bg-[#7C3AED] text-white' : 'hover:bg-gray-100'}`}>
+                                        <div key={i} onClick={() => handleDateClick(d)} className={`relative w-8 h-8 flex items-center justify-center mx-auto cursor-pointer rounded-full ${isSelected ? 'bg-[#F5A623] text-white' : 'hover:bg-gray-100'}`}>
                                             {d.getDate()}
                                             {hasEvent && !isSelected && <span className="absolute bottom-1 w-1 h-1 bg-[#14B8A6] rounded-full"></span>}
                                         </div>
@@ -324,7 +324,7 @@ export function CalendarTab() {
                                 placeholder="예: 팀 회식, 생일 파티" 
                                 value={newEvent.title} 
                                 onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                                className="bg-gray-50 border-gray-200 focus:border-[#7C3AED] focus:ring-[#7C3AED]"
+                                className="bg-gray-50 border-gray-200 focus:border-[#F5A623] focus:ring-[#F5A623]"
                             />
                         </div>
                         <div>
@@ -372,7 +372,7 @@ export function CalendarTab() {
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button onClick={handleCreateEvent} className="w-full bg-[#7C3AED] hover:bg-[#6D28D9] font-bold">
+                        <Button onClick={handleCreateEvent} className="w-full bg-[#F5A623] hover:bg-[#D97706] font-bold">
                             등록하기
                         </Button>
                     </DialogFooter>
@@ -382,10 +382,10 @@ export function CalendarTab() {
             <Dialog open={isSyncOpen} onOpenChange={setIsSyncOpen}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader><DialogTitle>외부 캘린더 가져오기</DialogTitle><DialogDescription className="text-xs text-gray-500">에브리타임, 구글 캘린더 URL 입력</DialogDescription></DialogHeader>
-                    <div className="flex gap-2 mb-2">{["에브리타임", "구글"].map(src => (<Button key={src} size="sm" variant={syncSource === src ? "default" : "outline"} onClick={() => setSyncSource(src)} className={`flex-1 text-xs ${syncSource === src ? "bg-[#7C3AED]" : ""}`}>{src}</Button>))}</div>
+                    <div className="flex gap-2 mb-2">{["에브리타임", "구글"].map(src => (<Button key={src} size="sm" variant={syncSource === src ? "default" : "outline"} onClick={() => setSyncSource(src)} className={`flex-1 text-xs ${syncSource === src ? "bg-[#F5A623]" : ""}`}>{src}</Button>))}</div>
                     {localStorage.getItem("calendar_sync_url") && (<div className="mb-2 p-2 bg-green-50 text-green-700 text-xs rounded-lg flex justify-between items-center"><span>? 자동 동기화 켜짐</span><button onClick={handleUnlink} className="text-red-500 underline">해제</button></div>)}
                     <Input placeholder="https://..." value={syncUrl} onChange={e=>setSyncUrl(e.target.value)} className="text-sm h-10" />
-                    <DialogFooter><Button onClick={handleSync} disabled={syncLoading} className="w-full bg-[#7C3AED] hover:bg-[#6D28D9]">{syncLoading ? <RefreshCw className="w-4 h-4 animate-spin"/> : "불러오기"}</Button></DialogFooter>
+                    <DialogFooter><Button onClick={handleSync} disabled={syncLoading} className="w-full bg-[#F5A623] hover:bg-[#D97706]">{syncLoading ? <RefreshCw className="w-4 h-4 animate-spin"/> : "불러오기"}</Button></DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

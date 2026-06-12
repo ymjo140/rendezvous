@@ -450,7 +450,7 @@ export function HomeTab() {
 
       {isLoading && (
         <div className="absolute inset-0 bg-white/60 z-50 flex items-center justify-center">
-          <Loader2 className="w-10 h-10 text-[#7C3AED] animate-spin" />
+          <Loader2 className="w-10 h-10 text-[#F5A623] animate-spin" />
         </div>
       )}
       {gpsError && (
@@ -499,9 +499,9 @@ export function HomeTab() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto py-2 space-y-4">
-            <div className="bg-purple-50 p-4 rounded-lg text-center">
-              <div className="text-sm text-purple-800 font-bold mb-1">AI 추천 점수</div>
-              <div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score || selectedPlace?.wemeet_rating || "NEW"}</div>
+            <div className="bg-amber-50 p-4 rounded-lg text-center">
+              <div className="text-sm text-amber-800 font-bold mb-1">AI 추천 점수</div>
+              <div className="text-3xl font-black text-[#F5A623]">{selectedPlace?.score || selectedPlace?.wemeet_rating || "NEW"}</div>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -572,7 +572,7 @@ function PlaceAutocomplete({ value, onChange, onSelect, placeholder }: any) {
                 onSelect(item)
                 setList([])
               }}
-              className="p-3 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0 border-gray-100 transition-colors flex justify-between items-center"
+              className="p-3 hover:bg-amber-50 cursor-pointer text-sm border-b last:border-0 border-gray-100 transition-colors flex justify-between items-center"
             >
               <div className="font-bold text-gray-800">
                 {item.name}

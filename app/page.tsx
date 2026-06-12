@@ -129,10 +129,10 @@ export default function Page() {
         <button 
             onClick={() => handleTabChange("home")} 
             className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
-                activeTab === "home" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+                activeTab === "home" ? "text-[#F5A623] -translate-y-1" : "text-gray-300 hover:text-gray-400"
             }`}
         >
-          <Map className={`w-6 h-6 ${activeTab === "home" ? "fill-[#7C3AED]/10" : ""}`} />
+          <Map className={`w-6 h-6 ${activeTab === "home" ? "fill-[#F5A623]/10" : ""}`} />
           <span className="text-[10px] font-bold">홈</span>
         </button>
 
@@ -140,10 +140,10 @@ export default function Page() {
         <button 
             onClick={() => handleTabChange("chat")} 
             className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
-                activeTab === "chat" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+                activeTab === "chat" ? "text-[#F5A623] -translate-y-1" : "text-gray-300 hover:text-gray-400"
             }`}
         >
-          <MessageCircle className={`w-6 h-6 ${activeTab === "chat" ? "fill-[#7C3AED]/10" : ""}`} />
+          <MessageCircle className={`w-6 h-6 ${activeTab === "chat" ? "fill-[#F5A623]/10" : ""}`} />
           <span className="text-[10px] font-medium">채팅</span>
         </button>
 
@@ -151,10 +151,10 @@ export default function Page() {
         <button 
             onClick={() => handleTabChange("hotdeals")} 
             className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
-                activeTab === "hotdeals" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+                activeTab === "hotdeals" ? "text-[#F5A623] -translate-y-1" : "text-gray-300 hover:text-gray-400"
             }`}
         >
-          <Flame className={`w-6 h-6 ${activeTab === "hotdeals" ? "fill-[#7C3AED]/10" : ""}`} />
+          <Flame className={`w-6 h-6 ${activeTab === "hotdeals" ? "fill-[#F5A623]/10" : ""}`} />
           <span className="text-[10px] font-medium">핫딜</span>
         </button>
 
@@ -162,11 +162,11 @@ export default function Page() {
         <button 
             onClick={() => handleTabChange("discovery")} 
             className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
-                activeTab === "discovery" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+                activeTab === "discovery" ? "text-[#F5A623] -translate-y-1" : "text-gray-300 hover:text-gray-400"
             }`}
         >
           {/* Compass 아이콘 사용 */}
-          <Compass className={`w-6 h-6 ${activeTab === "discovery" ? "fill-[#7C3AED]/10" : ""}`} />
+          <Compass className={`w-6 h-6 ${activeTab === "discovery" ? "fill-[#F5A623]/10" : ""}`} />
           <span className="text-[10px] font-medium">탐색</span>
         </button>
 
@@ -174,10 +174,10 @@ export default function Page() {
         <button 
             onClick={() => handleTabChange("mypage")} 
             className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
-                activeTab === "mypage" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+                activeTab === "mypage" ? "text-[#F5A623] -translate-y-1" : "text-gray-300 hover:text-gray-400"
             }`}
         >
-          <User className={`w-6 h-6 ${activeTab === "mypage" ? "fill-[#7C3AED]/10" : ""}`} />
+          <User className={`w-6 h-6 ${activeTab === "mypage" ? "fill-[#F5A623]/10" : ""}`} />
           <span className="text-[10px] font-medium">마이페이지</span>
         </button>
 
@@ -187,8 +187,8 @@ export default function Page() {
       <Dialog open={showLoginModal} onOpenChange={setShowLoginModal}>
         <DialogContent className="sm:max-w-xs rounded-3xl p-6 font-['Pretendard']">
             <div className="flex flex-col items-center text-center gap-4">
-                <div className="w-14 h-14 bg-purple-50 rounded-full flex items-center justify-center">
-                    <Lock className="w-7 h-7 text-[#7C3AED]" />
+                <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center">
+                    <Lock className="w-7 h-7 text-[#F5A623]" />
                 </div>
                 <div>
                     <DialogTitle className="text-lg font-bold mb-1">로그인이 필요해요</DialogTitle>

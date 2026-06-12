@@ -1169,7 +1169,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     if (sharedPostLoading) {
         return (
             <div className="h-full bg-white flex flex-col items-center justify-center font-['Pretendard']">
-                <div className="animate-spin rounded-full h-10 w-10 border-4 border-purple-500 border-t-transparent mb-4"></div>
+                <div className="animate-spin rounded-full h-10 w-10 border-4 border-amber-500 border-t-transparent mb-4"></div>
                 <p className="text-gray-500 text-sm">게시물 불러오는 중...</p>
             </div>
         );
@@ -1204,7 +1204,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                         <Button
                             onClick={() => setIsCreatePostOpen(true)}
                             size="icon"
-                            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-xl w-9 h-9"
+                            className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl w-9 h-9"
                         >
                             <Plus className="w-5 h-5 text-white" />
                         </Button>
@@ -1244,14 +1244,14 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
 
             {/* 2. AI 맞춤 추천 섹션 */}
             {showAiSection && aiRecommendations.length > 0 && (
-                <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 border-b border-gray-100">
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-4 border-b border-gray-100">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                            <div className="w-6 h-6 bg-gradient-to-r from-amber-500 to-orange-500 rounded-lg flex items-center justify-center">
                                 <Wand2 className="w-3.5 h-3.5 text-white" />
                             </div>
                             <span className="font-bold text-gray-800 text-sm">AI 맞춤 추천</span>
-                            <Badge className="bg-purple-100 text-purple-600 text-[10px] font-medium">For You</Badge>
+                            <Badge className="bg-amber-100 text-amber-600 text-[10px] font-medium">For You</Badge>
                         </div>
                         <button 
                             onClick={() => setShowAiSection(false)}
@@ -1274,8 +1274,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 className="flex-shrink-0 w-36 bg-white rounded-xl p-3 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all"
                             >
                                 <div className="flex items-center gap-2 mb-2">
-                                    <div className="w-8 h-8 bg-gradient-to-br from-purple-100 to-pink-100 rounded-lg flex items-center justify-center">
-                                        <Utensils className="w-4 h-4 text-purple-600" />
+                                    <div className="w-8 h-8 bg-gradient-to-br from-amber-100 to-orange-100 rounded-lg flex items-center justify-center">
+                                        <Utensils className="w-4 h-4 text-amber-600" />
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="font-bold text-xs text-gray-800 truncate">{rec.place_name}</div>
@@ -1303,7 +1303,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             {searchQuery.trim().length >= 2 && (searchPlaceHits.length > 0 || searchPlaceLoading) && (
                 <div className="px-4 py-3 border-b border-gray-100 bg-white">
                     <div className="flex items-center gap-2 mb-2">
-                        <MapPin className="w-3.5 h-3.5 text-purple-500" />
+                        <MapPin className="w-3.5 h-3.5 text-amber-500" />
                         <span className="text-xs font-bold text-gray-600">장소 바로가기</span>
                         {searchPlaceLoading && <span className="text-[10px] text-gray-400">검색 중...</span>}
                     </div>
@@ -1333,7 +1333,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             <div className="flex-1 overflow-y-auto bg-white">
                 {isLoading && (
                     <div className="py-16 text-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-4 border-purple-500 border-t-transparent mx-auto mb-3"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-4 border-amber-500 border-t-transparent mx-auto mb-3"></div>
                         <p className="text-sm text-gray-400">게시물 불러오는 중...</p>
                     </div>
                 )}
@@ -1348,7 +1348,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                         {!searchQuery.trim() && (
                             <Button
                                 onClick={() => setIsCreatePostOpen(true)}
-                                className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-xl"
+                                className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl"
                             >
                                 <Plus className="w-4 h-4 mr-1" /> 첫 게시물 올리기
                             </Button>
@@ -1372,7 +1372,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
 
                                 {/* 취향 매칭 배지(검색어 없을 때만) */}
                                 {!searchQuery.trim() && isTasteMatch(feed) && (
-                                    <div className="absolute top-1.5 left-1.5 bg-purple-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+                                    <div className="absolute top-1.5 left-1.5 bg-amber-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm">
                                         ✨ 취향
                                     </div>
                                 )}
@@ -1413,7 +1413,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 {/* 작성자 헤더 */}
                                 <div className="flex items-center gap-2.5 px-4 py-3">
                                     <Avatar className="w-8 h-8">
-                                        <AvatarFallback className="text-xs bg-gradient-to-r from-purple-400 to-pink-400 text-white">
+                                        <AvatarFallback className="text-xs bg-gradient-to-r from-amber-400 to-orange-400 text-white">
                                             {feed.author?.avatar || "US"}
                                         </AvatarFallback>
                                     </Avatar>
@@ -1427,7 +1427,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                         )}
                                     </div>
                                     {!searchQuery.trim() && isTasteMatch(feed) && (
-                                        <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">✨ 취향</span>
+                                        <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">✨ 취향</span>
                                     )}
                                 </div>
 
@@ -1523,7 +1523,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                         </Button>
                                     )}
                                     <Avatar className="w-8 h-8">
-                                        <AvatarFallback className="text-xs bg-gradient-to-r from-purple-400 to-pink-400 text-white">
+                                        <AvatarFallback className="text-xs bg-gradient-to-r from-amber-400 to-orange-400 text-white">
                                             {selectedFeed.author.avatar}
                                         </AvatarFallback>
                                     </Avatar>
@@ -1573,7 +1573,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                             }}
                                             className="hover:opacity-60 transition-opacity"
                                         >
-                                            <MessageCircle className={`w-6 h-6 ${showComments ? 'text-purple-500' : ''}`} />
+                                            <MessageCircle className={`w-6 h-6 ${showComments ? 'text-amber-500' : ''}`} />
                                         </button>
                                         <button 
                                             onClick={() => handleShare(selectedFeed)}
@@ -1622,8 +1622,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                         }}
                                         className="mt-3 w-full bg-gray-100 hover:bg-gray-200 rounded-xl p-3 flex items-center gap-3 transition-colors"
                                     >
-                                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                                            <Utensils className="w-5 h-5 text-purple-600" />
+                                        <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                                            <Utensils className="w-5 h-5 text-amber-600" />
                                         </div>
                                         <div className="flex-1 text-left">
                                             <div className="font-semibold text-sm">{selectedFeed.place.name}</div>
@@ -1688,7 +1688,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                                 size="sm"
                                                 onClick={() => handleAddComment(selectedFeed.id, selectedFeed.place?.id)}
                                                 disabled={!commentText.trim()}
-                                                className="bg-purple-500 hover:bg-purple-600 h-9"
+                                                className="bg-amber-500 hover:bg-amber-600 h-9"
                                             >
                                                 게시
                                             </Button>
@@ -1985,7 +1985,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 <div>
                                     <DialogTitle className="text-lg font-bold flex items-center gap-2">
                                         {selectedFeed.place.name}
-                                        <Badge variant="secondary" className="text-xs font-normal text-purple-600 bg-purple-50">
+                                        <Badge variant="secondary" className="text-xs font-normal text-amber-600 bg-amber-50">
                                             {selectedFeed.place.category}
                                         </Badge>
                                     </DialogTitle>
@@ -2050,7 +2050,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             </div>
 
                             <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100">
-                                <Button className="w-full h-12 text-base font-bold bg-purple-600 hover:bg-purple-700 rounded-xl">
+                                <Button className="w-full h-12 text-base font-bold bg-amber-600 hover:bg-amber-700 rounded-xl">
                                     바로 예약하기
                                 </Button>
                             </div>
@@ -2072,7 +2072,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <Bookmark className="w-5 h-5 text-purple-500" />
+                            <Bookmark className="w-5 h-5 text-amber-500" />
                             폴더에 저장
                         </DialogTitle>
                         <DialogDescription>
@@ -2092,7 +2092,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                         onClick={() => setSelectedFolderId(folder.id)}
                                         className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
                                             selectedFolderId === folder.id
-                                                ? "bg-purple-100 border-2 border-purple-500"
+                                                ? "bg-amber-100 border-2 border-amber-500"
                                                 : "bg-gray-50 hover:bg-gray-100 border-2 border-transparent"
                                         }`}
                                     >
@@ -2102,7 +2102,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                             <div className="text-xs text-gray-500">{folder.item_count}개 저장됨</div>
                                         </div>
                                         {selectedFolderId === folder.id && (
-                                            <Check className="w-5 h-5 text-purple-500" />
+                                            <Check className="w-5 h-5 text-amber-500" />
                                         )}
                                     </button>
                                 ))}
@@ -2122,7 +2122,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                     onClick={createFolder}
                                     disabled={!newFolderName.trim() || isCreatingFolder}
                                     size="icon"
-                                    className="bg-purple-500 hover:bg-purple-600"
+                                    className="bg-amber-500 hover:bg-amber-600"
                                 >
                                     <FolderPlus className="w-4 h-4" />
                                 </Button>
@@ -2137,7 +2137,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                         <Button
                             onClick={saveToFolder}
                             disabled={!selectedFolderId}
-                            className="bg-purple-500 hover:bg-purple-600"
+                            className="bg-amber-500 hover:bg-amber-600"
                         >
                             저장하기
                         </Button>
@@ -2150,7 +2150,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <Send className="w-5 h-5 text-purple-500" />
+                            <Send className="w-5 h-5 text-amber-500" />
                             공유하기
                         </DialogTitle>
                         <DialogDescription>
@@ -2165,7 +2165,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 onClick={() => setShareMode("direct")}
                                 className={`flex-1 p-3 rounded-xl text-center transition-all ${
                                     shareMode === "direct"
-                                        ? "bg-purple-100 border-2 border-purple-500 text-purple-700"
+                                        ? "bg-amber-100 border-2 border-amber-500 text-amber-700"
                                         : "bg-gray-50 border-2 border-transparent text-gray-600"
                                 }`}
                             >
@@ -2181,7 +2181,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 }}
                                 className={`flex-1 p-3 rounded-xl text-center transition-all ${
                                     shareMode === "cart"
-                                        ? "bg-purple-100 border-2 border-purple-500 text-purple-700"
+                                        ? "bg-amber-100 border-2 border-amber-500 text-amber-700"
                                         : "bg-gray-50 border-2 border-transparent text-gray-600"
                                 }`}
                             >
@@ -2205,11 +2205,11 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                                     onClick={() => setSelectedRoomId(room.id)}
                                                     className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
                                                         selectedRoomId === room.id
-                                                            ? "bg-purple-100 border-2 border-purple-500"
+                                                            ? "bg-amber-100 border-2 border-amber-500"
                                                             : "bg-gray-50 hover:bg-gray-100 border-2 border-transparent"
                                                     }`}
                                                 >
-                                                    <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
+                                                    <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-400 rounded-full flex items-center justify-center">
                                                         {room.is_group ? (
                                                             <Users className="w-5 h-5 text-white" />
                                                         ) : (
@@ -2223,7 +2223,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                                         </div>
                                                     </div>
                                                     {selectedRoomId === room.id && (
-                                                        <Check className="w-5 h-5 text-purple-500" />
+                                                        <Check className="w-5 h-5 text-amber-500" />
                                                     )}
                                                 </button>
                                             ))}
@@ -2258,7 +2258,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                         {sharingItem && (
                                             <button
                                                 onClick={() => addToCart(sharingItem)}
-                                                className="text-xs text-purple-500 hover:text-purple-600 font-medium"
+                                                className="text-xs text-amber-500 hover:text-amber-600 font-medium"
                                             >
                                                 + 현재 아이템 추가
                                             </button>
@@ -2273,11 +2273,11 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                                     className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl group"
                                                 >
                                                     {/* 썸네일 */}
-                                                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center overflow-hidden flex-shrink-0">
                                                         {item.image ? (
                                                             <img src={item.image} alt="" className="w-full h-full object-cover" />
                                                         ) : (
-                                                            <MapPin className="w-5 h-5 text-purple-400" />
+                                                            <MapPin className="w-5 h-5 text-amber-400" />
                                                         )}
                                                     </div>
                                                     {/* 정보 */}
@@ -2306,7 +2306,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                             {sharingItem && (
                                                 <button
                                                     onClick={() => addToCart(sharingItem)}
-                                                    className="mt-2 text-sm text-purple-500 hover:text-purple-600 font-medium"
+                                                    className="mt-2 text-sm text-amber-500 hover:text-amber-600 font-medium"
                                                 >
                                                     + 현재 아이템 담기
                                                 </button>
@@ -2330,11 +2330,11 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                                             onClick={() => setSelectedRoomId(room.id)}
                                                             className={`w-full flex items-center gap-3 p-2 rounded-xl transition-all ${
                                                                 selectedRoomId === room.id
-                                                                    ? "bg-purple-100 border-2 border-purple-500"
+                                                                    ? "bg-amber-100 border-2 border-amber-500"
                                                                     : "bg-gray-50 hover:bg-gray-100 border-2 border-transparent"
                                                             }`}
                                                         >
-                                                            <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
+                                                            <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-orange-400 rounded-full flex items-center justify-center">
                                                                 {room.is_group ? (
                                                                     <Users className="w-4 h-4 text-white" />
                                                                 ) : (
@@ -2345,7 +2345,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                                                 <div className="font-medium text-sm">{room.title}</div>
                                                             </div>
                                                             {selectedRoomId === room.id && (
-                                                                <Check className="w-4 h-4 text-purple-500" />
+                                                                <Check className="w-4 h-4 text-amber-500" />
                                                             )}
                                                         </button>
                                                     ))}
@@ -2382,7 +2382,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             <Button
                                 onClick={shareDirectly}
                                 disabled={!selectedRoomId}
-                                className="bg-purple-500 hover:bg-purple-600"
+                                className="bg-amber-500 hover:bg-amber-600"
                             >
                                 공유하기
                             </Button>
@@ -2391,7 +2391,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             <Button
                                 onClick={shareCart}
                                 disabled={!selectedRoomId}
-                                className="bg-purple-500 hover:bg-purple-600"
+                                className="bg-amber-500 hover:bg-amber-600"
                             >
                                 {cartItems.length}개 공유하기
                             </Button>

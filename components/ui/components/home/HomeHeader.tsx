@@ -39,12 +39,12 @@ export const HomeHeader = ({
         <Button
           variant="outline"
           size="sm"
-          className="rounded-full bg-white shadow-sm border-[#7C3AED] text-[#7C3AED]"
+          className="rounded-full bg-white shadow-sm border-[#F5A623] text-[#F5A623]"
           onClick={onOpenFilter}
         >
           <Filter className="w-3 h-3 mr-1" />필터</Button>
         {currentFiltersLabel && (
-          <Badge className="rounded-full bg-gradient-to-r from-[#7C3AED] to-[#14B8A6] border-0 text-white h-9 px-3 flex items-center">
+          <Badge className="rounded-full bg-gradient-to-r from-[#F5A623] to-[#14B8A6] border-0 text-white h-9 px-3 flex items-center">
             {currentFiltersLabel}
           </Badge>
         )}

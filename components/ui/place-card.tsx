@@ -31,8 +31,8 @@ export function PlaceCard({ place, onClick, isFavorite = false }: PlaceCardProps
         />
         
         {/* 평점 뱃지 */}
-        <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md px-2 py-1 rounded-lg flex items-center gap-1 text-xs font-bold text-[#7C3AED] shadow-sm">
-          <Star className="w-3 h-3 fill-[#7C3AED]" /> {place.score || "4.5"}
+        <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md px-2 py-1 rounded-lg flex items-center gap-1 text-xs font-bold text-[#F5A623] shadow-sm">
+          <Star className="w-3 h-3 fill-[#F5A623]" /> {place.score || "4.5"}
         </div>
 
         {/* 하트 아이콘 (장식용) */}

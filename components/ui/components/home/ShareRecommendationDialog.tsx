@@ -82,7 +82,7 @@ export function ShareRecommendationDialog({ open, onOpenChange, regionName, plac
         </DialogHeader>
 
         {toast && (
-          <div className="text-xs text-[#7C3AED] bg-purple-50 rounded-lg px-3 py-2">{toast}</div>
+          <div className="text-xs text-[#F5A623] bg-amber-50 rounded-lg px-3 py-2">{toast}</div>
         )}
 
         <Button
@@ -111,18 +111,18 @@ export function ShareRecommendationDialog({ open, onOpenChange, regionName, plac
                   key={f.id}
                   onClick={() => toggle(f.id)}
                   className={`flex items-center justify-between p-2 rounded-xl cursor-pointer border ${
-                    on ? "border-[#7C3AED] bg-purple-50" : "border-transparent hover:bg-gray-50"
+                    on ? "border-[#F5A623] bg-amber-50" : "border-transparent hover:bg-gray-50"
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <Avatar className="w-8 h-8">
-                      <AvatarFallback className="bg-purple-50 text-[#7C3AED] text-xs font-bold">
+                      <AvatarFallback className="bg-amber-50 text-[#F5A623] text-xs font-bold">
                         {f.name?.[0] || "?"}
                       </AvatarFallback>
                     </Avatar>
                     <div className="text-sm font-medium text-gray-800">{f.name}</div>
                   </div>
-                  {on && <Check className="w-4 h-4 text-[#7C3AED]" />}
+                  {on && <Check className="w-4 h-4 text-[#F5A623]" />}
                 </div>
               )
             })
@@ -132,7 +132,7 @@ export function ShareRecommendationDialog({ open, onOpenChange, regionName, plac
         <Button
           onClick={handleSendToFriends}
           disabled={sending || friends.length === 0}
-          className="w-full bg-[#7C3AED] hover:bg-purple-700 text-white font-bold rounded-xl h-11"
+          className="w-full bg-[#F5A623] hover:bg-amber-700 text-white font-bold rounded-xl h-11"
         >
           {sending ? (
             <Loader2 className="w-4 h-4 animate-spin" />

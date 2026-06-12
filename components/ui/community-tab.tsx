@@ -124,7 +124,7 @@ export function CommunityTab({ source: _source }: CommunityTabProps = {}) {
                     </div>
                     <button
                       onClick={() => goReserve(deal)}
-                      className="w-full mt-1 h-10 rounded-xl bg-[#7C3AED] text-white text-sm font-bold hover:bg-purple-700 transition-colors"
+                      className="w-full mt-1 h-10 rounded-xl bg-[#F5A623] text-white text-sm font-bold hover:bg-amber-700 transition-colors"
                     >
                       예약하기
                     </button>

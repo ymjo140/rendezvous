@@ -75,7 +75,7 @@ export function GameProfileCard() {
               </div>
             </div>
             <div className="text-right">
-              <div className="text-xs font-bold text-[#7C3AED]">Lv.{profile.level}</div>
+              <div className="text-xs font-bold text-[#F5A623]">Lv.{profile.level}</div>
               <div className="text-[10px] text-gray-400">{profile.xp.toLocaleString()} XP</div>
             </div>
           </div>
@@ -84,7 +84,7 @@ export function GameProfileCard() {
           <div>
             <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-[#7C3AED] to-[#14B8A6] transition-all"
+                className="h-full rounded-full bg-gradient-to-r from-[#F5A623] to-[#14B8A6] transition-all"
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -113,11 +113,11 @@ export function GameProfileCard() {
                         <span className={`text-xs ${q.done ? "text-gray-400 line-through" : "text-gray-700"}`}>
                           {q.title}
                         </span>
-                        <span className="text-[10px] font-bold text-[#7C3AED]">+{q.reward}</span>
+                        <span className="text-[10px] font-bold text-[#F5A623]">+{q.reward}</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden mt-1">
                         <div
-                          className={`h-full rounded-full ${q.done ? "bg-[#14B8A6]" : "bg-[#7C3AED]"}`}
+                          className={`h-full rounded-full ${q.done ? "bg-[#14B8A6]" : "bg-[#F5A623]"}`}
                           style={{ width: `${qpct}%` }}
                         />
                       </div>
@@ -168,7 +168,7 @@ export function GameProfileCard() {
                   <div
                     key={e.user_id}
                     className={`flex items-center gap-2.5 rounded-xl px-3 py-2 ${
-                      e.is_me ? "bg-purple-50 border border-purple-100" : ""
+                      e.is_me ? "bg-amber-50 border border-amber-100" : ""
                     }`}
                   >
                     <span
@@ -186,12 +186,12 @@ export function GameProfileCard() {
                     </span>
                     <span className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate">
                       {e.name}
-                      {e.is_me && <span className="text-[10px] text-[#7C3AED] ml-1">나</span>}
+                      {e.is_me && <span className="text-[10px] text-[#F5A623] ml-1">나</span>}
                     </span>
                     {e.streak_count > 0 && (
                       <span className="text-[10px] text-orange-500 font-bold">🔥{e.streak_count}</span>
                     )}
-                    <span className="text-xs font-bold text-[#7C3AED]">Lv.{e.level}</span>
+                    <span className="text-xs font-bold text-[#F5A623]">Lv.{e.level}</span>
                     <span className="text-[11px] text-gray-400 w-14 text-right">{e.xp.toLocaleString()} XP</span>
                   </div>
                 ))}

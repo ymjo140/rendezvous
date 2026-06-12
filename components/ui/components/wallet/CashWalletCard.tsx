@@ -73,7 +73,7 @@ export function CashWalletCard() {
     no_show: "노쇼",
   }
   const STATUS_STYLE: Record<string, string> = {
-    confirmed: "bg-purple-100 text-purple-700",
+    confirmed: "bg-amber-100 text-amber-700",
     completed: "bg-emerald-100 text-emerald-700",
     cancelled: "bg-gray-100 text-gray-400",
     no_show: "bg-rose-100 text-rose-600",
@@ -87,11 +87,11 @@ export function CashWalletCard() {
         <CardContent className="p-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#7C3AED] to-[#14B8A6] flex items-center justify-center text-white">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#F5A623] to-[#14B8A6] flex items-center justify-center text-white">
                 <Wallet className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-[#7C3AED]">충전 캐시</div>
+                <div className="text-[11px] font-bold text-[#F5A623]">충전 캐시</div>
                 <div className="text-xl font-bold text-gray-900">
                   {loading ? "—" : won(wallet.balance)}
                 </div>
@@ -100,7 +100,7 @@ export function CashWalletCard() {
             <Button
               size="sm"
               onClick={() => setChargeOpen(true)}
-              className="bg-[#7C3AED] hover:bg-purple-700 rounded-xl h-9"
+              className="bg-[#F5A623] hover:bg-amber-700 rounded-xl h-9"
             >
               <Plus className="w-4 h-4 mr-1" /> 충전
             </Button>
@@ -109,7 +109,7 @@ export function CashWalletCard() {
             <p className="text-[11px] text-gray-400">예약할 때 캐시로 결제하고, 취소하면 자동 환불돼요.</p>
             <button
               onClick={() => setHistoryOpen(true)}
-              className="text-[11px] font-medium text-gray-500 hover:text-[#7C3AED] flex items-center gap-1"
+              className="text-[11px] font-medium text-gray-500 hover:text-[#F5A623] flex items-center gap-1"
             >
               <Receipt className="w-3 h-3" /> 내역
             </button>
@@ -176,7 +176,7 @@ export function CashWalletCard() {
                   variant="outline"
                   disabled={charging !== null}
                   onClick={() => handleCharge(amt)}
-                  className="h-16 rounded-xl flex flex-col gap-0.5 border-gray-200 hover:border-[#7C3AED] hover:text-[#7C3AED]"
+                  className="h-16 rounded-xl flex flex-col gap-0.5 border-gray-200 hover:border-[#F5A623] hover:text-[#F5A623]"
                 >
                   {charging === amt ? (
                     <Loader2 className="w-4 h-4 animate-spin" />

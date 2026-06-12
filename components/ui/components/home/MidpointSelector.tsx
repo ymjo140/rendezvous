@@ -94,7 +94,7 @@ export const MidpointSelector = ({
         </button>
       )}
       <Button
-        className="w-full mt-3 h-12 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold"
+        className="w-full mt-3 h-12 rounded-xl bg-[#F5A623] hover:bg-[#D97706] text-white font-bold"
         onClick={onSearch}
       >
         중간 지점 찾기

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 // 👇 1. Next.js 스크립트 컴포넌트 불러오기 (필수!)
 import Script from "next/script";
@@ -7,6 +7,22 @@ import { Providers } from "./providers";
 export const metadata: Metadata = {
   title: "랑데부 - 우리 만남의 시작",
   description: "중간 지점 찾기 및 장소 추천 서비스",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "랑데부",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/icon-192.png",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#F5A623",
 };
 
 export default function RootLayout({

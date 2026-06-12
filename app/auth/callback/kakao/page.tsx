@@ -67,7 +67,7 @@ function KakaoCallbackContent() {
 
   return (
     <div className="flex h-screen items-center justify-center bg-white flex-col gap-4">
-      <Loader2 className="w-10 h-10 animate-spin text-[#7C3AED]" />
+      <Loader2 className="w-10 h-10 animate-spin text-[#F5A623]" />
       <p className="text-gray-500 font-bold">{status}</p>
     </div>
   )
@@ -78,7 +78,7 @@ export default function KakaoCallbackPage() {
     <Suspense
       fallback={
         <div className="flex h-screen items-center justify-center bg-white flex-col gap-4">
-          <Loader2 className="w-10 h-10 animate-spin text-[#7C3AED]" />
+          <Loader2 className="w-10 h-10 animate-spin text-[#F5A623]" />
           <p className="text-gray-500 font-bold">로딩 중...</p>
         </div>
       }

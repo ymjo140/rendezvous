@@ -26,7 +26,7 @@ export default function LoginPage() {
         
         {/* 로고 영역 */}
         <div className="text-center space-y-2">
-          <h1 className="text-4xl font-black text-[#7C3AED]">랑데부</h1>
+          <h1 className="text-4xl font-black text-[#F5A623]">랑데부</h1>
           <p className="text-gray-500">친구들과 더 쉽고 편하게 만나세요!</p>
         </div>
 

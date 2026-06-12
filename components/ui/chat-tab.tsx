@@ -100,7 +100,7 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
         <div className="bg-white rounded-xl p-4 border shadow-md max-w-[90%] space-y-3">
             <div className="flex justify-between items-start">
                 <div>
-                    <div className="font-bold text-xs text-[#7C3AED] mb-1 flex items-center gap-1">
+                    <div className="font-bold text-xs text-[#F5A623] mb-1 flex items-center gap-1">
                         <MapPin className="w-3 h-3"/> AI 추천 장소
                     </div>
                     <div className="font-bold text-lg text-gray-900 leading-tight">{data.place?.name}</div>
@@ -113,7 +113,7 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
 
             <div className="flex gap-1 flex-wrap">
                 {data.place?.tags?.map((t: string, i: number) => (
-                    <span key={i} className="bg-purple-50 text-purple-600 text-[10px] px-2 py-1 rounded-full border border-purple-100">#{t}</span>
+                    <span key={i} className="bg-amber-50 text-amber-600 text-[10px] px-2 py-1 rounded-full border border-amber-100">#{t}</span>
                 ))}
             </div>
 
@@ -125,14 +125,14 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
                 <Button 
                     variant="outline" 
                     size="sm"
-                    className={`flex-1 h-9 text-xs ${voted ? "bg-purple-100 text-purple-700 border-purple-200" : "hover:bg-gray-50"}`}
+                    className={`flex-1 h-9 text-xs ${voted ? "bg-amber-100 text-amber-700 border-amber-200" : "hover:bg-gray-50"}`}
                     onClick={handleVote}
                 >
                     <ThumbsUp className="w-3 h-3 mr-1.5"/> {voted ? "투표완료" : "좋아요"}
                 </Button>
                 <Button 
                     size="sm"
-                    className="flex-1 h-9 text-xs bg-[#7C3AED] hover:bg-[#6D28D9] text-white shadow-sm"
+                    className="flex-1 h-9 text-xs bg-[#F5A623] hover:bg-[#D97706] text-white shadow-sm"
                     onClick={handleConfirm}
                     disabled={confirmLoading}
                 >
@@ -297,11 +297,11 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     const visibleDates = showAllDates ? recommendedDates : recommendedDates.slice(0, 3);
 
     return (
-        <div className="w-full bg-white border-2 border-[#7C3AED]/20 rounded-3xl p-5 shadow-lg relative overflow-hidden mb-4 animate-in slide-in-from-top-2">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#7C3AED] to-[#14B8A6]"></div>
+        <div className="w-full bg-white border-2 border-[#F5A623]/20 rounded-3xl p-5 shadow-lg relative overflow-hidden mb-4 animate-in slide-in-from-top-2">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#F5A623] to-[#14B8A6]"></div>
             
             <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-sm text-[#7C3AED] flex items-center gap-1">
+                <h3 className="font-bold text-sm text-[#F5A623] flex items-center gap-1">
                     🤖 AI 모임 매니저
                 </h3>
                 <button onClick={onClose}><X className="w-4 h-4 text-gray-400"/></button>
@@ -380,7 +380,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                                     key={key} 
                                     variant={selectedPurpose === key ? "default" : "outline"} 
                                     onClick={() => { setSelectedPurpose(key); setSelectedTags([]); }} 
-                                    className={`h-8 rounded-full text-xs font-bold flex-shrink-0 px-4 ${selectedPurpose === key ? 'bg-[#7C3AED] hover:bg-[#6D28D9] border-none' : 'text-gray-500 border-gray-200 bg-white'}`}
+                                    className={`h-8 rounded-full text-xs font-bold flex-shrink-0 px-4 ${selectedPurpose === key ? 'bg-[#F5A623] hover:bg-[#D97706] border-none' : 'text-gray-500 border-gray-200 bg-white'}`}
                                 >
                                     {AI_FILTER_OPTIONS[key].label}
                                 </Button>
@@ -399,7 +399,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                                 <TabsContent key={subKey} value={subKey} className="mt-0">
                                     <div className="flex flex-wrap gap-2">
                                         {tags.map((tag: string) => (
-                                            <Badge key={tag} variant="outline" onClick={() => toggleTag(tag)} className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs transition-all ${selectedTags.includes(tag) ? "bg-white border-[#7C3AED] text-[#7C3AED] shadow-sm font-bold" : "bg-white border-gray-200 text-gray-500 font-medium hover:bg-gray-100"}`}>
+                                            <Badge key={tag} variant="outline" onClick={() => toggleTag(tag)} className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs transition-all ${selectedTags.includes(tag) ? "bg-white border-[#F5A623] text-[#F5A623] shadow-sm font-bold" : "bg-white border-gray-200 text-gray-500 font-medium hover:bg-gray-100"}`}>
                                                 {tag}
                                             </Badge>
                                         ))}
@@ -409,7 +409,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                         </Tabs>
                     </div>
                     
-                    <Button className="w-full bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold h-11 rounded-xl shadow-md" onClick={handlePlan} disabled={recLoading}>
+                    <Button className="w-full bg-[#F5A623] hover:bg-[#D97706] text-white font-bold h-11 rounded-xl shadow-md" onClick={handlePlan} disabled={recLoading}>
                         {recLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : "✨ 장소 추천받기"}
                     </Button>
                 </TabsContent>
@@ -681,7 +681,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                             <div className="divide-y divide-gray-100 pb-20">
                                 {rooms.length > 0 ? rooms.map(room => (
                                     <div key={room.id} onClick={() => { setActiveRoom(room); setView('room'); }} className="p-4 bg-white hover:bg-gray-50 cursor-pointer flex gap-3 transition-colors">
-                                        <Avatar className="w-12 h-12 border border-gray-100"><AvatarFallback className="bg-purple-50 text-[#7C3AED] font-bold">{room.title[0]}</AvatarFallback></Avatar>
+                                        <Avatar className="w-12 h-12 border border-gray-100"><AvatarFallback className="bg-amber-50 text-[#F5A623] font-bold">{room.title[0]}</AvatarFallback></Avatar>
                                         <div className="flex-1 overflow-hidden py-1">
                                             <div className="flex justify-between items-center mb-1"><h3 className="font-bold text-sm text-gray-900 truncate">{room.title}</h3><span className="text-[10px] text-gray-400">방금 전</span></div>
                                             <p className="text-xs text-gray-500 truncate">{room.last_message || "대화를 시작해보세요."}</p>
@@ -722,7 +722,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                         size="icon"
                         variant="ghost"
                         onClick={openInvite}
-                        className="h-8 w-8 text-gray-400 hover:text-[#7C3AED] hover:bg-purple-50"
+                        className="h-8 w-8 text-gray-400 hover:text-[#F5A623] hover:bg-amber-50"
                         title="친구 초대"
                     >
                         <UserPlus className="w-4 h-4" />
@@ -774,19 +774,19 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                                 content = (
                                     <div className="space-y-2 max-w-[280px]">
                                         {jsonContent.message && (
-                                            <div className={`px-3 py-2 rounded-xl text-sm ${isMe ? 'bg-[#7C3AED] text-white' : 'bg-white text-gray-800 border'}`}>
+                                            <div className={`px-3 py-2 rounded-xl text-sm ${isMe ? 'bg-[#F5A623] text-white' : 'bg-white text-gray-800 border'}`}>
                                                 💬 {jsonContent.message}
                                             </div>
                                         )}
-                                        <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-3 border border-purple-100 shadow-sm">
-                                            <div className="text-[10px] text-purple-600 font-bold mb-2 flex items-center gap-1">
+                                        <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-3 border border-amber-100 shadow-sm">
+                                            <div className="text-[10px] text-amber-600 font-bold mb-2 flex items-center gap-1">
                                                 <MapPin className="w-3 h-3" /> 공유된 장소/게시물
                                             </div>
                                             <div className="space-y-2">
                                                 {jsonContent.items?.map((item: any, idx: number) => (
                                                     <div 
                                                         key={idx} 
-                                                        className="bg-white rounded-xl overflow-hidden border border-gray-100 hover:border-purple-200 transition-colors cursor-pointer"
+                                                        className="bg-white rounded-xl overflow-hidden border border-gray-100 hover:border-amber-200 transition-colors cursor-pointer"
                                                         onClick={() => handleSharedItemClick(item)}
                                                     >
                                                         <div className="flex gap-3">
@@ -799,8 +799,8 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                                                                         className="w-full h-full object-cover"
                                                                     />
                                                                 ) : (
-                                                                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100">
-                                                                        <MapPin className="w-5 h-5 text-purple-300" />
+                                                                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-amber-100 to-orange-100">
+                                                                        <MapPin className="w-5 h-5 text-amber-300" />
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -814,7 +814,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                                                                         {item.content}
                                                                     </div>
                                                                 )}
-                                                                <div className="text-[10px] text-purple-500 mt-1 flex items-center gap-1">
+                                                                <div className="text-[10px] text-amber-500 mt-1 flex items-center gap-1">
                                                                     {item.type === "post" ? "📷 게시물" : "📍 장소"}
                                                                 </div>
                                                             </div>
@@ -826,12 +826,12 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                                     </div>
                                 );
                             } else if (jsonContent.text) {
-                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{jsonContent.text}</div>;
+                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#F5A623] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{jsonContent.text}</div>;
                             } else {
-                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>;
+                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#F5A623] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>;
                             }
                         } catch {
-                            content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>;
+                            content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#F5A623] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>;
                         }
                         
                         return (
@@ -849,9 +849,9 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 </ScrollArea>
 
                 <div className="p-3 bg-white border-t safe-area-bottom">
-                <div className="flex gap-2 items-center bg-gray-50 px-3 py-1.5 rounded-3xl border border-gray-200 focus-within:border-[#7C3AED] focus-within:ring-1 focus-within:ring-[#7C3AED]/20 transition-all">
+                <div className="flex gap-2 items-center bg-gray-50 px-3 py-1.5 rounded-3xl border border-gray-200 focus-within:border-[#F5A623] focus-within:ring-1 focus-within:ring-[#F5A623]/20 transition-all">
                     <Input className="flex-1 border-none shadow-none bg-transparent focus-visible:ring-0 h-9 text-sm" placeholder="메시지 입력..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
-                    <Button size="icon" className="h-8 w-8 rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] shadow-sm" onClick={handleSend}><Send className="w-4 h-4 text-white" /></Button>
+                    <Button size="icon" className="h-8 w-8 rounded-full bg-[#F5A623] hover:bg-[#D97706] shadow-sm" onClick={handleSend}><Send className="w-4 h-4 text-white" /></Button>
                 </div>
                 </div>
             </div>
@@ -871,13 +871,13 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                             return (
                                 <div key={f.id} className="flex items-center justify-between p-2 rounded-xl hover:bg-gray-50">
                                     <div className="flex items-center gap-2">
-                                        <Avatar className="w-9 h-9"><AvatarFallback className="bg-purple-50 text-[#7C3AED] text-xs font-bold">{f.name?.[0]}</AvatarFallback></Avatar>
+                                        <Avatar className="w-9 h-9"><AvatarFallback className="bg-amber-50 text-[#F5A623] text-xs font-bold">{f.name?.[0]}</AvatarFallback></Avatar>
                                         <div className="text-sm font-medium text-gray-800">{f.name}</div>
                                     </div>
                                     <Button
                                         size="sm"
                                         disabled={invited || inviteLoading}
-                                        className={invited ? "bg-gray-100 text-gray-400 h-8 text-xs" : "bg-[#7C3AED] hover:bg-purple-700 h-8 text-xs"}
+                                        className={invited ? "bg-gray-100 text-gray-400 h-8 text-xs" : "bg-[#F5A623] hover:bg-amber-700 h-8 text-xs"}
                                         onClick={() => handleInvite(f)}
                                     >
                                         {invited ? "초대됨" : "초대"}

@@ -30,7 +30,7 @@ export const FriendModal = ({
       className="flex items-center gap-3 p-2 hover:bg-gray-50 cursor-pointer border rounded-lg"
     >
       <Avatar>
-        <AvatarFallback className="bg-purple-50 text-[#7C3AED] font-bold">
+        <AvatarFallback className="bg-amber-50 text-[#F5A623] font-bold">
           {f.name?.[0] || "?"}
         </AvatarFallback>
       </Avatar>
@@ -38,7 +38,7 @@ export const FriendModal = ({
         <div className="font-bold truncate">{f.name}</div>
         <div className="text-xs text-gray-500 truncate">{f.locationName || "내 친구"}</div>
       </div>
-      {isSelected(f.id) && <CheckCircle2 className="ml-auto w-4 h-4 text-purple-600" />}
+      {isSelected(f.id) && <CheckCircle2 className="ml-auto w-4 h-4 text-amber-600" />}
     </div>
   )
 

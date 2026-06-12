@@ -68,7 +68,7 @@ export function GameCelebration() {
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
             transition={{ type: "spring", stiffness: 320, damping: 18 }}
-            className="bg-white rounded-3xl shadow-2xl px-8 py-6 text-center border-2 border-[#7C3AED]/20 mx-6"
+            className="bg-white rounded-3xl shadow-2xl px-8 py-6 text-center border-2 border-[#F5A623]/20 mx-6"
           >
             <motion.div
               initial={{ scale: 0.4, rotate: -15 }}
