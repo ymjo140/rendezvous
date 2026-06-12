@@ -34,6 +34,94 @@ class StoreCreate(BaseModel):
     address: str | None = None
 
 
+@router.get("/stores/{store_id}/pulse")
+def store_pulse(store_id: int, days: int = 7, db: Session = Depends(get_db)):
+    """가게 수요 펄스: B2C 행동로그(노출/클릭/저장) 집계 + 앱 예약 정산.
+    ⚠️ 데모: 소유권 검증은 추후(RLS 보류 정책과 동일). 읽기 전용 집계만 제공."""
+    days = max(1, min(int(days or 7), 30))
+    sid = str(store_id)
+
+    impressions = clicks = saves = 0
+    daily: list = []
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT to_char(created_at, 'YYYY-MM-DD') AS d, action_type, COUNT(*)
+                FROM action_logs
+                WHERE entity_type = 'place' AND entity_id = :sid
+                  AND created_at >= NOW() - (:days || ' days')::interval
+                GROUP BY 1, 2
+                """
+            ),
+            {"sid": sid, "days": days},
+        ).fetchall()
+        imp_types = {"impression", "offer_impression", "view"}
+        click_types = {"click", "detail_view", "offer_click", "reserve_click"}
+        save_types = {"save", "like"}
+        by_day: Dict[str, Dict[str, int]] = {}
+        for d, at, cnt in rows:
+            cnt = int(cnt)
+            bucket = by_day.setdefault(d, {"impressions": 0, "clicks": 0})
+            if at in imp_types:
+                impressions += cnt
+                bucket["impressions"] += cnt
+            elif at in click_types:
+                clicks += cnt
+                bucket["clicks"] += cnt
+            elif at in save_types:
+                saves += cnt
+        daily = [{"date": d, **v} for d, v in sorted(by_day.items())]
+    except Exception as exc:
+        print(f"[pulse] action_logs 집계 실패: {exc}")
+
+    week_reservations = 0
+    deposit_week = deposit_month = 0
+    pending = 0
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT
+                  COUNT(*) FILTER (WHERE date >= to_char(date_trunc('week', NOW()), 'YYYY-MM-DD')
+                                     AND status IN ('confirmed','completed'))      AS week_cnt,
+                  COALESCE(SUM(deposit_amount) FILTER (
+                      WHERE date >= to_char(date_trunc('week', NOW()), 'YYYY-MM-DD')
+                        AND status IN ('confirmed','completed')), 0)               AS week_deposit,
+                  COALESCE(SUM(deposit_amount) FILTER (
+                      WHERE date >= to_char(date_trunc('month', NOW()), 'YYYY-MM-DD')
+                        AND status IN ('confirmed','completed')), 0)               AS month_deposit,
+                  COUNT(*) FILTER (WHERE status = 'confirmed'
+                                     AND date >= to_char(NOW(), 'YYYY-MM-DD'))     AS pending_cnt
+                FROM user_reservations
+                WHERE place_id = :pid
+                """
+            ),
+            {"pid": store_id},
+        ).fetchone()
+        if row:
+            week_reservations = int(row[0] or 0)
+            deposit_week = int(row[1] or 0)
+            deposit_month = int(row[2] or 0)
+            pending = int(row[3] or 0)
+    except Exception as exc:
+        print(f"[pulse] 예약 정산 집계 실패: {exc}")
+
+    return {
+        "store_id": store_id,
+        "days": days,
+        "impressions": impressions,
+        "clicks": clicks,
+        "saves": saves,
+        "ctr": round(clicks / impressions, 4) if impressions else None,
+        "daily": daily,
+        "week_reservations": week_reservations,
+        "deposit_week": deposit_week,
+        "deposit_month": deposit_month,
+        "pending_reservations": pending,
+    }
+
+
 @router.get("/stores")
 async def list_merchant_stores(
     db: Session = Depends(get_db),

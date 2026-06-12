@@ -139,20 +139,40 @@ def get_place_detail(
     if total_reviews > 0:
         avg_rating = sum(r.rating for r in reviews) / max(len(reviews), 1)
 
-    features = place.features or {}
-    raw_menus = features.get("menus") or features.get("menu") or []
+    # 1순위: 사장님이 콘솔에서 등록한 메뉴(store_menus, 공유 Supabase) — B2B↔B2C 연결.
+    # 없으면 크롤링 데이터(features.menus) 폴백. 테이블 부재/권한 오류에도 상세가 죽지 않게.
     menus = []
-    if isinstance(raw_menus, list):
-        for item in raw_menus:
-            if isinstance(item, dict):
-                name = item.get("name") or item.get("title") or ""
-                price = item.get("price")
-                menus.append({"name": name, "price": price})
-            elif isinstance(item, str):
-                menus.append({"name": item, "price": None})
-    elif isinstance(raw_menus, dict):
-        name = raw_menus.get("name") or raw_menus.get("title") or ""
-        menus.append({"name": name, "price": raw_menus.get("price")})
+    try:
+        from sqlalchemy import text as _sql_text
+        rows = db.execute(
+            _sql_text(
+                """
+                SELECT name, price, is_recommended FROM store_menus
+                WHERE store_id = :sid
+                ORDER BY is_recommended DESC, created_at ASC
+                LIMIT 30
+                """
+            ),
+            {"sid": str(place_id)},
+        ).fetchall()
+        menus = [{"name": r[0], "price": r[1], "recommended": bool(r[2])} for r in rows if r[0]]
+    except Exception as exc:
+        print(f"[place_detail] store_menus 조회 실패(폴백): {exc}")
+
+    features = place.features or {}
+    if not menus:
+        raw_menus = features.get("menus") or features.get("menu") or []
+        if isinstance(raw_menus, list):
+            for item in raw_menus:
+                if isinstance(item, dict):
+                    name = item.get("name") or item.get("title") or ""
+                    price = item.get("price")
+                    menus.append({"name": name, "price": price})
+                elif isinstance(item, str):
+                    menus.append({"name": item, "price": None})
+        elif isinstance(raw_menus, dict):
+            name = raw_menus.get("name") or raw_menus.get("title") or ""
+            menus.append({"name": name, "price": raw_menus.get("price")})
 
     tags = []
     for tag in (place.tags or []) + (place.vibe_tags or []):
