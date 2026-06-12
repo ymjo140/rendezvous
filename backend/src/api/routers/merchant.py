@@ -34,6 +34,48 @@ class StoreCreate(BaseModel):
     address: str | None = None
 
 
+@router.post("/verify-business")
+def verify_business(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """사업자등록번호 진위확인(국세청 상태조회, 공공데이터포털).
+    가입 전 호출이라 인증 불요. 키는 서버 env(NTS_API_KEY)에만 — 브라우저 노출 금지.
+    외부 API 장애 시 status='unavailable' 반환(가입 자체를 막지 않도록 FE가 폴백)."""
+    from core.config import settings
+
+    bizno = "".join(ch for ch in str(payload.get("business_number") or "") if ch.isdigit())
+    if len(bizno) != 10:
+        raise HTTPException(status_code=400, detail="사업자등록번호는 10자리여야 합니다.")
+
+    if not settings.NTS_API_KEY:
+        return {"valid": None, "status": "unavailable", "message": "진위확인 서비스가 설정되지 않았습니다."}
+
+    try:
+        import requests as _rq
+        res = _rq.post(
+            f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={settings.NTS_API_KEY}",
+            json={"b_no": [bizno]},
+            timeout=10,
+        )
+        if res.status_code != 200:
+            print(f"[verify-business] NTS API {res.status_code}")
+            return {"valid": None, "status": "unavailable", "message": "진위확인 서비스 응답 오류"}
+        data = (res.json() or {}).get("data") or []
+        if not data:
+            return {"valid": None, "status": "unavailable", "message": "진위확인 결과 없음"}
+        item = data[0]
+        stt_cd = item.get("b_stt_cd") or ""
+        stt = item.get("b_stt") or ""
+        if not stt_cd:
+            # 국세청에 등록되지 않은 번호
+            return {"valid": False, "status": "unregistered", "message": "국세청에 등록되지 않은 사업자등록번호예요."}
+        if stt_cd == "03":
+            return {"valid": False, "status": "closed", "message": "폐업 처리된 사업자등록번호예요."}
+        # 01=계속사업자, 02=휴업자 → 통과(휴업은 재개 준비 가능)
+        return {"valid": True, "status": stt_cd, "message": f"확인 완료 ({stt})"}
+    except Exception as exc:
+        print(f"[verify-business] 실패: {exc}")
+        return {"valid": None, "status": "unavailable", "message": "진위확인 서비스 연결 실패"}
+
+
 @router.get("/stores/{store_id}/pulse")
 def store_pulse(store_id: int, days: int = 7, db: Session = Depends(get_db)):
     """가게 수요 펄스: B2C 행동로그(노출/클릭/저장) 집계 + 앱 예약 정산.

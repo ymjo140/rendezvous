@@ -35,6 +35,9 @@ class Settings:
     # AttributeError → 카카오 신규가입이 "Login Failed"로 실패했음(기존 유저는 정상).
     SIGNUP_BONUS_AMOUNT: int = int(os.getenv("SIGNUP_BONUS_AMOUNT", "1000"))
 
+    # 국세청 사업자등록 상태조회(공공데이터포털) — 점주 인증 진위확인용
+    NTS_API_KEY: str = os.getenv("NTS_API_KEY", "")
+
     # 목적/필터 설정 (프론트에 전달용)
     PURPOSE_CONFIG = {
         "식사": {
