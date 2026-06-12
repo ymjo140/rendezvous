@@ -122,6 +122,97 @@ def store_pulse(store_id: int, days: int = 7, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/stores/{store_id}/offer-performance")
+def offer_performance(store_id: int, db: Session = Depends(get_db)):
+    """핫딜(오퍼룰)별 성과 귀속: 노출 → 클릭 → 예약 → 예약금.
+    사장님 설득용 '이 핫딜이 만든 매출' 리포트. ⚠️ 데모: 소유권 검증 추후."""
+    rules = (
+        db.query(models.OfferRule)
+        .filter(models.OfferRule.place_id == store_id)
+        .order_by(models.OfferRule.id.asc())
+        .all()
+    )
+    if not rules:
+        return {"store_id": store_id, "rules": []}
+
+    rule_ids = [str(r.id) for r in rules]
+
+    # 1) 노출/클릭 (B2C action_logs, entity_type='offer')
+    funnel: Dict[str, Dict[str, int]] = {}
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT entity_id, action_type, COUNT(*)
+                FROM action_logs
+                WHERE entity_type = 'offer' AND entity_id = ANY(:ids)
+                GROUP BY 1, 2
+                """
+            ),
+            {"ids": rule_ids},
+        ).fetchall()
+        for eid, at, cnt in rows:
+            bucket = funnel.setdefault(str(eid), {"impressions": 0, "clicks": 0})
+            if at in ("offer_impression", "impression", "view"):
+                bucket["impressions"] += int(cnt)
+            elif at in ("offer_click", "click", "reserve_click"):
+                bucket["clicks"] += int(cnt)
+    except Exception as exc:
+        print(f"[offer-perf] action_logs 집계 실패: {exc}")
+
+    # 2) 예약/예약금 귀속 (user_reservations.offer_rule_id)
+    booking: Dict[int, Dict[str, int]] = {}
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT offer_rule_id,
+                       COUNT(*) FILTER (WHERE status NOT IN ('cancelled','no_show')) AS cnt,
+                       COALESCE(SUM(deposit_amount) FILTER (
+                           WHERE status NOT IN ('cancelled','no_show')), 0)          AS deposit
+                FROM user_reservations
+                WHERE place_id = :pid AND offer_rule_id IS NOT NULL
+                GROUP BY 1
+                """
+            ),
+            {"pid": store_id},
+        ).fetchall()
+        for rid, cnt, deposit in rows:
+            booking[int(rid)] = {"reservations": int(cnt or 0), "deposit": int(deposit or 0)}
+    except Exception as exc:
+        print(f"[offer-perf] 예약 귀속 집계 실패: {exc}")
+
+    out = []
+    for r in rules:
+        base = r.base_benefit_json if isinstance(r.base_benefit_json, dict) else {}
+        f = funnel.get(str(r.id), {"impressions": 0, "clicks": 0})
+        b = booking.get(r.id, {"reservations": 0, "deposit": 0})
+        cap = r.inventory_cap or 0
+        out.append({
+            "rule_id": r.id,
+            "name": r.rule_name or base.get("title") or "핫딜",
+            "benefit_title": base.get("title") or "",
+            "enabled": bool(r.enabled),
+            "impressions": f["impressions"],
+            "clicks": f["clicks"],
+            "reservations": b["reservations"],
+            "deposit_sum": b["deposit"],
+            "inventory_cap": cap,
+            "inventory_used": r.inventory_used or 0,
+            "remaining": (max(0, cap - (r.inventory_used or 0)) if cap > 0 else None),
+            "ctr": round(f["clicks"] / f["impressions"], 4) if f["impressions"] else None,
+            "conversion": round(b["reservations"] / f["clicks"], 4) if f["clicks"] else None,
+        })
+
+    totals = {
+        "impressions": sum(x["impressions"] for x in out),
+        "clicks": sum(x["clicks"] for x in out),
+        "reservations": sum(x["reservations"] for x in out),
+        "deposit_sum": sum(x["deposit_sum"] for x in out),
+    }
+    return {"store_id": store_id, "rules": out, "totals": totals}
+
+
 @router.get("/stores")
 async def list_merchant_stores(
     db: Session = Depends(get_db),

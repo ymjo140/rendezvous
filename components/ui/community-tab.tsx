@@ -1,9 +1,10 @@
 "use client"
 
-import React from "react"
+import React, { useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useHotDeals } from "@/hooks/use-hot-deals"
+import { logAction } from "@/lib/analytics-client"
 
 type CommunityTabProps = {
   source?: string
@@ -29,10 +30,35 @@ const formatEndTime = (value?: string | null) => {
 export function CommunityTab({ source: _source }: CommunityTabProps = {}) {
   const router = useRouter()
   const { data = [], isLoading, error } = useHotDeals()
+  const loggedRef = useRef<Set<string>>(new Set())
+
+  // 핫딜 노출 로깅 — 사장님 성과 리포트(노출→클릭→예약 퍼널)의 첫 고리. 세션당 딜별 1회.
+  useEffect(() => {
+    data.slice(0, 10).forEach((deal) => {
+      const offerId = deal.offer_rule_id ?? deal.deal_id
+      const key = String(offerId)
+      if (!offerId || loggedRef.current.has(key)) return
+      loggedRef.current.add(key)
+      logAction({
+        action_type: "offer_impression",
+        offer_id: Number(offerId),
+        source: "hotdeals_tab",
+        metadata: { store_id: deal.store_id },
+      })
+    })
+  }, [data])
 
   const goReserve = (deal: any) => {
     if (!deal?.store_id) return
     const offer = deal.offer_rule_id ?? deal.deal_id
+    if (offer) {
+      logAction({
+        action_type: "offer_click",
+        offer_id: Number(offer),
+        source: "hotdeals_tab",
+        metadata: { store_id: deal.store_id },
+      })
+    }
     router.push(`/places/${deal.store_id}?offer=${offer}`)
   }
 
