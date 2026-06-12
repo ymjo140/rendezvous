@@ -6,7 +6,7 @@ import {
     Search, MapPin, Heart, MessageCircle, Share2, Star, ChevronLeft, 
     MoreHorizontal, Utensils, X, Phone, Clock, ChevronRight, Plus,
     Image as ImageIcon, Camera, Send, Bookmark, Grid3X3, Play, Wand2,
-    FolderPlus, Check, MessageSquare, Users, ShoppingBag, Trash2
+    FolderPlus, Check, MessageSquare, Users, ShoppingBag, Trash2, Square
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +20,7 @@ import { fetchWithAuth } from "@/lib/api-client"
 import { useDecisionCell } from "@/hooks/use-decision-cell"
 import { logAction } from "@/lib/analytics-client"
 import { recordActivity } from "@/lib/game"
+import { compressImageFile } from "@/lib/image"
 
 // 폴더 타입
 interface SaveFolder {
@@ -40,123 +41,6 @@ interface ChatRoom {
 }
 
 
-// --- 더미 데이터 (SNS 게시물 + 가게 정보 연동) ---
-const MOCK_FEEDS = [
-    {
-        id: 1,
-        type: "image",
-        images: ["https://images.unsplash.com/photo-1594834749740-74b3f6764be4?w=600&h=600&fit=crop"],
-        author: { id: 1, name: "맛잘알_강남", avatar: "MJ", profileImage: "" },
-        content: "강남역 오봉집 진짜 미쳤음... 낙지볶음 불향 대박 #강남맛집 #오봉집",
-        likes: 1240,
-        comments: 45,
-        isLiked: false,
-        isSaved: false,
-        createdAt: "2시간 전",
-        place: {
-            id: 101, name: "오봉집 강남점", category: "한식", score: 4.8,
-            address: "서울 강남구 강남대로 123", phone: "02-1234-5678",
-            openTime: "11:00 - 22:00",
-            menu: ["직화낙지볶음 (13,000원)", "보쌈정식 (12,000원)"],
-            tags: ["웨이팅필수", "불맛", "가성비"]
-        }
-    },
-    {
-        id: 2,
-        type: "image",
-        images: ["https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=600&h=600&fit=crop"],
-        author: { id: 2, name: "와인러버", avatar: "WL", profileImage: "" },
-        content: "분위기 깡패 와인바 발견 데이트 코스로 강추!",
-        likes: 850,
-        comments: 12,
-        isLiked: true,
-        isSaved: false,
-        createdAt: "5시간 전",
-        place: {
-            id: 102, name: "무드서울", category: "와인바", score: 4.9,
-            address: "서울 강남구 압구정로", phone: "02-555-5555",
-            openTime: "17:00 - 02:00",
-            menu: ["치즈플래터 (25,000원)", "하우스와인 (15,000원)"],
-            tags: ["데이트", "야경", "예약필수"]
-        }
-    },
-    {
-        id: 3,
-        type: "video",
-        images: ["https://images.unsplash.com/photo-1544148103-0773bf10d330?w=600&h=600&fit=crop"],
-        author: { id: 3, name: "디저트요정", avatar: "DJ", profileImage: "" },
-        content: "입에서 살살 녹는 수플레 팬케이크 웨이팅 1시간 했지만 후회 없음!",
-        likes: 3200,
-        comments: 150,
-        isLiked: false,
-        isSaved: true,
-        createdAt: "1일 전",
-        place: {
-            id: 103, name: "플리퍼스", category: "카페", score: 4.5,
-            address: "서울 강남구 테헤란로", phone: "02-987-6543",
-            openTime: "10:30 - 21:00",
-            menu: ["수플레팬케이크 (16,000원)", "딸기라떼 (7,000원)"],
-            tags: ["디저트", "핫플", "사진맛집"]
-        }
-    },
-    {
-        id: 4,
-        type: "image",
-        images: ["https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=600&h=600&fit=crop"],
-        author: { id: 4, name: "푸드파이터", avatar: "FF", profileImage: "" },
-        content: "혼밥러의 성지 발견! 가성비 미쳤음",
-        likes: 2100,
-        comments: 89,
-        isLiked: false,
-        isSaved: false,
-        createdAt: "3시간 전",
-        place: {
-            id: 104, name: "혼밥천국", category: "한식", score: 4.6,
-            address: "서울 마포구 연남동", phone: "02-333-4444",
-            openTime: "10:00 - 22:00",
-            menu: ["된장찌개 (7,000원)", "제육정식 (8,000원)"],
-            tags: ["혼밥", "가성비", "점심"]
-        }
-    },
-    {
-        id: 5,
-        type: "image",
-        images: ["https://images.unsplash.com/photo-1551024601-bec78aea704b?w=600&h=600&fit=crop"],
-        author: { id: 5, name: "카페투어러", avatar: "CT", profileImage: "" },
-        content: "이태원 숨은 카페 찾았다! 분위기 대박",
-        likes: 1890,
-        comments: 67,
-        isLiked: true,
-        isSaved: false,
-        createdAt: "6시간 전",
-        place: {
-            id: 105, name: "숨은카페", category: "카페", score: 4.7,
-            address: "서울 용산구 이태원로", phone: "02-777-8888",
-            openTime: "11:00 - 23:00",
-            menu: ["아메리카노 (5,500원)", "크로플 (8,000원)"],
-            tags: ["분위기", "인스타", "조용한"]
-        }
-    },
-    {
-        id: 6,
-        type: "video",
-        images: ["https://images.unsplash.com/photo-1476224203421-9ac39bcb3327?w=600&h=600&fit=crop"],
-        author: { id: 6, name: "먹방유튜버", avatar: "MY", profileImage: "" },
-        content: "이거 진짜 맛있어서 3번 갔음 ㄹㅇ",
-        likes: 5400,
-        comments: 234,
-        isLiked: false,
-        isSaved: false,
-        createdAt: "12시간 전",
-        place: {
-            id: 106, name: "피자명가", category: "양식", score: 4.8,
-            address: "서울 강남구 역삼동", phone: "02-222-3333",
-            openTime: "11:30 - 22:00",
-            menu: ["마르게리타 (18,000원)", "페퍼로니 (20,000원)"],
-            tags: ["피자", "데이트", "분위기"]
-        }
-    },
-];
 
 // 필터 카테고리 그룹 (main_category 문자열 부분일치로 일반화)
 const CATEGORY_GROUPS: Record<string, RegExp> = {
@@ -195,8 +79,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedFeed, setSelectedFeed] = useState<any>(null);
     const [isPlaceModalOpen, setIsPlaceModalOpen] = useState(false);
-    const [feeds, setFeeds] = useState(MOCK_FEEDS);
-    const [isLoading, setIsLoading] = useState(false);
+    const [feeds, setFeeds] = useState<any[]>([]); // 실제 게시물만(MOCK 제거)
+    const [isLoading, setIsLoading] = useState(true);
     
     // ?? 공유된 게시물로 진입했는지 여부
     const [isFromSharedPost, setIsFromSharedPost] = useState(false);
@@ -221,6 +105,27 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [searchPlaceHits, setSearchPlaceHits] = useState<any[]>([]);
     const [searchPlaceLoading, setSearchPlaceLoading] = useState(false);
     const [myPrefTags, setMyPrefTags] = useState<string[]>([]);
+
+    // 📸 인스타식 뷰 모드(그리드↔피드) + 더블탭 좋아요
+    const [viewMode, setViewMode] = useState<"grid" | "feed">("grid");
+    const [heartOverlayId, setHeartOverlayId] = useState<string | number | null>(null);
+    const lastTapRef = useRef<{ id: string | number; time: number } | null>(null);
+
+    const handleImageTap = (feed: any) => {
+        const now = Date.now();
+        const last = lastTapRef.current;
+        if (last && last.id === feed.id && now - last.time < 300) {
+            // 더블탭 → 좋아요(이미 좋아요면 유지) + 하트 연출
+            lastTapRef.current = null;
+            setHeartOverlayId(feed.id);
+            setTimeout(() => setHeartOverlayId(null), 800);
+            if (!feed.isLiked) {
+                handleLike(feed.id, { stopPropagation: () => undefined } as any, feed.place?.id);
+            }
+        } else {
+            lastTapRef.current = { id: feed.id, time: now };
+        }
+    };
     
     // 사진 편집 관련 상태
     const [isPhotoEditorOpen, setIsPhotoEditorOpen] = useState(false);
@@ -861,31 +766,27 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 
                 if (res.ok) {
                     const apiPosts = await res.json();
-                    // API 게시물과 더미 데이터 병합 (API 데이터 우선)
-                    if (apiPosts.length > 0) {
-                        const formattedPosts = apiPosts.map((post: any) => ({
-                            id: post.id,
-                            type: "image",
-                            images: post.image_urls || [],
-                            author: { 
-                                id: post.user_id, 
-                                name: post.user_name || "??", 
-                                avatar: post.user_avatar || post.user_name?.slice(0, 2) || "US",
-                                profileImage: ""
-                            },
-                            content: post.content || "",
-                            likes: post.likes_count || 0,
-                            comments: post.comments_count || 0,
-                            isLiked: post.is_liked || false,
-                            isSaved: post.is_saved || false,
-                            createdAt: post.created_at || "방금 전",
-                            locationName: post.location_name || null,
-                            place: formatPlaceFromPost(post)
-                        }));
-                        setFeeds(formattedPosts);
-                    } else {
-                        setFeeds(MOCK_FEEDS);
-                    }
+                    // 실제 게시물만 표시 (게시물 없으면 빈 상태 UI)
+                    const formattedPosts = (apiPosts || []).map((post: any) => ({
+                        id: post.id,
+                        type: "image",
+                        images: post.image_urls || [],
+                        author: {
+                            id: post.user_id,
+                            name: post.user_name || "??",
+                            avatar: post.user_avatar || post.user_name?.slice(0, 2) || "US",
+                            profileImage: ""
+                        },
+                        content: post.content || "",
+                        likes: post.likes_count || 0,
+                        comments: post.comments_count || 0,
+                        isLiked: post.is_liked || false,
+                        isSaved: post.is_saved || false,
+                        createdAt: post.created_at || "방금 전",
+                        locationName: post.location_name || null,
+                        place: formatPlaceFromPost(post)
+                    }));
+                    setFeeds(formattedPosts);
                 }
             } catch (error) {
                 console.log("게시물 로드 중 오류:", error);
@@ -1055,27 +956,26 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         });
     };
 
-    // 이미지 선택
-    const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // 이미지 선택 — 클라이언트 압축(1080px JPEG) 후 사용. 폰 원본(수 MB) 그대로 올리면
+    // base64 저장 구조상 업로드 실패/응답 지연이 나므로 압축이 실업로드의 핵심.
+    const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (files && files.length > 0) {
             const file = files[0];
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                if (e.target?.result) {
-                    const imageData = e.target.result as string;
-                    // 첫 번째 이미지는 바로 편집기 열기
-                    if (newPostImages.length === 0) {
-                        setTempImageForEdit(imageData);
-                        setEditingImageIndex(null);
-                        setIsPhotoEditorOpen(true);
-                    } else {
-                        // 추가 이미지는 바로 추가
-                        setNewPostImages(prev => [...prev, imageData]);
-                    }
+            try {
+                const imageData = await compressImageFile(file);
+                // 첫 번째 이미지는 바로 편집기 열기
+                if (newPostImages.length === 0) {
+                    setTempImageForEdit(imageData);
+                    setEditingImageIndex(null);
+                    setIsPhotoEditorOpen(true);
+                } else {
+                    // 추가 이미지는 바로 추가
+                    setNewPostImages(prev => [...prev, imageData]);
                 }
-            };
-            reader.readAsDataURL(file);
+            } catch {
+                alert("이미지를 불러오지 못했어요. 다른 사진으로 시도해주세요.");
+            }
         }
         // input 초기화
         if (fileInputRef.current) {
@@ -1282,14 +1182,33 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0 z-10 bg-white">
                 <div className="flex items-center justify-between mb-3">
                     <h1 className="text-xl font-bold">탐색</h1>
-                    {/* 게시물 작성 버튼 */}
-                    <Button 
-                        onClick={() => setIsCreatePostOpen(true)}
-                        size="icon"
-                        className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-xl w-9 h-9"
-                    >
-                        <Plus className="w-5 h-5 text-white" />
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        {/* 그리드 ↔ 피드 전환 */}
+                        <div className="flex rounded-xl bg-gray-100 p-0.5">
+                            <button
+                                onClick={() => setViewMode("grid")}
+                                className={`px-2.5 py-1.5 rounded-lg transition-colors ${viewMode === "grid" ? "bg-white shadow-sm text-gray-900" : "text-gray-400"}`}
+                                title="그리드 보기"
+                            >
+                                <Grid3X3 className="w-4 h-4" />
+                            </button>
+                            <button
+                                onClick={() => setViewMode("feed")}
+                                className={`px-2.5 py-1.5 rounded-lg transition-colors ${viewMode === "feed" ? "bg-white shadow-sm text-gray-900" : "text-gray-400"}`}
+                                title="피드 보기"
+                            >
+                                <Square className="w-4 h-4" />
+                            </button>
+                        </div>
+                        {/* 게시물 작성 버튼 */}
+                        <Button
+                            onClick={() => setIsCreatePostOpen(true)}
+                            size="icon"
+                            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-xl w-9 h-9"
+                        >
+                            <Plus className="w-5 h-5 text-white" />
+                        </Button>
+                    </div>
                 </div>
                 
                 {/* 검색바 */}
@@ -1410,63 +1329,161 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 </div>
             )}
 
-            {/* 3. 인스타그램 탐색탭 스타일 그리드 */}
+            {/* 3. 게시물 — 그리드(인스타 탐색) ↔ 피드(인스타 홈) */}
             <div className="flex-1 overflow-y-auto bg-white">
-                {filteredFeeds.length === 0 && !isLoading && (
-                    <div className="py-16 text-center text-sm text-gray-400">
-                        {searchQuery.trim()
-                            ? `'${searchQuery.trim()}' 검색 결과가 없어요`
-                            : "표시할 게시물이 없어요"}
+                {isLoading && (
+                    <div className="py-16 text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-4 border-purple-500 border-t-transparent mx-auto mb-3"></div>
+                        <p className="text-sm text-gray-400">게시물 불러오는 중...</p>
                     </div>
                 )}
-                <div className="grid grid-cols-3 gap-0.5 p-0.5">
-                    {filteredFeeds.map((feed, index) => (
-                        <div 
-                            key={feed.id} 
-                            onClick={() => handleFeedClick(feed)}
-                            className={`relative aspect-square cursor-pointer group overflow-hidden ${getGridClass(index)}`}
-                        >
-                            <img
-                                src={feed.images[0]}
-                                alt=""
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                            />
+                {filteredFeeds.length === 0 && !isLoading && (
+                    <div className="py-16 text-center space-y-3">
+                        <div className="text-4xl">📸</div>
+                        <p className="text-sm text-gray-500 font-medium">
+                            {searchQuery.trim()
+                                ? `'${searchQuery.trim()}' 검색 결과가 없어요`
+                                : "아직 게시물이 없어요"}
+                        </p>
+                        {!searchQuery.trim() && (
+                            <Button
+                                onClick={() => setIsCreatePostOpen(true)}
+                                className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-xl"
+                            >
+                                <Plus className="w-4 h-4 mr-1" /> 첫 게시물 올리기
+                            </Button>
+                        )}
+                    </div>
+                )}
 
-                            {/* 취향 매칭 배지(검색어 없을 때만) */}
-                            {!searchQuery.trim() && isTasteMatch(feed) && (
-                                <div className="absolute top-1.5 left-1.5 bg-purple-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm">
-                                    ✨ 취향
-                                </div>
-                            )}
+                {viewMode === "grid" ? (
+                    <div className="grid grid-cols-3 gap-0.5 p-0.5">
+                        {filteredFeeds.map((feed, index) => (
+                            <div
+                                key={feed.id}
+                                onClick={() => handleFeedClick(feed)}
+                                className={`relative aspect-square cursor-pointer group overflow-hidden ${getGridClass(index)}`}
+                            >
+                                <img
+                                    src={feed.images[0]}
+                                    alt=""
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                />
 
-                            {/* 비디오 아이콘 */}
-                            {feed.type === "video" && (
-                                <div className="absolute top-2 right-2">
-                                    <Play className="w-5 h-5 text-white drop-shadow-lg fill-white" />
-                                </div>
-                            )}
-                            
-                            {/* 여러 장 사진 아이콘 */}
-                            {feed.images.length > 1 && (
-                                <div className="absolute top-2 right-2">
-                                    <Grid3X3 className="w-5 h-5 text-white drop-shadow-lg" />
-                                </div>
-                            )}
-                            
-                            {/* 호버 시 좋아요/댓글 수 표시 */}
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-6 text-white font-semibold">
-                                <div className="flex items-center gap-1">
-                                    <Heart className="w-5 h-5 fill-white" />
-                                    <span>{feed.likes >= 1000 ? `${(feed.likes/1000).toFixed(1)}K` : feed.likes}</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <MessageCircle className="w-5 h-5 fill-white" />
-                                    <span>{feed.comments}</span>
+                                {/* 취향 매칭 배지(검색어 없을 때만) */}
+                                {!searchQuery.trim() && isTasteMatch(feed) && (
+                                    <div className="absolute top-1.5 left-1.5 bg-purple-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+                                        ✨ 취향
+                                    </div>
+                                )}
+
+                                {/* 비디오 아이콘 */}
+                                {feed.type === "video" && (
+                                    <div className="absolute top-2 right-2">
+                                        <Play className="w-5 h-5 text-white drop-shadow-lg fill-white" />
+                                    </div>
+                                )}
+
+                                {/* 여러 장 사진 아이콘 */}
+                                {feed.images.length > 1 && (
+                                    <div className="absolute top-2 right-2">
+                                        <Grid3X3 className="w-5 h-5 text-white drop-shadow-lg" />
+                                    </div>
+                                )}
+
+                                {/* 호버 시 좋아요/댓글 수 표시 */}
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-6 text-white font-semibold">
+                                    <div className="flex items-center gap-1">
+                                        <Heart className="w-5 h-5 fill-white" />
+                                        <span>{feed.likes >= 1000 ? `${(feed.likes/1000).toFixed(1)}K` : feed.likes}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <MessageCircle className="w-5 h-5 fill-white" />
+                                        <span>{feed.comments}</span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
-                </div>
+                        ))}
+                    </div>
+                ) : (
+                    /* 📜 세로 피드 뷰 (인스타 홈 스타일) */
+                    <div className="divide-y divide-gray-100">
+                        {filteredFeeds.map((feed) => (
+                            <div key={`feed-${feed.id}`} className="pb-3">
+                                {/* 작성자 헤더 */}
+                                <div className="flex items-center gap-2.5 px-4 py-3">
+                                    <Avatar className="w-8 h-8">
+                                        <AvatarFallback className="text-xs bg-gradient-to-r from-purple-400 to-pink-400 text-white">
+                                            {feed.author?.avatar || "US"}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-semibold text-gray-900 truncate">{feed.author?.name}</div>
+                                        {(feed.place?.name || feed.locationName) && (
+                                            <div className="text-[11px] text-gray-500 truncate flex items-center gap-0.5">
+                                                <MapPin className="w-3 h-3" />
+                                                {feed.place?.name || feed.locationName}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {!searchQuery.trim() && isTasteMatch(feed) && (
+                                        <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">✨ 취향</span>
+                                    )}
+                                </div>
+
+                                {/* 이미지 (더블탭 좋아요) */}
+                                <div className="relative select-none" onClick={() => handleImageTap(feed)}>
+                                    <img src={feed.images[0]} alt="" className="w-full aspect-square object-cover" />
+                                    {heartOverlayId === feed.id && (
+                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                            <Heart className="w-24 h-24 text-white fill-white drop-shadow-2xl animate-ping" />
+                                        </div>
+                                    )}
+                                    {feed.images.length > 1 && (
+                                        <div className="absolute top-3 right-3 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full">
+                                            1/{feed.images.length}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 액션 바 */}
+                                <div className="flex items-center justify-between px-4 pt-3">
+                                    <div className="flex items-center gap-4">
+                                        <button onClick={(e) => handleLike(feed.id, e, feed.place?.id)}>
+                                            <Heart className={`w-6 h-6 ${feed.isLiked ? "fill-red-500 text-red-500" : "text-gray-800"}`} />
+                                        </button>
+                                        <button onClick={() => handleFeedClick(feed)}>
+                                            <MessageCircle className="w-6 h-6 text-gray-800" />
+                                        </button>
+                                        <button onClick={() => handleShare(feed)}>
+                                            <Send className="w-6 h-6 text-gray-800" />
+                                        </button>
+                                    </div>
+                                    <button onClick={(e) => handleSave(feed.id, e, feed.place?.id)}>
+                                        <Bookmark className={`w-6 h-6 ${feed.isSaved ? "fill-gray-900 text-gray-900" : "text-gray-800"}`} />
+                                    </button>
+                                </div>
+
+                                {/* 좋아요/내용 */}
+                                <div className="px-4 pt-2 space-y-1">
+                                    <div className="text-sm font-semibold text-gray-900">좋아요 {Number(feed.likes || 0).toLocaleString()}개</div>
+                                    {feed.content && (
+                                        <p className="text-sm text-gray-800 leading-snug">
+                                            <span className="font-semibold mr-1.5">{feed.author?.name}</span>
+                                            {feed.content}
+                                        </p>
+                                    )}
+                                    {feed.comments > 0 && (
+                                        <button onClick={() => handleFeedClick(feed)} className="text-xs text-gray-400">
+                                            댓글 {feed.comments}개 모두 보기
+                                        </button>
+                                    )}
+                                    <div className="text-[10px] text-gray-400">{feed.createdAt}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 <div className="h-20" />
             </div>
 

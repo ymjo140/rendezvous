@@ -14,6 +14,7 @@ import {
   Wallet,
   Loader2,
   X,
+  Bookmark,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -79,6 +80,48 @@ const formatPrice = (price?: string | number | null) => {
   return price
 }
 
+// --- 캐치테이블식 예약 슬롯 헬퍼 ---
+const DOW_KO = ["일", "월", "화", "수", "목", "금", "토"]
+
+function buildDateChips(days = 7) {
+  const chips: { date: string; day: string; dow: string; isToday: boolean }[] = []
+  for (let i = 0; i < days; i += 1) {
+    const d = new Date()
+    d.setDate(d.getDate() + i)
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate(),
+    ).padStart(2, "0")}`
+    chips.push({
+      date,
+      day: String(d.getDate()),
+      dow: i === 0 ? "오늘" : i === 1 ? "내일" : DOW_KO[d.getDay()],
+      isToday: i === 0,
+    })
+  }
+  return chips
+}
+
+// 영업시간 문자열("11:00 - 22:00" 등)에서 슬롯 범위 파싱, 실패 시 11:00~22:00
+function buildTimeSlots(businessHours?: string): string[] {
+  let startMin = 11 * 60
+  let endMin = 22 * 60
+  const m = /(\d{1,2}):(\d{2})\s*[-~]\s*(\d{1,2}):(\d{2})/.exec(businessHours || "")
+  if (m) {
+    const s = Number(m[1]) * 60 + Number(m[2])
+    let e = Number(m[3]) * 60 + Number(m[4])
+    if (e <= s) e = 24 * 60 // 심야 마감(예: 17:00~02:00)은 자정까지로
+    if (e - s >= 60) {
+      startMin = s
+      endMin = e
+    }
+  }
+  const slots: string[] = []
+  for (let t = startMin; t <= endMin - 30; t += 30) {
+    slots.push(`${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`)
+  }
+  return slots
+}
+
 export default function PlaceDetailPage() {
   const params = useParams()
   const searchParams = useSearchParams()
@@ -119,6 +162,49 @@ export default function PlaceDetailPage() {
   const [reserveSuccess, setReserveSuccess] = useState<string | null>(null)
   const DEPOSIT_PER_PERSON = 5000
   const depositAmount = partySize * DEPOSIT_PER_PERSON
+
+  // 찜(저장) — 기본 폴더에 place 저장 (이미 저장돼 있으면 저장됨 처리)
+  const [savedPlace, setSavedPlace] = useState(false)
+  const [savingPlace, setSavingPlace] = useState(false)
+
+  const handleSavePlace = async () => {
+    if (!place || savedPlace) return
+    const token = localStorage.getItem("token")
+    if (!token) {
+      alert("로그인이 필요합니다.")
+      return
+    }
+    setSavingPlace(true)
+    try {
+      const fRes = await fetch(`${API_BASE_URL}/api/folders`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!fRes.ok) throw new Error("folders")
+      const folders = await fRes.json()
+      const target = (folders || []).find((f: any) => f.is_default) || folders?.[0]
+      if (!target) throw new Error("no_folder")
+      const sRes = await fetch(`${API_BASE_URL}/api/saves`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ folder_id: target.id, item_type: "place", place_id: place.id }),
+      })
+      if (sRes.ok) {
+        setSavedPlace(true)
+        recordActivity("explore")
+      } else {
+        const err = await sRes.json().catch(() => null)
+        if (String(err?.detail || "").includes("이미")) {
+          setSavedPlace(true) // 이미 저장됨
+        } else {
+          throw new Error("save")
+        }
+      }
+    } catch {
+      alert("저장에 실패했어요. 잠시 후 다시 시도해주세요.")
+    } finally {
+      setSavingPlace(false)
+    }
+  }
 
   const openReserve = async () => {
     setReserveError(null)
@@ -422,11 +508,27 @@ export default function PlaceDetailPage() {
                   <p className="text-sm text-gray-500 mt-1">{place.category}</p>
                 )}
               </div>
-              {place.price_range && (
-                <Badge variant="secondary" className="text-[11px] font-normal">
-                  {place.price_range}
-                </Badge>
-              )}
+              <div className="flex items-center gap-2">
+                {place.price_range && (
+                  <Badge variant="secondary" className="text-[11px] font-normal">
+                    {place.price_range}
+                  </Badge>
+                )}
+                {/* 찜(저장) */}
+                <button
+                  type="button"
+                  onClick={handleSavePlace}
+                  disabled={savingPlace}
+                  className={`rounded-full border p-2 transition-colors ${
+                    savedPlace
+                      ? "border-purple-200 bg-purple-50 text-purple-600"
+                      : "border-gray-200 bg-white text-gray-400 hover:text-purple-500"
+                  }`}
+                  title={savedPlace ? "저장됨" : "저장"}
+                >
+                  <Bookmark className={`h-4 w-4 ${savedPlace ? "fill-purple-600" : ""}`} />
+                </button>
+              </div>
             </div>
 
             <div className="mt-3 flex items-center gap-2 text-sm text-gray-600">
@@ -743,23 +845,57 @@ export default function PlaceDetailPage() {
             </div>
 
             <div className="space-y-3">
+              {/* 날짜 선택 — 7일 가로 칩 (캐치테이블식) */}
               <div>
                 <label className="text-xs font-semibold text-gray-500">날짜</label>
-                <Input
-                  type="date"
-                  value={reserveDate}
-                  onChange={(e) => setReserveDate(e.target.value)}
-                  className="h-10 text-sm mt-1"
-                />
+                <div className="mt-1.5 flex gap-2 overflow-x-auto pb-1">
+                  {buildDateChips().map((c) => {
+                    const selected = reserveDate === c.date
+                    return (
+                      <button
+                        key={c.date}
+                        type="button"
+                        onClick={() => setReserveDate(c.date)}
+                        className={`flex w-12 flex-shrink-0 flex-col items-center rounded-xl border py-2 transition-colors ${
+                          selected
+                            ? "border-purple-500 bg-purple-600 text-white"
+                            : "border-gray-200 bg-white text-gray-700 hover:border-purple-200"
+                        }`}
+                      >
+                        <span className={`text-[10px] ${selected ? "text-purple-100" : "text-gray-400"}`}>
+                          {c.dow}
+                        </span>
+                        <span className="text-sm font-bold">{c.day}</span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
+
+              {/* 시간 슬롯 — 영업시간 기반 30분 단위 */}
               <div>
-                <label className="text-xs font-semibold text-gray-500">시간</label>
-                <Input
-                  type="time"
-                  value={reserveTime}
-                  onChange={(e) => setReserveTime(e.target.value)}
-                  className="h-10 text-sm mt-1"
-                />
+                <label className="text-xs font-semibold text-gray-500">
+                  시간 {place.business_hours ? <span className="text-gray-400">({place.business_hours})</span> : null}
+                </label>
+                <div className="mt-1.5 grid max-h-36 grid-cols-4 gap-1.5 overflow-y-auto">
+                  {buildTimeSlots(place.business_hours).map((slot) => {
+                    const selected = reserveTime === slot
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => setReserveTime(slot)}
+                        className={`rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                          selected
+                            ? "border-purple-500 bg-purple-600 text-white"
+                            : "border-gray-200 bg-white text-gray-700 hover:border-purple-200"
+                        }`}
+                      >
+                        {slot}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500">인원</label>

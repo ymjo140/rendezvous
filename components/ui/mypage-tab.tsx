@@ -130,6 +130,9 @@ export function MyPageTab() {
   const [postsLoading, setPostsLoading] = useState(false);
   const [selectedPost, setSelectedPost] = useState<PostItem | null>(null);
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
+  const [isEditingPost, setIsEditingPost] = useState(false);
+  const [editPostContent, setEditPostContent] = useState("");
+  const [postSaving, setPostSaving] = useState(false);
 
   // 💾 저장 폴더 관련 상태
   interface SaveFolder {
@@ -191,6 +194,28 @@ export function MyPageTab() {
           console.error("게시물 로드 오류:", e);
       } finally {
           setPostsLoading(false);
+      }
+  };
+
+  const handleUpdatePost = async () => {
+      if (!selectedPost) return;
+      setPostSaving(true);
+      try {
+          const res = await fetchWithAuth(`/api/posts/${selectedPost.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ content: editPostContent }),
+          });
+          if (res.ok) {
+              setMyPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, content: editPostContent } : p));
+              setSelectedPost(prev => prev ? { ...prev, content: editPostContent } : prev);
+              setIsEditingPost(false);
+          } else {
+              alert("수정에 실패했어요.");
+          }
+      } catch (e) {
+          alert("수정 중 오류가 발생했어요.");
+      } finally {
+          setPostSaving(false);
       }
   };
 
@@ -913,22 +938,64 @@ export function MyPageTab() {
                               <span className="text-gray-400 text-xs ml-auto">{selectedPost.created_at}</span>
                           </div>
                           
-                          {/* 내용 */}
-                          {selectedPost.content && (
-                              <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 p-3 rounded-xl">
-                                  {selectedPost.content}
-                              </p>
+                          {/* 내용 — 수정 모드 지원 */}
+                          {isEditingPost ? (
+                              <div className="space-y-2">
+                                  <Textarea
+                                      value={editPostContent}
+                                      onChange={(e) => setEditPostContent(e.target.value)}
+                                      className="resize-none h-24 text-sm bg-gray-50 rounded-xl"
+                                      placeholder="문구를 입력하세요..."
+                                  />
+                                  <div className="flex gap-2">
+                                      <Button
+                                          variant="outline"
+                                          className="flex-1 rounded-xl"
+                                          onClick={() => setIsEditingPost(false)}
+                                      >
+                                          취소
+                                      </Button>
+                                      <Button
+                                          className="flex-1 bg-[#7C3AED] hover:bg-purple-700 rounded-xl"
+                                          disabled={postSaving}
+                                          onClick={handleUpdatePost}
+                                      >
+                                          {postSaving ? "저장 중..." : "저장"}
+                                      </Button>
+                                  </div>
+                              </div>
+                          ) : (
+                              selectedPost.content && (
+                                  <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 p-3 rounded-xl">
+                                      {selectedPost.content}
+                                  </p>
+                              )
                           )}
-                          
-                          {/* 삭제 버튼 */}
-                          <Button 
-                              variant="outline" 
-                              className="w-full border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-xl h-11 font-bold"
-                              onClick={() => handleDeletePost(selectedPost.id)}
-                          >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              게시물 삭제
-                          </Button>
+
+                          {/* 수정/삭제 버튼 */}
+                          {!isEditingPost && (
+                              <div className="flex gap-2">
+                                  <Button
+                                      variant="outline"
+                                      className="flex-1 rounded-xl h-11 font-bold"
+                                      onClick={() => {
+                                          setEditPostContent(selectedPost.content || "");
+                                          setIsEditingPost(true);
+                                      }}
+                                  >
+                                      <Pencil className="w-4 h-4 mr-2" />
+                                      수정
+                                  </Button>
+                                  <Button
+                                      variant="outline"
+                                      className="flex-1 border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-xl h-11 font-bold"
+                                      onClick={() => handleDeletePost(selectedPost.id)}
+                                  >
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      삭제
+                                  </Button>
+                              </div>
+                          )}
                       </div>
                   </>
               )}

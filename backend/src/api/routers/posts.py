@@ -373,6 +373,39 @@ def get_post(
     )
 
 
+class PostUpdate(BaseModel):
+    content: Optional[str] = None
+    location_name: Optional[str] = None
+    place_id: Optional[int] = None
+
+
+@router.patch("/api/posts/{post_id}")
+def update_post(
+    post_id: str,
+    req: PostUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """게시물 수정(내용/위치/장소 태그) — 작성자만"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+
+    post = db.query(models.Post).filter(models.Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="게시물을 찾을 수 없습니다.")
+    if post.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="수정 권한이 없습니다.")
+
+    if req.content is not None:
+        post.content = req.content
+    if req.location_name is not None:
+        post.location_name = req.location_name or None
+    if req.place_id is not None:
+        post.place_id = req.place_id or None
+    db.commit()
+    return {"message": "게시물이 수정되었습니다.", "id": post.id}
+
+
 @router.delete("/api/posts/{post_id}")
 def delete_post(
     post_id: str,
