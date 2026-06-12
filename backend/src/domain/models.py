@@ -257,6 +257,28 @@ class CoinHistory(Base):
     description = Column(String)
     created_at = Column(DateTime, default=datetime.now)
 
+class ContentReport(Base):
+    """콘텐츠 신고(게시물/댓글/사용자) — 스토어 UGC 정책(Apple 1.2) 대응."""
+    __tablename__ = "content_reports"
+    id = Column(Integer, primary_key=True, index=True)
+    reporter_id = Column(Integer, ForeignKey("users.id"), index=True)
+    target_type = Column(String)   # post, comment, user
+    target_id = Column(String, index=True)
+    reason = Column(String)        # spam, abuse, adult, etc
+    detail = Column(String, nullable=True)
+    status = Column(String, default="pending")  # pending, reviewed
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class UserBlock(Base):
+    """사용자 차단 — 차단한 유저의 게시물/댓글을 피드에서 제외."""
+    __tablename__ = "user_blocks"
+    id = Column(Integer, primary_key=True, index=True)
+    blocker_id = Column(Integer, ForeignKey("users.id"), index=True)
+    blocked_user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class UserBadge(Base):
     """획득한 뱃지(업적). 정의는 코드 상수, 여기엔 획득 기록만."""
     __tablename__ = "user_badges"

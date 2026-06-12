@@ -208,13 +208,28 @@ def get_posts(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """피드 조회 (최신순)"""
-    posts = db.query(models.Post)\
-        .filter(models.Post.is_public == True)\
-        .order_by(desc(models.Post.created_at))\
-        .offset(skip)\
-        .limit(limit)\
-        .all()
+    """피드 조회 (최신순) — 차단한 사용자/내가 신고한 게시물 제외(UGC 정책)"""
+    q = db.query(models.Post).filter(models.Post.is_public == True)
+    if current_user:
+        try:
+            blocked = [
+                b.blocked_user_id
+                for b in db.query(models.UserBlock).filter(models.UserBlock.blocker_id == current_user.id).all()
+            ]
+            if blocked:
+                q = q.filter(~models.Post.user_id.in_(blocked))
+            reported = [
+                r.target_id
+                for r in db.query(models.ContentReport).filter(
+                    models.ContentReport.reporter_id == current_user.id,
+                    models.ContentReport.target_type == "post",
+                ).all()
+            ]
+            if reported:
+                q = q.filter(~models.Post.id.in_(reported))
+        except Exception as e:
+            print(f"[posts] 차단/신고 필터 스킵: {e}")
+    posts = q.order_by(desc(models.Post.created_at)).offset(skip).limit(limit).all()
     place_map = {}
     place_ids = [p.place_id for p in posts if p.place_id]
     if place_ids:

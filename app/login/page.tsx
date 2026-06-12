@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect } from "react"
+import Link from "next/link"
 import { MessageCircle } from "lucide-react"
 
 export default function LoginPage() {
@@ -38,6 +39,15 @@ export default function LoginPage() {
           <MessageCircle className="w-6 h-6 fill-black border-none" />
           카카오로 3초 만에 시작하기
         </button>
+
+        {/* 약관 동의 고지 (스토어/카카오 검수 요건) */}
+        <p className="text-[11px] text-gray-400 text-center leading-relaxed">
+          로그인 시{" "}
+          <Link href="/terms" className="underline text-gray-500">이용약관</Link>
+          {" "}및{" "}
+          <Link href="/privacy" className="underline text-gray-500">개인정보처리방침</Link>
+          에 동의하게 됩니다.
+        </p>
 
       </div>
     </div>

@@ -81,6 +81,69 @@ class UserService:
         db.commit()
         return {"message": "Updated", "name": user.name}
 
+    def withdraw(self, db: Session, user: models.User):
+        """회원 탈퇴(스토어 필수): 개인 콘텐츠/연결 삭제 + 계정 익명화.
+        예약/리뷰/거래원장은 정산·기록 보존을 위해 행은 남기되 계정 정보를 익명화
+        (email 변경으로 기존 JWT는 즉시 무효화됨)."""
+        from datetime import datetime as _dt
+        uid = user.id
+        try:
+            # 1) 내 게시물 + 부속(좋아요/댓글) 삭제
+            posts = db.query(models.Post).filter(models.Post.user_id == uid).all()
+            for p in posts:
+                db.query(models.PostLike).filter(models.PostLike.post_id == p.id).delete(synchronize_session=False)
+                db.query(models.PostComment).filter(models.PostComment.post_id == p.id).delete(synchronize_session=False)
+                db.delete(p)
+            # 2) 내가 남긴 좋아요/댓글
+            db.query(models.PostLike).filter(models.PostLike.user_id == uid).delete(synchronize_session=False)
+            db.query(models.PostComment).filter(models.PostComment.user_id == uid).delete(synchronize_session=False)
+            # 3) 소셜/학습/게임 데이터
+            db.query(models.Friendship).filter(
+                (models.Friendship.requester_id == uid) | (models.Friendship.receiver_id == uid)
+            ).delete(synchronize_session=False)
+            db.query(models.ChatRoomMember).filter(models.ChatRoomMember.user_id == uid).delete(synchronize_session=False)
+            db.query(models.UserEmbedding).filter(models.UserEmbedding.user_id == uid).delete(synchronize_session=False)
+            db.query(models.UserInteractionLog).filter(models.UserInteractionLog.user_id == uid).delete(synchronize_session=False)
+            db.query(models.UserBadge).filter(models.UserBadge.user_id == uid).delete(synchronize_session=False)
+            db.query(models.UserBlock).filter(
+                (models.UserBlock.blocker_id == uid) | (models.UserBlock.blocked_user_id == uid)
+            ).delete(synchronize_session=False)
+            try:
+                db.query(models.SavedItem).filter(models.SavedItem.user_id == uid).delete(synchronize_session=False)
+                db.query(models.SaveFolder).filter(models.SaveFolder.user_id == uid).delete(synchronize_session=False)
+                db.query(models.ShareCart).filter(models.ShareCart.user_id == uid).delete(synchronize_session=False)
+            except Exception:
+                pass
+            db.query(models.UserAvatar).filter(models.UserAvatar.user_id == uid).delete(synchronize_session=False)
+
+            # 4) 계정 익명화 — email 변경으로 기존 토큰(sub=email) 즉시 무효
+            stamp = _dt.now().strftime("%Y%m%d%H%M%S")
+            user.name = "탈퇴한 사용자"
+            user.email = f"deleted_{uid}_{stamp}@deleted.invalid"
+            user.hashed_password = "withdrawn"
+            user.preferences = {}
+            user.preference_vector = {}
+            user.favorites = []
+            user.blacklisted_place_ids = []
+            user.lat = 37.5665
+            user.lng = 126.9780
+            user.location_name = ""
+            user.wallet_balance = 0
+            user.xp = 0
+            user.level = 1
+            user.streak_count = 0
+            user.best_streak = 0
+            user.last_activity_date = None
+            user.game_state = {}
+            flag_modified(user, "preferences")
+            flag_modified(user, "game_state")
+            db.commit()
+            return {"status": "withdrawn", "message": "탈퇴가 완료되었습니다. 이용해주셔서 감사합니다."}
+        except Exception as e:
+            db.rollback()
+            print(f"[withdraw] 실패: {e}")
+            raise HTTPException(500, "탈퇴 처리 중 오류가 발생했습니다.")
+
     def update_preferences(self, db: Session, user: models.User, prefs: schemas.UserPreferenceUpdate):
         user.preferences = prefs.dict()
         flag_modified(user, "preferences")

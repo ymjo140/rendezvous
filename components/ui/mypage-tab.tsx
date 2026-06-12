@@ -197,6 +197,24 @@ export function MyPageTab() {
       }
   };
 
+  // 회원 탈퇴(스토어 필수) — 이중 확인 후 개인 데이터 삭제·계정 익명화
+  const handleWithdraw = async () => {
+      if (!confirm("정말 탈퇴하시겠어요?\n게시물·친구·취향 데이터가 모두 삭제되며 복구할 수 없습니다.")) return;
+      if (!confirm("캐시 잔액과 예약 내역도 사라집니다.\n탈퇴를 진행할까요?")) return;
+      try {
+          const res = await fetchWithAuth("/api/users/me", { method: "DELETE" });
+          if (res.ok) {
+              localStorage.removeItem("token");
+              alert("탈퇴가 완료되었습니다. 이용해주셔서 감사합니다.");
+              window.location.href = "/login";
+          } else {
+              alert("탈퇴 처리에 실패했어요. 잠시 후 다시 시도해주세요.");
+          }
+      } catch {
+          alert("탈퇴 처리 중 오류가 발생했어요.");
+      }
+  };
+
   const handleUpdatePost = async () => {
       if (!selectedPost) return;
       setPostSaving(true);
@@ -810,8 +828,34 @@ export function MyPageTab() {
                 <ChevronRight className="w-4 h-4 text-gray-300" />
             </button>
 
-            <button 
-                className="w-full flex items-center gap-4 p-4 hover:bg-red-50 transition-colors text-left group"
+            <a
+                href="/terms"
+                className="w-full flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors border-b border-gray-50 text-left"
+            >
+                <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-gray-500">
+                    📄
+                </div>
+                <div className="flex-1">
+                    <div className="font-bold text-gray-800 text-sm">이용약관</div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-300" />
+            </a>
+
+            <a
+                href="/privacy"
+                className="w-full flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors border-b border-gray-50 text-left"
+            >
+                <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-gray-500">
+                    🔒
+                </div>
+                <div className="flex-1">
+                    <div className="font-bold text-gray-800 text-sm">개인정보처리방침</div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-300" />
+            </a>
+
+            <button
+                className="w-full flex items-center gap-4 p-4 hover:bg-red-50 transition-colors border-b border-gray-50 text-left group"
                 onClick={() => { if (confirm("정말 로그아웃 하시겠습니까?")) { localStorage.removeItem("token"); window.location.href = "/login"; } }}
             >
                 <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-500 group-hover:bg-red-100 transition-colors">
@@ -819,6 +863,19 @@ export function MyPageTab() {
                 </div>
                 <div className="flex-1">
                     <div className="font-bold text-red-500 text-sm">로그아웃</div>
+                </div>
+            </button>
+
+            <button
+                className="w-full flex items-center gap-4 p-4 hover:bg-red-50 transition-colors text-left"
+                onClick={handleWithdraw}
+            >
+                <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-gray-400">
+                    <Trash2 className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                    <div className="font-bold text-gray-500 text-sm">회원 탈퇴</div>
+                    <div className="text-xs text-gray-400">계정과 개인 데이터가 모두 삭제됩니다</div>
                 </div>
             </button>
         </div>

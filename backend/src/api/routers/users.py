@@ -63,6 +63,14 @@ def request_friend(req: schemas.FriendRequest, current_user: models.User = Depen
 def accept_friend(req: schemas.FriendAccept, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     return user_service.accept_friend(db, current_user, req)
 
+@router.delete("/api/users/me")
+def withdraw_account(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """회원 탈퇴 — 개인 콘텐츠 삭제 + 계정 익명화 (스토어 필수 요건)"""
+    if current_user is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    return user_service.withdraw(db, current_user)
+
 @router.get("/api/friends/search")
 def search_friends(q: str = "", current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     return user_service.search_users(db, current_user, q)

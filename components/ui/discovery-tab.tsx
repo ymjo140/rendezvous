@@ -106,6 +106,48 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [searchPlaceLoading, setSearchPlaceLoading] = useState(false);
     const [myPrefTags, setMyPrefTags] = useState<string[]>([]);
 
+    // 🚨 신고/차단 (스토어 UGC 정책)
+    const [modTarget, setModTarget] = useState<any>(null); // 신고/차단 시트 대상 게시물
+
+    const reportPost = async (feed: any, reason: string) => {
+        try {
+            const res = await fetchWithAuth("/api/reports", {
+                method: "POST",
+                body: JSON.stringify({ target_type: "post", target_id: String(feed.id), reason }),
+            });
+            if (res.ok) {
+                alert("신고가 접수되었습니다. 검토 후 조치할게요.");
+                setFeeds(prev => prev.filter(f => f.id !== feed.id));
+                setSelectedFeed(null);
+                setModTarget(null);
+            } else {
+                alert("로그인 후 이용할 수 있어요.");
+            }
+        } catch {
+            alert("신고 처리 중 오류가 발생했어요.");
+        }
+    };
+
+    const blockAuthor = async (feed: any) => {
+        const authorId = feed?.author?.id;
+        if (!authorId) return;
+        if (!confirm(`${feed.author?.name || "이 사용자"}님을 차단할까요?\n차단하면 이 사용자의 게시물이 더 이상 보이지 않습니다.`)) return;
+        try {
+            const res = await fetchWithAuth(`/api/users/${authorId}/block`, { method: "POST" });
+            if (res.ok) {
+                alert("차단했어요.");
+                setFeeds(prev => prev.filter(f => f.author?.id !== authorId));
+                setSelectedFeed(null);
+                setModTarget(null);
+            } else {
+                const e = await res.json().catch(() => null);
+                alert(e?.detail || "차단에 실패했어요.");
+            }
+        } catch {
+            alert("차단 처리 중 오류가 발생했어요.");
+        }
+    };
+
     // 📸 인스타식 뷰 모드(그리드↔피드) + 더블탭 좋아요
     const [viewMode, setViewMode] = useState<"grid" | "feed">("grid");
     const [heartOverlayId, setHeartOverlayId] = useState<string | number | null>(null);
@@ -1429,6 +1471,9 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                     {!searchQuery.trim() && isTasteMatch(feed) && (
                                         <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">✨ 취향</span>
                                     )}
+                                    <button onClick={() => setModTarget(feed)} className="p-1 text-gray-400">
+                                        <MoreHorizontal className="w-5 h-5" />
+                                    </button>
                                 </div>
 
                                 {/* 이미지 (더블탭 좋아요) */}
@@ -1536,17 +1581,23 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                         ) : null}
                                     </div>
                                 </div>
-                                <Button variant="ghost" size="icon" onClick={() => {
-                                    setSelectedFeed(null);
-                                    if (isFromSharedPost && onBackFromShared) {
-                                        setIsFromSharedPost(false);
-                                        onBackFromShared();
-                                    }
-                                }}>
-                                    <X className="w-5 h-5" />
-                                </Button>
+                                <div className="flex items-center">
+                                    {/* 신고/차단 메뉴 */}
+                                    <Button variant="ghost" size="icon" onClick={() => setModTarget(selectedFeed)}>
+                                        <MoreHorizontal className="w-5 h-5 text-gray-400" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={() => {
+                                        setSelectedFeed(null);
+                                        if (isFromSharedPost && onBackFromShared) {
+                                            setIsFromSharedPost(false);
+                                            onBackFromShared();
+                                        }
+                                    }}>
+                                        <X className="w-5 h-5" />
+                                    </Button>
+                                </div>
                             </div>
-                            
+
                             {/* 이미지 */}
                             <div className="aspect-square relative bg-black">
                                 <img 
@@ -2060,6 +2111,49 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             </Dialog>
             
             {/* 6. 사진 편집 모달 */}
+            {/* 🚨 신고/차단 액션 시트 */}
+            {modTarget && (
+                <div
+                    className="fixed inset-0 z-[90] bg-black/50 flex items-end justify-center"
+                    onClick={() => setModTarget(null)}
+                >
+                    <div
+                        className="bg-white w-full max-w-md rounded-t-3xl p-5 space-y-2 font-['Pretendard']"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="text-sm font-bold text-gray-800 mb-1">이 게시물 신고하기</div>
+                        {[
+                            { key: "spam", label: "스팸 / 광고" },
+                            { key: "abuse", label: "욕설 / 혐오 발언" },
+                            { key: "adult", label: "음란물 / 부적절한 콘텐츠" },
+                            { key: "false_info", label: "허위 정보" },
+                        ].map((r) => (
+                            <button
+                                key={r.key}
+                                onClick={() => reportPost(modTarget, r.key)}
+                                className="w-full text-left px-4 py-3 rounded-xl bg-gray-50 hover:bg-gray-100 text-sm text-gray-700"
+                            >
+                                {r.label}
+                            </button>
+                        ))}
+                        {modTarget?.author?.id && (
+                            <button
+                                onClick={() => blockAuthor(modTarget)}
+                                className="w-full text-left px-4 py-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-sm font-semibold text-rose-600"
+                            >
+                                🚫 {modTarget.author?.name || "이 사용자"} 차단하기
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setModTarget(null)}
+                            className="w-full px-4 py-3 rounded-xl text-sm text-gray-400"
+                        >
+                            취소
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <PhotoEditor
                 open={isPhotoEditorOpen}
                 onOpenChange={setIsPhotoEditorOpen}
