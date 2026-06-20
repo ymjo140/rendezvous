@@ -2,8 +2,11 @@
 
 export const fetchWithAuth = async (endpoint: string, options: RequestInit = {}) => {
     const token = localStorage.getItem("token");
+    // FormData(파일 업로드)면 Content-Type을 생략 → 브라우저가 multipart 경계를 설정.
+    // JSON으로 강제하면 영상 업로드가 깨짐.
+    const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
     const headers = {
-        "Content-Type": "application/json",
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
         ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         ...options.headers,
     };

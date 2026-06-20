@@ -5,7 +5,7 @@ SNS 게시물 API 라우터 (Instagram 스타일)
 - 이미지 업로드 (Base64 → Supabase Storage)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List, Optional
@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from datetime import datetime
 import base64
 import os
+import uuid as _uuid
 
 from core.database import get_db
 from domain import models
@@ -20,13 +21,19 @@ from api.dependencies import get_current_user
 
 router = APIRouter()
 
+# 숏폼 영상 업로드 설정
+ALLOWED_VIDEO_MIME = {"video/mp4", "video/quicktime", "video/webm"}
+MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50MB
+STORAGE_BUCKET = "post-media"
+
 
 # --- Pydantic Schemas ---
 class PostCreate(BaseModel):
-    image_urls: List[str]  # Base64 또는 URL
+    image_urls: List[str]  # Base64(이미지) 또는 Storage URL(영상)
     content: Optional[str] = None
     location_name: Optional[str] = None
     place_id: Optional[int] = None
+    media_type: Optional[str] = "image"  # 'image' | 'video'
 
 class PlaceSummary(BaseModel):
     id: int
@@ -49,6 +56,7 @@ class PostResponse(BaseModel):
     user_name: str
     user_avatar: Optional[str]
     image_urls: List[str]
+    media_type: str = "image"
     content: Optional[str]
     location_name: Optional[str]
     place_id: Optional[int] = None
@@ -142,6 +150,63 @@ def build_place_summary(place: Optional[models.Place]):
 
 # --- API Endpoints ---
 
+@router.post("/api/posts/upload-media")
+async def upload_media(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """숏폼 영상 업로드 → Supabase Storage(post-media) → 공개 URL 반환.
+    영상은 base64 DB저장이 비현실적이라 Storage에 올리고 URL만 게시물에 저장."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_VIDEO_MIME:
+        raise HTTPException(status_code=400, detail="mp4/mov/webm 영상만 업로드할 수 있어요.")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="빈 파일입니다.")
+    if len(data) > MAX_VIDEO_BYTES:
+        raise HTTPException(status_code=400, detail="영상은 50MB 이하만 올릴 수 있어요.")
+
+    from core.config import settings
+    supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+    if not supabase_url or not service_key:
+        raise HTTPException(status_code=503, detail="영상 저장소가 설정되지 않았습니다.")
+
+    ext = {"video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm"}.get(content_type, "mp4")
+    path = f"videos/{current_user.id}/{_uuid.uuid4().hex}.{ext}"
+
+    try:
+        import requests as _rq
+        headers = {
+            "Authorization": f"Bearer {service_key}",
+            "apikey": service_key,
+            "Content-Type": content_type,
+            "x-upsert": "true",
+        }
+        up = _rq.post(
+            f"{supabase_url}/storage/v1/object/{STORAGE_BUCKET}/{path}",
+            headers=headers,
+            data=data,
+            timeout=60,
+        )
+        if up.status_code not in (200, 201):
+            print(f"[upload-media] storage {up.status_code}: {up.text[:200]}")
+            raise HTTPException(status_code=502, detail="영상 업로드에 실패했어요. 잠시 후 다시 시도해주세요.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"[upload-media] 예외: {exc}")
+        raise HTTPException(status_code=502, detail="영상 업로드 중 오류가 발생했어요.")
+
+    public_url = f"{supabase_url}/storage/v1/object/public/{STORAGE_BUCKET}/{path}"
+    return {"url": public_url, "media_type": "video"}
+
+
 @router.post("/api/posts", response_model=PostResponse)
 def create_post(
     req: PostCreate,
@@ -168,6 +233,7 @@ def create_post(
     post = models.Post(
         user_id=current_user.id,
         image_urls=processed_urls,
+        media_type=(req.media_type if req.media_type in ("image", "video") else "image"),
         content=req.content,
         location_name=req.location_name,
         place_id=req.place_id
@@ -197,6 +263,7 @@ def create_post(
         comments_count=0,
         is_liked=False,
         is_saved=False,
+        media_type=getattr(post, "media_type", None) or "image",
         created_at=format_time_ago(post.created_at)
     )
 
@@ -279,6 +346,7 @@ def get_posts(
             comments_count=post.comments_count,
             is_liked=is_liked,
             is_saved=is_saved,
+            media_type=getattr(post, "media_type", None) or "image",
             created_at=format_time_ago(post.created_at)
         ))
     
@@ -328,6 +396,7 @@ def get_my_posts(
             comments_count=post.comments_count,
             is_liked=False,
             is_saved=False,
+            media_type=getattr(post, "media_type", None) or "image",
             created_at=format_time_ago(post.created_at)
         ))
     
@@ -384,6 +453,7 @@ def get_post(
         comments_count=post.comments_count,
         is_liked=is_liked,
         is_saved=is_saved,
+        media_type=getattr(post, "media_type", None) or "image",
         created_at=format_time_ago(post.created_at)
     )
 

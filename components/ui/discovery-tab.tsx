@@ -6,7 +6,7 @@ import {
     Search, MapPin, Heart, MessageCircle, Share2, Star, ChevronLeft, 
     MoreHorizontal, Utensils, X, Phone, Clock, ChevronRight, Plus,
     Image as ImageIcon, Camera, Send, Bookmark, Grid3X3, Play, Wand2,
-    FolderPlus, Check, MessageSquare, Users, ShoppingBag, Trash2, Square
+    FolderPlus, Check, MessageSquare, Users, ShoppingBag, Trash2, Square, Video
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -21,6 +21,7 @@ import { useDecisionCell } from "@/hooks/use-decision-cell"
 import { logAction } from "@/lib/analytics-client"
 import { recordActivity } from "@/lib/game"
 import { compressImageFile } from "@/lib/image"
+import { validateAndUploadVideo, captureVideoPoster } from "@/lib/video"
 
 // 폴더 타입
 interface SaveFolder {
@@ -89,6 +90,12 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
     const [newPostImages, setNewPostImages] = useState<string[]>([]);
     const [newPostContent, setNewPostContent] = useState("");
+    // 게시물 미디어 종류 — 'image'(사진) | 'video'(숏폼). 영상은 Storage URL 1개.
+    const [draftMediaType, setDraftMediaType] = useState<"image" | "video">("image");
+    const [draftVideoUrl, setDraftVideoUrl] = useState<string>("");
+    const [draftVideoPoster, setDraftVideoPoster] = useState<string>("");
+    const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+    const videoInputRef = useRef<HTMLInputElement>(null);
     const [locationQuery, setLocationQuery] = useState("");
     const [locationResults, setLocationResults] = useState<any[]>([]);
     const [locationSearching, setLocationSearching] = useState(false);
@@ -216,7 +223,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                         // 피드 형식으로 변환
                         const formattedPost = {
                             id: post.id,
-                            type: "image",
+                            type: post.media_type === "video" ? "video" : "image",
                             images: post.image_urls || [],
                             author: {
                                 id: post.user_id,
@@ -492,6 +499,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const resetCreatePostDraft = () => {
         setNewPostImages([]);
         setNewPostContent("");
+        setDraftMediaType("image");
+        setDraftVideoUrl("");
+        setDraftVideoPoster("");
+        setIsUploadingVideo(false);
         setLocationQuery("");
         setLocationResults([]);
         setLocationSearching(false);
@@ -811,7 +822,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                     // 실제 게시물만 표시 (게시물 없으면 빈 상태 UI)
                     const formattedPosts = (apiPosts || []).map((post: any) => ({
                         id: post.id,
-                        type: "image",
+                        type: post.media_type === "video" ? "video" : "image",
                         images: post.image_urls || [],
                         author: {
                             id: post.user_id,
@@ -1025,6 +1036,38 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         }
     };
     
+    // 숏폼 영상 선택 → 백엔드 Storage 업로드. 포스터(첫 프레임)도 캡처.
+    const handleVideoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (videoInputRef.current) videoInputRef.current.value = "";
+        if (!file) return;
+        const token = localStorage.getItem("token");
+        if (!token) {
+            alert("로그인 후 영상을 올릴 수 있어요.");
+            return;
+        }
+        setIsUploadingVideo(true);
+        try {
+            const poster = await captureVideoPoster(file).catch(() => null);
+            const { url } = await validateAndUploadVideo(file);
+            setDraftMediaType("video");
+            setDraftVideoUrl(url);
+            setDraftVideoPoster(poster || "");
+            // 사진과 동시 사용 방지 — 영상 모드면 이미지 비움
+            setNewPostImages([]);
+        } catch (err: any) {
+            alert(err?.message || "영상 업로드에 실패했어요.");
+        } finally {
+            setIsUploadingVideo(false);
+        }
+    };
+
+    const removeDraftVideo = () => {
+        setDraftMediaType("image");
+        setDraftVideoUrl("");
+        setDraftVideoPoster("");
+    };
+
     // 기존 이미지 편집하기
     const handleEditImage = (index: number) => {
         setTempImageForEdit(newPostImages[index]);
@@ -1052,42 +1095,45 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         setNewPostImages(prev => prev.filter((_, i) => i !== index));
     };
 
-    // 게시물 업로드 (API 연동)
+    // 게시물 업로드 (API 연동) — 사진 또는 숏폼 영상
+    const isVideoDraft = draftMediaType === "video" && !!draftVideoUrl;
+    const canPost = isVideoDraft || newPostImages.length > 0;
+
     const handlePost = async () => {
-        if (newPostImages.length === 0) return;
-        
+        if (!canPost) return;
+
         setIsPosting(true);
         const locationName = selectedLocation?.name || selectedLocation?.address || selectedPlace?.address || null;
         const placePreview = buildPlaceFromSelection(selectedPlace);
-        
+        const mediaUrls = isVideoDraft ? [draftVideoUrl] : newPostImages;
+
         try {
             const token = localStorage.getItem("token");
-            
+
             if (token) {
                 // API로 게시물 생성
                 const res = await fetchWithAuth(`/api/posts`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
                     body: JSON.stringify({
-                        image_urls: newPostImages,
+                        image_urls: mediaUrls,
                         content: newPostContent,
                         location_name: locationName,
-                        place_id: selectedPlace?.id || null
+                        place_id: selectedPlace?.id || null,
+                        media_type: draftMediaType
                     })
                 });
-                
+
                 if (res.ok) {
                     const createdPost = await res.json();
                     const createdPlace = formatPlaceFromPost(createdPost) || placePreview;
                     const newPost = {
                         id: createdPost.id,
-                        type: "image" as const,
-                        images: createdPost.image_urls || newPostImages,
-                        author: { 
-                            id: createdPost.user_id, 
-                            name: createdPost.user_name || "나", 
+                        type: (createdPost.media_type === "video" ? "video" : "image") as const,
+                        images: createdPost.image_urls || mediaUrls,
+                        poster: isVideoDraft ? draftVideoPoster : undefined,
+                        author: {
+                            id: createdPost.user_id,
+                            name: createdPost.user_name || "나",
                             avatar: createdPost.user_avatar || "ME",
                             profileImage: ""
                         },
@@ -1113,18 +1159,19 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             console.error("게시물 업로드 오류:", error);
             addLocalPost(locationName, placePreview);
         }
-        
+
         resetCreatePostDraft();
         setIsCreatePostOpen(false);
         setIsPosting(false);
     };
-    
+
     // 로컬에만 게시물 추가 (비로그인 또는 API 실패 시)
     const addLocalPost = (locationName: string | null, placePreview: any | null) => {
         const newPost = {
             id: `local_${Date.now()}`,
-            type: "image" as const,
-            images: newPostImages,
+            type: (draftMediaType === "video" ? "video" : "image") as const,
+            images: draftMediaType === "video" && draftVideoUrl ? [draftVideoUrl] : newPostImages,
+            poster: draftMediaType === "video" ? draftVideoPoster : undefined,
             author: { id: 999, name: "나", avatar: "ME", profileImage: "" },
             content: newPostContent,
             likes: 0,
@@ -1406,11 +1453,29 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 onClick={() => handleFeedClick(feed)}
                                 className={`relative aspect-square cursor-pointer group overflow-hidden ${getGridClass(index)}`}
                             >
-                                <img
-                                    src={feed.images[0]}
-                                    alt=""
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                                />
+                                {feed.type === "video" ? (
+                                    (feed as any).poster ? (
+                                        <img
+                                            src={(feed as any).poster}
+                                            alt=""
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                        />
+                                    ) : (
+                                        <video
+                                            src={feed.images[0]}
+                                            muted
+                                            playsInline
+                                            preload="metadata"
+                                            className="w-full h-full object-cover"
+                                        />
+                                    )
+                                ) : (
+                                    <img
+                                        src={feed.images[0]}
+                                        alt=""
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                    />
+                                )}
 
                                 {/* 취향 매칭 배지(검색어 없을 때만) */}
                                 {!searchQuery.trim() && isTasteMatch(feed) && (
@@ -1476,9 +1541,20 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                     </button>
                                 </div>
 
-                                {/* 이미지 (더블탭 좋아요) */}
+                                {/* 미디어 (더블탭 좋아요) — 영상이면 <video> */}
                                 <div className="relative select-none" onClick={() => handleImageTap(feed)}>
-                                    <img src={feed.images[0]} alt="" className="w-full aspect-square object-cover" />
+                                    {feed.type === "video" ? (
+                                        <video
+                                            src={feed.images[0]}
+                                            poster={(feed as any).poster || undefined}
+                                            controls
+                                            playsInline
+                                            className="w-full aspect-square object-contain bg-black"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    ) : (
+                                        <img src={feed.images[0]} alt="" className="w-full aspect-square object-cover" />
+                                    )}
                                     {heartOverlayId === feed.id && (
                                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                             <Heart className="w-24 h-24 text-white fill-white drop-shadow-2xl animate-ping" />
@@ -1598,13 +1674,24 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 </div>
                             </div>
 
-                            {/* 이미지 */}
+                            {/* 미디어 — 영상이면 <video> */}
                             <div className="aspect-square relative bg-black">
-                                <img 
-                                    src={selectedFeed.images[0]} 
-                                    alt="" 
-                                    className="w-full h-full object-contain"
-                                />
+                                {selectedFeed.type === "video" ? (
+                                    <video
+                                        src={selectedFeed.images[0]}
+                                        poster={(selectedFeed as any).poster || undefined}
+                                        controls
+                                        playsInline
+                                        autoPlay
+                                        className="w-full h-full object-contain"
+                                    />
+                                ) : (
+                                    <img
+                                        src={selectedFeed.images[0]}
+                                        alt=""
+                                        className="w-full h-full object-contain"
+                                    />
+                                )}
                             </div>
                             
                             {/* 액션 버튼 */}
@@ -1773,25 +1860,84 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             취소
                         </Button>
                         <DialogTitle className="text-base font-semibold">새 게시물</DialogTitle>
-                        <Button 
-                            variant="ghost" 
+                        <Button
+                            variant="ghost"
                             size="sm"
-                            className="text-blue-500 font-semibold hover:text-blue-600"
+                            className="text-amber-600 font-semibold hover:text-amber-700"
                             onClick={handlePost}
-                            disabled={newPostImages.length === 0 || isPosting}
+                            disabled={!canPost || isPosting}
                         >
                             {isPosting ? "게시 중..." : "공유"}
                         </Button>
                     </DialogHeader>
                     
                     <div className="p-4">
-                        {/* 이미지 미리보기 */}
-                        {newPostImages.length > 0 ? (
+                        {/* 사진 ↔ 동영상(숏폼) 전환 — 빈 상태에서만 노출 */}
+                        {newPostImages.length === 0 && !isVideoDraft && (
+                            <div className="flex rounded-xl bg-gray-100 p-1 mb-4 text-sm font-semibold">
+                                <button
+                                    onClick={() => setDraftMediaType("image")}
+                                    className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 transition-colors ${draftMediaType === "image" ? "bg-white shadow-sm text-gray-900" : "text-gray-400"}`}
+                                >
+                                    <ImageIcon className="w-4 h-4" /> 사진
+                                </button>
+                                <button
+                                    onClick={() => setDraftMediaType("video")}
+                                    className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 transition-colors ${draftMediaType === "video" ? "bg-white shadow-sm text-gray-900" : "text-gray-400"}`}
+                                >
+                                    <Video className="w-4 h-4" /> 동영상
+                                </button>
+                            </div>
+                        )}
+
+                        {/* === 영상 미리보기/선택 === */}
+                        {isVideoDraft ? (
+                            <div className="relative mb-4">
+                                <div className="aspect-square rounded-xl overflow-hidden bg-black">
+                                    <video
+                                        src={draftVideoUrl}
+                                        poster={draftVideoPoster || undefined}
+                                        controls
+                                        playsInline
+                                        className="w-full h-full object-contain"
+                                    />
+                                </div>
+                                <button
+                                    onClick={removeDraftVideo}
+                                    className="absolute top-2 right-2 bg-black/60 text-white p-1 rounded-full hover:bg-black/80 transition-colors"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                                <div className="absolute top-2 left-2 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                    숏폼
+                                </div>
+                            </div>
+                        ) : draftMediaType === "video" ? (
+                            <div
+                                onClick={() => !isUploadingVideo && videoInputRef.current?.click()}
+                                className="aspect-square rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer hover:border-gray-300 hover:bg-gray-50 transition-colors mb-4"
+                            >
+                                {isUploadingVideo ? (
+                                    <>
+                                        <div className="animate-spin rounded-full h-8 w-8 border-4 border-amber-500 border-t-transparent mb-3" />
+                                        <p className="text-sm text-gray-500">영상 올리는 중...</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                                            <Video className="w-8 h-8 text-gray-400" />
+                                        </div>
+                                        <p className="text-sm text-gray-500">동영상을 선택하세요</p>
+                                        <p className="text-xs text-gray-400 mt-1">최대 60초 · 50MB (mp4/mov/webm)</p>
+                                    </>
+                                )}
+                            </div>
+                        ) : newPostImages.length > 0 ? (
                             <div className="relative mb-4">
                                 <div className="aspect-square rounded-xl overflow-hidden bg-gray-100">
-                                    <img 
-                                        src={newPostImages[0]} 
-                                        alt="" 
+                                    <img
+                                        src={newPostImages[0]}
+                                        alt=""
                                         className="w-full h-full object-cover"
                                     />
                                 </div>
@@ -1799,15 +1945,15 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 {newPostImages.length > 1 && (
                                     <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1">
                                         {newPostImages.map((_, i) => (
-                                            <div 
-                                                key={i} 
-                                                className={`w-1.5 h-1.5 rounded-full ${i === 0 ? 'bg-blue-500' : 'bg-white/60'}`}
+                                            <div
+                                                key={i}
+                                                className={`w-1.5 h-1.5 rounded-full ${i === 0 ? 'bg-amber-500' : 'bg-white/60'}`}
                                             />
                                         ))}
                                     </div>
                                 )}
                                 {/* 편집 버튼 */}
-                                <button 
+                                <button
                                     onClick={() => handleEditImage(0)}
                                     className="absolute top-2 left-2 bg-black/60 text-white p-1.5 rounded-full hover:bg-black/80 transition-colors"
                                     title="사진 편집"
@@ -1815,7 +1961,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                     <Wand2 className="w-4 h-4" />
                                 </button>
                                 {/* 삭제 버튼 */}
-                                <button 
+                                <button
                                     onClick={() => removeImage(0)}
                                     className="absolute top-2 right-2 bg-black/60 text-white p-1 rounded-full hover:bg-black/80 transition-colors"
                                 >
@@ -1823,7 +1969,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                 </button>
                             </div>
                         ) : (
-                            <div 
+                            <div
                                 onClick={() => fileInputRef.current?.click()}
                                 className="aspect-square rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer hover:border-gray-300 hover:bg-gray-50 transition-colors mb-4"
                             >
@@ -1831,16 +1977,23 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                     <ImageIcon className="w-8 h-8 text-gray-400" />
                                 </div>
                                 <p className="text-sm text-gray-500">사진을 선택하세요</p>
-                                <p className="text-xs text-gray-400 mt-1">최대 10장까지 업로드 가능</p>
+                                <p className="text-xs text-gray-400 mt-1">사진 위에 글·필터를 입혀보세요 · 최대 10장</p>
                             </div>
                         )}
-                        
+
                         <input
                             ref={fileInputRef}
                             type="file"
                             accept="image/*"
                             multiple
                             onChange={handleImageSelect}
+                            className="hidden"
+                        />
+                        <input
+                            ref={videoInputRef}
+                            type="file"
+                            accept="video/mp4,video/quicktime,video/webm"
+                            onChange={handleVideoSelect}
                             className="hidden"
                         />
                         

@@ -375,9 +375,11 @@ class Post(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     
-    # 이미지 (JSON 배열 - 여러 장 지원)
+    # 이미지/영상 (JSON 배열 - 여러 장 지원). 영상이면 Storage URL.
     image_urls = Column(JSON, default=[])
-    
+    # 'image' | 'video' — 숏폼 영상 게시물 구분
+    media_type = Column(String, default="image")
+
     # 내용
     content = Column(String, nullable=True)
     

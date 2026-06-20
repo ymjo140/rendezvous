@@ -287,7 +287,7 @@ export function PhotoEditor({ open, onOpenChange, imageSrc, onSave }: PhotoEdito
             variant="ghost" 
             size="sm" 
             onClick={handleSave}
-            className="text-blue-400 hover:text-blue-300 hover:bg-gray-800 font-semibold"
+            className="text-amber-500 hover:text-amber-400 hover:bg-gray-800 font-semibold"
           >
             <Check className="w-5 h-5 mr-1" />
             완료
@@ -320,7 +320,7 @@ export function PhotoEditor({ open, onOpenChange, imageSrc, onSave }: PhotoEdito
               className={cn(
                 "flex-1 flex flex-col items-center py-3 transition-colors",
                 activeTab === tab.id
-                  ? "text-blue-400 border-b-2 border-blue-400"
+                  ? "text-amber-500 border-b-2 border-amber-500"
                   : "text-gray-400 hover:text-white"
               )}
             >
@@ -349,7 +349,7 @@ export function PhotoEditor({ open, onOpenChange, imageSrc, onSave }: PhotoEdito
                     className={cn(
                       "w-16 h-16 rounded-lg overflow-hidden border-2",
                       selectedFilter === filter.id 
-                        ? "border-blue-400" 
+                        ? "border-amber-500" 
                         : "border-transparent"
                     )}
                   >
@@ -447,7 +447,7 @@ export function PhotoEditor({ open, onOpenChange, imageSrc, onSave }: PhotoEdito
                   onClick={() => setFlipH(!flipH)}
                   className={cn(
                     "bg-gray-800 border-gray-700 hover:bg-gray-700",
-                    flipH && "bg-blue-900 border-blue-500"
+                    flipH && "bg-amber-900 border-amber-500"
                   )}
                 >
                   <FlipHorizontal className="w-4 h-4 mr-2" />
@@ -459,7 +459,7 @@ export function PhotoEditor({ open, onOpenChange, imageSrc, onSave }: PhotoEdito
                   onClick={() => setFlipV(!flipV)}
                   className={cn(
                     "bg-gray-800 border-gray-700 hover:bg-gray-700",
-                    flipV && "bg-blue-900 border-blue-500"
+                    flipV && "bg-amber-900 border-amber-500"
                   )}
                 >
                   <FlipVertical className="w-4 h-4 mr-2" />
@@ -479,7 +479,7 @@ export function PhotoEditor({ open, onOpenChange, imageSrc, onSave }: PhotoEdito
                       onClick={() => setAspectRatio(ratio.id)}
                       className={cn(
                         "flex-1 bg-gray-800 border-gray-700 hover:bg-gray-700",
-                        aspectRatio === ratio.id && "bg-blue-900 border-blue-500"
+                        aspectRatio === ratio.id && "bg-amber-900 border-amber-500"
                       )}
                     >
                       {ratio.name}
@@ -500,12 +500,12 @@ export function PhotoEditor({ open, onOpenChange, imageSrc, onSave }: PhotoEdito
                   value={newText}
                   onChange={(e) => setNewText(e.target.value)}
                   placeholder="텍스트 입력..."
-                  className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                  className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
                   onKeyDown={(e) => e.key === 'Enter' && addText()}
                 />
                 <Button
                   onClick={addText}
-                  className="bg-blue-500 hover:bg-blue-600"
+                  className="bg-amber-500 hover:bg-amber-600"
                 >
                   추가
                 </Button>
@@ -549,7 +549,7 @@ export function PhotoEditor({ open, onOpenChange, imageSrc, onSave }: PhotoEdito
                         className={cn(
                           "px-3 py-1 rounded-full text-sm cursor-pointer flex items-center gap-2",
                           selectedTextId === overlay.id
-                            ? "bg-blue-500"
+                            ? "bg-amber-500"
                             : "bg-gray-700 hover:bg-gray-600"
                         )}
                       >
