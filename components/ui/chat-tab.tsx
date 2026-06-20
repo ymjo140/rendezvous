@@ -15,7 +15,6 @@ import { Card } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { API_BASE_URL, fetchWithAuth } from "@/lib/api-client"
 import { useMe } from "@/hooks/use-me"
-import { CommunityTab } from "@/components/ui/community-tab"
 
 // 🌟 [핵심] 주소를 여기서 직접 관리 (커뮤니티 탭과 통일)
 const WS_BASE_URL =
@@ -796,7 +795,6 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
 
     return (
         <div className="flex flex-col h-full bg-[#f8fafc] font-['Pretendard']">
-            {renderTabHeader()}
             <div className="flex-1 flex flex-col">
                 <div className="bg-white px-4 py-3 flex items-center shadow-sm sticky top-0 z-20 justify-between">
                 <div className="flex items-center gap-2">
