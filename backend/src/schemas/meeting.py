@@ -56,3 +56,5 @@ class RecommendRequest(BaseModel):
     user_selected_tags: List[str] = []
     current_lat: float = 37.566
     current_lng: float = 126.978
+    # 모임 멤버 user_id(요청자 외 친구들) — 그룹 취향 합성 추천용
+    member_user_ids: List[int] = []

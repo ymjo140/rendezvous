@@ -65,6 +65,81 @@ class MeetingService:
             return f"중간지점 근처 · {purpose} 추천"
         return "중간지점에서 가까운 곳이에요"
 
+    def _load_user_vector(self, db: Session, uid: int):
+        """유저의 블렌드 취향 벡터(장기 0.7 + 최근 0.3) 로드. 없으면 None."""
+        try:
+            ue = db.query(models.UserEmbedding).filter(
+                models.UserEmbedding.user_id == uid
+            ).first()
+            if ue is None or ue.preference_embedding is None:
+                return None
+            pref = np.asarray(ue.preference_embedding, dtype=float)
+            if ue.recent_embedding is not None:
+                recent = np.asarray(ue.recent_embedding, dtype=float)
+                blended = 0.7 * pref + 0.3 * recent
+                norm = np.linalg.norm(blended)
+                return (blended / norm) if norm else pref
+            return pref
+        except Exception as e:
+            print(f"[Debug] _load_user_vector({uid}) skipped: {e}")
+            return None
+
+    @staticmethod
+    def _group_reason(poi, min_sim: float, mean_sim: float, n_members: int, session_tags: list) -> str:
+        """그룹 추천 이유 — 최소 만족도(least-misery) 기반 + 중간지점 결합."""
+        cand = set(t for t in (getattr(poi, "tags", None) or []) if t)
+        cat = getattr(poi, "category", None)
+        if cat:
+            cand.add(str(cat))
+        matched = [t for t in (session_tags or []) if t and t in cand][:1]
+        tag_part = f" · {matched[0]}" if matched else ""
+        if min_sim >= 0.6:
+            return f"중간지점 근처{tag_part} · 우리 모두의 취향에 딱 맞아요"
+        if min_sim >= 0.45:
+            return f"중간지점 근처{tag_part} · 다 같이 만족할 만한 곳이에요"
+        return f"중간지점 근처{tag_part} · {n_members}명이 함께 가기 좋아요"
+
+    def _group_rerank(self, db: Session, candidates: list, member_vecs: list, session_tags: list, top_k: int = 15) -> list:
+        """멤버 벡터들로 그룹 재랭킹(least-misery). (POI, 이유) 페어 반환.
+        그룹점수 = 0.65*(0.6*평균유사 + 0.4*최소유사) + 0.35*세션태그매칭.
+        '아무도 싫어하지 않는' 곳을 우선해 모임 전체 만족을 높인다."""
+        from domain.models import PlaceEmbedding
+
+        ids = [c.id for c in candidates if getattr(c, "id", 0)]
+        pe_map = {}
+        if ids:
+            try:
+                rows = db.query(PlaceEmbedding.place_id, PlaceEmbedding.embedding).filter(
+                    PlaceEmbedding.place_id.in_(ids),
+                    PlaceEmbedding.embedding.isnot(None),
+                ).all()
+                pe_map = {pid: np.asarray(emb, dtype=float) for pid, emb in rows}
+            except Exception as e:
+                print(f"[Debug] group place embedding load skipped: {e}")
+
+        tagset = set(t for t in (session_tags or []) if t)
+        n = len(member_vecs)
+        scored = []
+        for c in candidates:
+            emb = pe_map.get(getattr(c, "id", 0))
+            if emb is not None:
+                sims = [max(0.0, self._cosine(mv, emb)) for mv in member_vecs]
+                min_sim = min(sims)
+                mean_sim = sum(sims) / len(sims)
+            else:
+                min_sim = mean_sim = 0.0
+            group_vec_score = 0.6 * mean_sim + 0.4 * min_sim
+            tag_hits = sum(1 for t in (getattr(c, "tags", None) or []) if t in tagset)
+            tag_score = min(tag_hits / 3.0, 1.0) if tagset else 0.0
+            final = 0.65 * group_vec_score + 0.35 * tag_score
+            scored.append((final, min_sim, mean_sim, c))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [
+            (c, self._group_reason(c, min_sim, mean_sim, n, session_tags))
+            for _s, min_sim, mean_sim, c in scored[:top_k]
+        ]
+
     def _personalized_rerank(self, db: Session, candidates: list, user_vec, session_tags: list, pref_tags: list, top_k: int = 15) -> list:
         """후보(POI)를 개인 취향 벡터로 재랭킹하고 (POI, 추천이유) 페어를 반환.
         점수 = 0.65*벡터유사도(장기취향) + 0.35*세션태그매칭(현재의도).
@@ -106,23 +181,26 @@ class MeetingService:
 
         # 로그인 유저의 개인 취향 벡터(있으면 후보를 코사인 유사도로 재랭킹)
         # 장기취향(preference) 0.7 + 최근관심(recent) 0.3 블렌드 → '요즘 끌리는' 반영
-        user_vec = None
+        user_vec = self._load_user_vector(db, user_id) if user_id else None
+
+        # 그룹 모드: 요청자 + 멤버(친구) user_id들의 벡터를 모아 least-misery 재랭킹.
+        # 2명 이상이 취향 벡터를 가질 때만 그룹 추천으로 전환(아니면 개인/지리 폴백).
+        member_ids = []
         if user_id:
+            member_ids.append(int(user_id))
+        for mid in (getattr(req, "member_user_ids", None) or []):
             try:
-                ue = db.query(models.UserEmbedding).filter(
-                    models.UserEmbedding.user_id == user_id
-                ).first()
-                if ue is not None and ue.preference_embedding is not None:
-                    pref = np.asarray(ue.preference_embedding, dtype=float)
-                    if ue.recent_embedding is not None:
-                        recent = np.asarray(ue.recent_embedding, dtype=float)
-                        blended = 0.7 * pref + 0.3 * recent
-                        norm = np.linalg.norm(blended)
-                        user_vec = (blended / norm) if norm else pref
-                    else:
-                        user_vec = pref
-            except Exception as e:
-                print(f"[Debug] user embedding load skipped: {e}")
+                iv = int(mid)
+            except (TypeError, ValueError):
+                continue
+            if iv not in member_ids:
+                member_ids.append(iv)
+        member_vecs = []
+        for mid in member_ids:
+            mv = user_vec if (mid == user_id and user_vec is not None) else self._load_user_vector(db, mid)
+            if mv is not None:
+                member_vecs.append(mv)
+        is_group = len(member_vecs) >= 2
 
         # 장기 취향 태그(추천 이유 생성용): foods/vibes/alcohol
         pref_tags = []
@@ -243,7 +321,10 @@ class MeetingService:
                         ))
 
             if place_candidates:
-                if user_vec is not None:
+                if is_group:
+                    # 그룹 취향 합성 재랭킹(least-misery) — 모임 전체 만족 우선
+                    ranked_pairs = self._group_rerank(db, place_candidates, member_vecs, user_prefs, top_k=15)
+                elif user_vec is not None:
                     # 개인 취향 벡터 재랭킹: 장기취향(벡터) + 현재의도(선택태그) 결합
                     ranked_pairs = self._personalized_rerank(db, place_candidates, user_vec, user_prefs, pref_tags, top_k=15)
                 else:
@@ -256,7 +337,9 @@ class MeetingService:
                     "region_name": r["name"],
                     "center": {"lat": r["lat"], "lng": r["lng"]},
                     "travel_times": r.get("travel_times", []),
-                    "personalized": user_vec is not None,
+                    "personalized": (is_group or user_vec is not None),
+                    "group_mode": is_group,
+                    "group_size": len(member_vecs) if is_group else 0,
                     "places": [{
                         "id": p.id,
                         "name": p.name,

@@ -186,6 +186,21 @@ export const RecommendationList = ({
               ))}
             </div>
 
+            {/* 그룹/개인 취향 반영 배너 */}
+            {currentDisplayRegion?.group_mode ? (
+              <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-bold text-[#B45309]">
+                <span>👥</span>
+                <span>
+                  우리 그룹 {currentDisplayRegion?.group_size || ""}명 취향을 합쳐, 모두 만족할 곳을 골랐어요
+                </span>
+              </div>
+            ) : isPersonalized ? (
+              <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-bold text-[#B45309]">
+                <span>✨</span>
+                <span>내 취향을 반영해 추천했어요</span>
+              </div>
+            ) : null}
+
             {/* 정렬: 추천순 / 평점순 / 거리순 */}
             <div className="flex gap-1.5 mb-2">
               {SORT_OPTIONS.map((opt) => (

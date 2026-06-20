@@ -18,6 +18,7 @@ export type RecommendationPayload = {
     current_lat: number;
     current_lng: number;
     users: { location: { lat: number; lng: number } }[];
+    member_user_ids?: number[];
     decision_cell?: DecisionCell;
     request_id?: string;
 };

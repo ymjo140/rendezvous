@@ -88,6 +88,14 @@ export const useRecommendation = ({
 
         const allTags = Object.values(selectedFilters).flat();
 
+        // 모임 멤버 user_id 수집 → 백엔드가 중간지점 후보를 그룹 취향(least-misery)으로 재랭킹
+        const memberIds: number[] = [];
+        if (includeMe && myProfile?.id) memberIds.push(Number(myProfile.id));
+        selectedFriends.forEach((f: any) => {
+            if (f?.id) memberIds.push(Number(f.id));
+        });
+        const uniqueMemberIds = Array.from(new Set(memberIds.filter((n) => Number.isFinite(n))));
+
         const payload: RecommendationPayload = {
             purpose: selectedPurpose,
             user_selected_tags: allTags,
@@ -97,6 +105,7 @@ export const useRecommendation = ({
             users: allPoints.slice(1).map((point) => ({
                 location: { lat: point.lat, lng: point.lng }
             })),
+            member_user_ids: uniqueMemberIds,
             decision_cell: decisionCell,
             request_id: requestId
         };
