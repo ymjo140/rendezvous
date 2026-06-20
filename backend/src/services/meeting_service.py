@@ -286,16 +286,18 @@ class MeetingService:
                 print(f"[Debug] user preferences load skipped: {e}")
 
         # Normalize and dedupe tags to expand matching coverage.
+        # 슬래시 옵션("위스키/양주","고기/구이")은 분해해 각 항을 검색어로(ILIKE 매칭↑).
         user_prefs = []
         seen = set()
-        for t in raw_prefs:
-            if not t:
+        for raw in raw_prefs:
+            if not raw:
                 continue
-            t = str(t).strip()
-            if not t or t in seen:
-                continue
-            seen.add(t)
-            user_prefs.append(t)
+            for part in str(raw).split("/"):
+                t = part.strip()
+                if not t or t in seen:
+                    continue
+                seen.add(t)
+                user_prefs.append(t)
 
         search_terms = []
         seen_terms = set()

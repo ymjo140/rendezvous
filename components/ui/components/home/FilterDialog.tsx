@@ -60,7 +60,7 @@ export const FilterDialog = ({
 
         <div className="flex-1 flex flex-col bg-white overflow-hidden">
           {currentFilters && (
-            <Tabs defaultValue={Object.keys(currentFilters.tabs)[0]} className="flex-1 flex flex-col">
+            <Tabs key={selectedPurpose} defaultValue={Object.keys(currentFilters.tabs)[0]} className="flex-1 flex flex-col">
               <div className="px-4 pt-2 border-b">
                 <TabsList className="w-full grid grid-cols-2 h-auto p-1 bg-gray-100 rounded-lg">
                   {Object.keys(currentFilters.tabs).map((tabKey) => (
