@@ -7,9 +7,9 @@ import { ChatTab } from "@/components/ui/chat-tab"
 // 🌟 [수정 1] CalendarTab 제거하고 DiscoveryTab 추가
 import { DiscoveryTab } from "@/components/ui/discovery-tab" 
 import { MyPageTab } from "@/components/ui/mypage-tab"
-import { CommunityTab as HotDealTab } from "@/components/ui/community-tab"
+import { PlacePicksTab } from "@/components/ui/place-picks-tab"
 // 🌟 [수정 2] 아이콘 변경: Calendar -> Compass (탐색용 나침반 아이콘)
-import { Map, MessageCircle, Compass, User, Flame, Lock } from "lucide-react"
+import { Map, MessageCircle, Compass, User, Sparkles, Lock } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { GameCelebration } from "@/components/ui/components/game/GameCelebration"
@@ -98,7 +98,7 @@ export default function Page() {
       {/* 메인 콘텐츠 영역 */}
       <main className="flex-1 overflow-hidden relative">
         {activeTab === "home" && <HomeTab />}
-        {activeTab === "hotdeals" && <HotDealTab />}
+        {activeTab === "hotdeals" && <PlacePicksTab />}
         {activeTab === "chat" && (
           <ChatTab 
             openRoomId={openRoomId} 
@@ -154,8 +154,8 @@ export default function Page() {
                 activeTab === "hotdeals" ? "text-[#F5A623] -translate-y-1" : "text-gray-300 hover:text-gray-400"
             }`}
         >
-          <Flame className={`w-6 h-6 ${activeTab === "hotdeals" ? "fill-[#F5A623]/10" : ""}`} />
-          <span className="text-[10px] font-medium">핫딜</span>
+          <Sparkles className={`w-6 h-6 ${activeTab === "hotdeals" ? "fill-[#F5A623]/10" : ""}`} />
+          <span className="text-[10px] font-medium">장소 추천</span>
         </button>
 
         {/* 🌟 [수정 4] 일정 -> 탐색 (아이콘 및 텍스트 변경) */}
