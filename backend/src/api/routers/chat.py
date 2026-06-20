@@ -68,6 +68,9 @@ def get_room_members(room_id: str, db: Session = Depends(get_db), current_user: 
         "id": u.id,
         "name": u.name,
         "is_me": u.id == current_user.id,
+        "lat": u.lat,
+        "lng": u.lng,
+        "location_name": u.location_name,
     } for u in users]
     # 나를 맨 앞으로
     members.sort(key=lambda m: (not m["is_me"], m["name"]))
