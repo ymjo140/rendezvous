@@ -140,6 +140,76 @@ class MeetingService:
             for _s, min_sim, mean_sim, c in scored[:top_k]
         ]
 
+    def _lookalike_social_proof(self, db: Session, member_vecs: list, member_ids: list, place_ids: list,
+                                top_k_users: int = 25, sim_threshold: float = 0.5) -> dict:
+        """유사 취향 그룹의 '좋아한 곳' 사회적 증거.
+        그룹 벡터와 취향이 비슷한 다른 유저(lookalike)를 찾아, 그들이 실제로
+        관여(리뷰/저장/예약/게시물)한 장소를 집계 → {place_id: {count, names}}.
+        Q2 '비슷한 목적/특성의 집단은 어딜 좋아했나'의 답."""
+        if not member_vecs or not place_ids:
+            return {}
+        try:
+            group_vec = np.mean(member_vecs, axis=0)
+            others = (
+                db.query(models.UserEmbedding)
+                .filter(~models.UserEmbedding.user_id.in_(member_ids))
+                .all()
+            )
+            sims = []
+            for ue in others:
+                if ue.preference_embedding is None:
+                    continue
+                s = self._cosine(group_vec, np.asarray(ue.preference_embedding, dtype=float))
+                if s >= sim_threshold:
+                    sims.append((ue.user_id, s))
+            sims.sort(key=lambda x: x[1], reverse=True)
+            look_ids = [uid for uid, _ in sims[:top_k_users]]
+            if not look_ids:
+                return {}
+
+            valid_pids = [int(p) for p in place_ids if p]
+            if not valid_pids:
+                return {}
+
+            # 관여 신호 통합(리뷰/저장/예약/게시물). 테이블 없거나 컬럼 차이는 개별 try.
+            place_users = {}  # pid -> set(user_id)
+            sources = [
+                "SELECT place_id, user_id FROM reviews WHERE user_id = ANY(:uids) AND place_id = ANY(:pids)",
+                "SELECT place_id, user_id FROM saved_items WHERE user_id = ANY(:uids) AND place_id = ANY(:pids)",
+                "SELECT place_id, user_id FROM user_reservations WHERE user_id = ANY(:uids) AND place_id = ANY(:pids)",
+                "SELECT place_id, user_id FROM posts WHERE user_id = ANY(:uids) AND place_id = ANY(:pids)",
+            ]
+            params = {"uids": look_ids, "pids": valid_pids}
+            for sql in sources:
+                try:
+                    for pid, uid in db.execute(text(sql), params).fetchall():
+                        if pid is None or uid is None:
+                            continue
+                        place_users.setdefault(int(pid), set()).add(int(uid))
+                except Exception as exc:
+                    print(f"[social-proof] source skip: {str(exc)[:60]}")
+                    db.rollback()
+
+            if not place_users:
+                return {}
+
+            # 이름 매핑
+            all_uids = set()
+            for s in place_users.values():
+                all_uids |= s
+            name_map = {
+                u.id: u.name
+                for u in db.query(models.User).filter(models.User.id.in_(list(all_uids))).all()
+            }
+            out = {}
+            for pid, uids in place_users.items():
+                names = [name_map.get(uid, "사용자") for uid in list(uids)[:3]]
+                out[pid] = {"count": len(uids), "names": names}
+            return out
+        except Exception as e:
+            print(f"[social-proof] 실패: {e}")
+            return {}
+
     def _personalized_rerank(self, db: Session, candidates: list, user_vec, session_tags: list, pref_tags: list, top_k: int = 15) -> list:
         """후보(POI)를 개인 취향 벡터로 재랭킹하고 (POI, 추천이유) 페어를 반환.
         점수 = 0.65*벡터유사도(장기취향) + 0.35*세션태그매칭(현재의도).
@@ -320,10 +390,14 @@ class MeetingService:
                             avg_rating=p.wemeet_rating, address=p.address
                         ))
 
+            social_proof = {}
             if place_candidates:
                 if is_group:
                     # 그룹 취향 합성 재랭킹(least-misery) — 모임 전체 만족 우선
                     ranked_pairs = self._group_rerank(db, place_candidates, member_vecs, user_prefs, top_k=15)
+                    # 유사 취향 그룹의 사회적 증거(비슷한 사람들이 좋아한 곳)
+                    cand_ids = [p.id for p, _ in ranked_pairs if getattr(p, "id", 0)]
+                    social_proof = self._lookalike_social_proof(db, member_vecs, member_ids, cand_ids)
                 elif user_vec is not None:
                     # 개인 취향 벡터 재랭킹: 장기취향(벡터) + 현재의도(선택태그) 결합
                     ranked_pairs = self._personalized_rerank(db, place_candidates, user_vec, user_prefs, pref_tags, top_k=15)
@@ -349,6 +423,8 @@ class MeetingService:
                         "lng": float(p.location[1]),
                         "wemeet_rating": p.avg_rating,
                         "reason": reason,
+                        # 유사 취향 그룹 사회적 증거(있을 때만)
+                        "social_proof": social_proof.get(p.id),
                     } for p, reason in ranked_pairs]
                 })
         return results

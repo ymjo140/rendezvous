@@ -66,6 +66,15 @@ const PlaceCard = ({ place, onClick }: { place: any; onClick: () => void }) => (
           <span className="truncate">{place.reason}</span>
         </div>
       )}
+      {place.social_proof?.count > 0 && (
+        <div className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
+          <span>🫂</span>
+          <span className="truncate">
+            비슷한 취향 {place.social_proof.count}명이 좋아한 곳
+            {place.social_proof.names?.length ? ` · ${place.social_proof.names.slice(0, 2).join(", ")}${place.social_proof.count > 2 ? " 외" : ""}` : ""}
+          </span>
+        </div>
+      )}
     </div>
     <Button size="sm" variant="outline" className="ml-2 h-8 text-xs">
       상세
