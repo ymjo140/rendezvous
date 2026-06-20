@@ -38,14 +38,43 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # --- 1. 채팅방 목록 (수정됨) ---
+def _sync_room_members_from_community(db: Session, room_id: str) -> None:
+    """Community.member_ids/host_id ↔ ChatRoomMember 동기화(레거시/누락 자가복구).
+    모임 채팅방 id == community id. 두 소스가 어긋난 방을 보정한다."""
+    comm = db.query(models.Community).filter(models.Community.id == room_id).first()
+    if not comm:
+        return
+    expected = set(comm.member_ids or [])
+    if comm.host_id:
+        expected.add(comm.host_id)
+    if not expected:
+        return
+    existing = {m.user_id for m in db.query(models.ChatRoomMember).filter(
+        models.ChatRoomMember.room_id == room_id).all()}
+    missing = [uid for uid in expected if uid not in existing]
+    if missing:
+        for uid in missing:
+            db.add(models.ChatRoomMember(room_id=room_id, user_id=uid))
+        db.commit()
+
+
 @router.get("/api/chat/rooms")
 def get_chat_rooms(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    # 🌟 내가 멤버로 등록된 채팅방 ID들만 조회
-    my_room_ids = db.query(models.ChatRoomMember.room_id).filter(models.ChatRoomMember.user_id == current_user.id).all()
-    room_ids = [r[0] for r in my_room_ids]
-    
-    rooms = db.query(models.ChatRoom).filter(models.ChatRoom.id.in_(room_ids)).all()
-    
+    # 1) ChatRoomMember 기준 내 방
+    room_ids = {r[0] for r in db.query(models.ChatRoomMember.room_id).filter(
+        models.ChatRoomMember.user_id == current_user.id).all()}
+
+    # 2) 커뮤니티 멤버십 기준 보정 — 내가 호스트이거나 member_ids에 있는 모임방도 포함(+동기화)
+    try:
+        comms = db.query(models.Community).all()
+        for c in comms:
+            if c.host_id == current_user.id or current_user.id in (c.member_ids or []):
+                room_ids.add(c.id)
+                _sync_room_members_from_community(db, c.id)
+    except Exception as exc:
+        print(f"[chat] community 동기화 스킵: {exc}")
+
+    rooms = db.query(models.ChatRoom).filter(models.ChatRoom.id.in_(list(room_ids))).all()
     result = []
     for r in rooms:
         result.append({
@@ -58,7 +87,8 @@ def get_chat_rooms(db: Session = Depends(get_db), current_user: models.User = De
 
 @router.get("/api/chat/rooms/{room_id}/members")
 def get_room_members(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    """채팅방 참여 멤버 목록 — 이름/취향유형. 그룹 장소추천의 입력(멤버 user_id)도 됨."""
+    """채팅방 참여 멤버 목록 — 이름/위치. 그룹 장소추천의 입력(멤버 user_id)도 됨."""
+    _sync_room_members_from_community(db, room_id)  # 레거시/누락 자가복구
     rows = db.query(models.ChatRoomMember).filter(models.ChatRoomMember.room_id == room_id).all()
     uids = [r.user_id for r in rows]
     if not uids:
