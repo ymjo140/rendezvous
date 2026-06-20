@@ -20,6 +20,19 @@ from core.algorithm import AdvancedRecommender, POI
 
 data_provider = RealDataProvider()
 
+# 한글 시설 필터 → places.features 영어 키 매핑(데이터는 영어 키로 적재됨).
+# 매핑된 term은 ILIKE 대신 `features ? key`(키 존재)로 검색해 시설 보유 장소를 잡는다.
+# 값이 None인 항목(콜키지/단체석/코스요리 등)은 데이터가 없어 매칭 불가(검색 스킵).
+FACILITY_KEY_MAP = {
+    "룸": "private_room", "프라이빗룸": "private_room", "프라이빗": "private_room",
+    "주차": "parking", "발렛": "parking",
+    "반려동물": "pet_friendly",
+    "루프탑": "rooftop", "야외": "rooftop",
+    "24시간": "24hours",
+    "와이파이": "wifi", "콘센트": "wifi",
+    "라운지": "lounge",
+}
+
 class MeetingService:
     def __init__(self):
         self.repo = MeetingRepository()
@@ -335,7 +348,16 @@ class MeetingService:
                 filter_clauses.append("(category ILIKE :purpose_like OR cuisine_type ILIKE :purpose_like OR name ILIKE :purpose_like)")
 
             term_clauses = []
+            facility_clauses = []  # 시설은 '필수(AND)' 조건 — 룸 선택 시 룸 있는 곳만
             for idx, term in enumerate(search_terms):
+                # 시설 필터는 features 영어키로 매칭(ILIKE는 한글이라 안 잡힘)
+                fkey = FACILITY_KEY_MAP.get(term)
+                if fkey:
+                    fparam = f"fac_{idx}"
+                    params[fparam] = fkey
+                    # `?` 연산자는 드라이버 파싱 충돌 → 함수형 jsonb_exists 사용
+                    facility_clauses.append(f"jsonb_exists(features, :{fparam})")
+                    continue
                 key = f"term_{idx}"
                 params[key] = f"%{term}%"
                 term_clauses.extend([
@@ -349,7 +371,10 @@ class MeetingService:
             if term_clauses:
                 filter_clauses.append("(" + " OR ".join(term_clauses) + ")")
 
+            # 종류/분위기/목적은 OR(넓게), 시설은 AND(필수)로 결합
             filter_sql = " OR ".join(filter_clauses) if filter_clauses else "1=1"
+            if facility_clauses:
+                filter_sql = f"({filter_sql}) AND " + " AND ".join(facility_clauses)
 
             db_query = text(f"""
                 SELECT id, name, category, lat, lng, address, tags, wemeet_rating
