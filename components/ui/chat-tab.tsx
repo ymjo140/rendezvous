@@ -767,32 +767,9 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
         }
     }
 
-    const renderTabHeader = () => (
-        <div className="bg-white p-4 pb-3 shadow-sm sticky top-0 z-30">
-            <Tabs value={rootTab} onValueChange={setRootTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-2 h-10">
-                    <TabsTrigger value="open">Open Chat</TabsTrigger>
-                    <TabsTrigger value="community">핫딜</TabsTrigger>
-                </TabsList>
-            </Tabs>
-        </div>
-    )
-
-    if (rootTab === "community") {
-        return (
-            <div className="flex flex-col h-full bg-[#F3F4F6] font-['Pretendard']">
-                {renderTabHeader()}
-                <div className="flex-1 overflow-hidden">
-                    <CommunityTab source="chat/community" />
-                </div>
-            </div>
-        )
-    }
-
     if (view === 'list') {
         return (
             <div className="flex flex-col h-full bg-[#F3F4F6] font-['Pretendard']">
-                {renderTabHeader()}
                 <div className="flex-1 overflow-hidden">
                     <div className="flex flex-col h-full">
                         <div className="bg-white p-5 pb-4 shadow-sm sticky top-0 z-10">

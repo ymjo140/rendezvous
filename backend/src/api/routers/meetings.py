@@ -254,6 +254,55 @@ def get_recommendation(
     user_id = current_user.id if current_user else None
     return meeting_service.get_recommendations_direct(db, req, user_id=user_id)
 
+
+@router.get("/api/recommend/my-meetings")
+def recommend_my_meetings(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """내 채팅방(모임)들을 토대로 장소 추천 + 어느 모임이 근거인지 표시.
+    각 방의 멤버 취향(중간지점+그룹 least-misery)으로 추천, 방 이름을 근거로 부착."""
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+
+    # 내가 속한 모임(커뮤니티=채팅방) — 호스트이거나 member_ids에 포함
+    comms = db.query(models.Community).all()
+    my_comms = [c for c in comms if c.host_id == current_user.id or current_user.id in (c.member_ids or [])]
+    my_comms = my_comms[:4]  # 과부하 방지
+
+    out = []
+    for comm in my_comms:
+        member_ids = list(dict.fromkeys((comm.member_ids or []) + ([comm.host_id] if comm.host_id else [])))
+        if len(member_ids) < 1:
+            continue
+        # 멤버 위치 평균(중간지점)
+        users = db.query(models.User).filter(models.User.id.in_(member_ids)).all()
+        located = [(u.lat, u.lng) for u in users if u.lat and abs(float(u.lat)) > 1]
+        req = schemas.RecommendRequest(
+            purpose=comm.category or "식사",
+            member_user_ids=member_ids,
+            current_lat=located[0][0] if located else 37.5665,
+            current_lng=located[0][1] if located else 126.978,
+            users=[{"location": {"lat": la, "lng": ln}} for la, ln in located[1:]],
+        )
+        try:
+            regions = meeting_service.get_recommendations_direct(db, req, user_id=current_user.id)
+        except Exception as exc:
+            print(f"[my-meetings] {comm.title} 추천 실패: {exc}")
+            continue
+        places = (regions[0].get("places") if regions else []) or []
+        room_name = (comm.title or "모임").replace("[모임] ", "").strip()
+        for p in places[:3]:
+            out.append({
+                **p,
+                "room_id": comm.id,
+                "room_name": room_name,
+                # 예: "데모모임 장소 추천: 중간지점 근처 · 한식 취향과 잘 맞아요"
+                "meeting_reason": f"{room_name} 모임 장소 추천: {p.get('reason', '')}",
+            })
+
+    return {"count": len(out), "places": out}
+
 # --- 회의/모임 흐름 ---
 @router.post("/api/meeting-flow")
 async def run_meeting_flow(req: schemas.MeetingFlowRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):

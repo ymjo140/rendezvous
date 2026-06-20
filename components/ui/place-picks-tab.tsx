@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useHotDeals } from "@/hooks/use-hot-deals"
 import { fetchWithAuth } from "@/lib/api-client"
 import { logAction } from "@/lib/analytics-client"
-import { MapPin, Flame, Sparkles } from "lucide-react"
+import { MapPin, Flame, Sparkles, Users } from "lucide-react"
 
 // 장소 추천 탭 — 내 취향 기반 추천 장소 + 핫딜을 한 섹션으로.
 // 채팅의 모임 추천(중간지점+그룹)과 달리, 여기선 개인 취향 위주(전국).
@@ -26,6 +26,8 @@ export function PlacePicksTab() {
   const { data: deals = [], isLoading: dealsLoading } = useHotDeals()
   const [recs, setRecs] = useState<PlaceRec[]>([])
   const [recsLoading, setRecsLoading] = useState(true)
+  const [meetingRecsLoading, setMeetingRecsLoading] = useState(true)
+  const [meetingRecs, setMeetingRecs] = useState<any[]>([])
 
   useEffect(() => {
     let active = true
@@ -64,6 +66,23 @@ export function PlacePicksTab() {
       }
     }
     load()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // 내 모임(채팅방) 기반 추천 — 방 이름이 근거로 붙음
+  useEffect(() => {
+    let active = true
+    fetchWithAuth("/api/recommend/my-meetings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (active) setMeetingRecs(d?.places || [])
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setMeetingRecsLoading(false)
+      })
     return () => {
       active = false
     }
@@ -130,6 +149,41 @@ export function PlacePicksTab() {
             </div>
           )}
         </section>
+
+        {/* 내 모임 추천 — 내 채팅방들 기반, 방 이름이 근거 */}
+        {(meetingRecsLoading || meetingRecs.length > 0) && (
+          <section>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Users className="w-4 h-4 text-[#14B8A6]" />
+              <h3 className="text-sm font-bold text-gray-800">내 모임 추천</h3>
+            </div>
+            {meetingRecsLoading ? (
+              <div className="space-y-2">
+                {[0, 1].map((i) => (
+                  <Skeleton key={i} className="h-16 w-full rounded-xl" />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {meetingRecs.map((p, idx) => (
+                  <div
+                    key={`${p.room_id}-${p.id}-${idx}`}
+                    onClick={() => goPlace(p.id)}
+                    className="bg-white border border-gray-100 rounded-xl p-3 cursor-pointer hover:border-[#14B8A6] transition-colors"
+                  >
+                    <div className="font-bold text-sm text-gray-800">{p.name}</div>
+                    <div className="text-[11px] text-gray-500 flex items-center gap-1">
+                      <MapPin className="w-3 h-3" /> {p.category} · {p.address}
+                    </div>
+                    <div className="mt-1 text-[11px] font-bold text-[#0D9488]">
+                      ✨ {p.meeting_reason}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* 핫딜 섹션 */}
         <section>
