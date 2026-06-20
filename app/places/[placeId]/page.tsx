@@ -167,6 +167,32 @@ export default function PlaceDetailPage() {
   const [savedPlace, setSavedPlace] = useState(false)
   const [savingPlace, setSavingPlace] = useState(false)
 
+  // 이 장소를 다녀온/언급한 사람들
+  const [visitors, setVisitors] = useState<{
+    post_count: number
+    visitor_count: number
+    visitors: { id: number; name: string }[]
+    mentioned: { id: number; name: string }[]
+  } | null>(null)
+
+  useEffect(() => {
+    if (!placeId) return
+    const token = localStorage.getItem("token")
+    if (!token) return
+    let active = true
+    fetch(`${API_BASE_URL}/api/places/${placeId}/visitors`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (active) setVisitors(d)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [placeId])
+
   const handleSavePlace = async () => {
     if (!place || savedPlace) return
     const token = localStorage.getItem("token")
@@ -575,6 +601,48 @@ export default function PlaceDetailPage() {
             </div>
           )}
         </section>
+
+        {/* 여기 다녀온 사람들 — 게시물로 이 장소를 방문/언급한 사람 */}
+        {visitors && (visitors.visitors.length > 0 || visitors.mentioned.length > 0) && (
+          <section className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-800">
+              여기 다녀온 사람들
+              <span className="ml-1.5 text-xs font-normal text-gray-400">
+                게시물 {visitors.post_count}개
+              </span>
+            </h2>
+            {visitors.visitors.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[11px] font-medium text-gray-500 mb-1.5">방문 인증</div>
+                <div className="flex flex-wrap gap-2">
+                  {visitors.visitors.map((u) => (
+                    <div key={u.id} className="flex items-center gap-1.5 rounded-full bg-amber-50 pl-1 pr-3 py-1">
+                      <div className="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center text-[11px] font-bold">
+                        {u.name?.[0] || "?"}
+                      </div>
+                      <span className="text-xs font-medium text-amber-700">{u.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {visitors.mentioned.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[11px] font-medium text-gray-500 mb-1.5">함께 언급된 친구</div>
+                <div className="flex flex-wrap gap-2">
+                  {visitors.mentioned.map((u) => (
+                    <div key={u.id} className="flex items-center gap-1.5 rounded-full bg-sky-50 pl-1 pr-3 py-1">
+                      <div className="w-6 h-6 rounded-full bg-sky-500 text-white flex items-center justify-center text-[11px] font-bold">
+                        {u.name?.[0] || "?"}
+                      </div>
+                      <span className="text-xs font-medium text-sky-700">{u.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-gray-800">대표 메뉴</h2>

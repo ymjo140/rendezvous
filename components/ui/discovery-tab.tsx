@@ -22,6 +22,8 @@ import { logAction } from "@/lib/analytics-client"
 import { recordActivity } from "@/lib/game"
 import { compressImageFile } from "@/lib/image"
 import { validateAndUploadVideo, captureVideoPoster } from "@/lib/video"
+import { RichText } from "@/components/ui/rich-text"
+import { useFriends } from "@/hooks/use-friends"
 
 // 폴더 타입
 interface SaveFolder {
@@ -96,6 +98,41 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const [draftVideoPoster, setDraftVideoPoster] = useState<string>("");
     const [isUploadingVideo, setIsUploadingVideo] = useState(false);
     const videoInputRef = useRef<HTMLInputElement>(null);
+
+    // @멘션 — 친구 목록 + 작성 중 자동완성
+    const { friends: myFriends } = useFriends();
+    const [draftMentions, setDraftMentions] = useState<{ id: number; name: string }[]>([]);
+    const [mentionQuery, setMentionQuery] = useState<string | null>(null); // @뒤 입력값(null=비활성)
+    const contentRef = useRef<HTMLTextAreaElement>(null);
+
+    const mentionMatches = useMemo(() => {
+        if (mentionQuery === null) return [];
+        const q = mentionQuery.trim().toLowerCase();
+        return (myFriends || [])
+            .filter((f: any) => !q || String(f.name || "").toLowerCase().includes(q))
+            .slice(0, 6);
+    }, [mentionQuery, myFriends]);
+
+    // 본문 변경 시 마지막 토큰이 @… 인지 감지해 자동완성 트리거
+    const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const val = e.target.value;
+        setNewPostContent(val);
+        const upto = val.slice(0, e.target.selectionStart ?? val.length);
+        const m = /@([0-9A-Za-z가-힣_]*)$/.exec(upto);
+        setMentionQuery(m ? m[1] : null);
+    };
+
+    const pickMention = (friend: { id: number; name: string }) => {
+        // 마지막 @토큰을 @이름 으로 치환
+        const ta = contentRef.current;
+        const caret = ta?.selectionStart ?? newPostContent.length;
+        const before = newPostContent.slice(0, caret).replace(/@([0-9A-Za-z가-힣_]*)$/, `@${friend.name} `);
+        const after = newPostContent.slice(caret);
+        setNewPostContent(before + after);
+        setDraftMentions(prev => prev.some(m => m.id === friend.id) ? prev : [...prev, friend]);
+        setMentionQuery(null);
+        setTimeout(() => ta?.focus(), 0);
+    };
     const [locationQuery, setLocationQuery] = useState("");
     const [locationResults, setLocationResults] = useState<any[]>([]);
     const [locationSearching, setLocationSearching] = useState(false);
@@ -503,6 +540,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         setDraftVideoUrl("");
         setDraftVideoPoster("");
         setIsUploadingVideo(false);
+        setDraftMentions([]);
+        setMentionQuery(null);
         setLocationQuery("");
         setLocationResults([]);
         setLocationSearching(false);
@@ -1068,6 +1107,13 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
         setDraftVideoPoster("");
     };
 
+    // 해시태그 클릭 → 탐색 검색에 연결 (# 제거한 태그로 검색)
+    const handleHashtagClick = (tag: string) => {
+        setSelectedFeed(null);
+        setSearchQuery(tag);
+        setViewMode("grid");
+    };
+
     // 기존 이미지 편집하기
     const handleEditImage = (index: number) => {
         setTempImageForEdit(newPostImages[index]);
@@ -1112,6 +1158,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
 
             if (token) {
                 // API로 게시물 생성
+                // 본문에 @이름이 아직 남아있는 멘션만 전송
+                const activeMentionIds = draftMentions
+                    .filter(m => newPostContent.includes(`@${m.name}`))
+                    .map(m => m.id);
                 const res = await fetchWithAuth(`/api/posts`, {
                     method: "POST",
                     body: JSON.stringify({
@@ -1119,7 +1169,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                         content: newPostContent,
                         location_name: locationName,
                         place_id: selectedPlace?.id || null,
-                        media_type: draftMediaType
+                        media_type: draftMediaType,
+                        mention_user_ids: activeMentionIds
                     })
                 });
 
@@ -1591,7 +1642,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                     {feed.content && (
                                         <p className="text-sm text-gray-800 leading-snug">
                                             <span className="font-semibold mr-1.5">{feed.author?.name}</span>
-                                            {feed.content}
+                                            <RichText text={feed.content} onHashtag={handleHashtagClick} />
                                         </p>
                                     )}
                                     {feed.comments > 0 && (
@@ -1736,7 +1787,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             <div className="p-3 flex-1 overflow-y-auto">
                                 <p className="text-sm">
                                     <span className="font-semibold mr-2">{selectedFeed.author.name}</span>
-                                    {selectedFeed.content}
+                                    <RichText text={selectedFeed.content} onHashtag={handleHashtagClick} />
                                 </p>
                                 <p className="text-xs text-gray-400 mt-2">{selectedFeed.createdAt}</p>
                                 {selectedFeed.locationName && !selectedFeed.place && (
@@ -2032,13 +2083,49 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             </div>
                         )}
                         
-                        {/* 문구 입력 */}
-                        <Textarea
-                            placeholder="문구를 작성하세요..."
-                            value={newPostContent}
-                            onChange={(e) => setNewPostContent(e.target.value)}
-                            className="resize-none border-none bg-gray-50 rounded-xl min-h-[100px] focus-visible:ring-0"
-                        />
+                        {/* 문구 입력 — #해시태그 / @멘션 지원 */}
+                        <div className="relative">
+                            <Textarea
+                                ref={contentRef}
+                                placeholder="문구를 작성하세요...  #해시태그  @친구"
+                                value={newPostContent}
+                                onChange={handleContentChange}
+                                className="resize-none border-none bg-gray-50 rounded-xl min-h-[100px] focus-visible:ring-0"
+                            />
+                            {/* @멘션 자동완성 */}
+                            {mentionQuery !== null && mentionMatches.length > 0 && (
+                                <div className="absolute left-0 right-0 bottom-full mb-1 z-30 bg-white rounded-xl border border-gray-100 shadow-lg overflow-hidden">
+                                    <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 border-b">친구 멘션</div>
+                                    {mentionMatches.map((f: any) => (
+                                        <button
+                                            key={f.id}
+                                            onClick={() => pickMention({ id: f.id, name: f.name })}
+                                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-amber-50 text-left"
+                                        >
+                                            <Avatar className="w-7 h-7">
+                                                <AvatarFallback className="bg-amber-50 text-amber-600 text-xs font-bold">
+                                                    {f.name?.[0] || "?"}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <span className="text-sm text-gray-800">{f.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        {/* 멘션 칩 */}
+                        {draftMentions.filter(m => newPostContent.includes(`@${m.name}`)).length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                {draftMentions.filter(m => newPostContent.includes(`@${m.name}`)).map(m => (
+                                    <span key={m.id} className="text-[11px] bg-sky-50 text-sky-600 font-medium px-2 py-0.5 rounded-full">
+                                        @{m.name}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                        {(myFriends || []).length === 0 && (
+                            <p className="text-[11px] text-gray-400 mt-1.5">친구를 추가하면 @로 멘션할 수 있어요.</p>
+                        )}
                         
                         {/* 위치/장소 태그 */}
                         <div className="mt-4 space-y-3">

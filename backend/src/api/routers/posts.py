@@ -34,6 +34,12 @@ class PostCreate(BaseModel):
     location_name: Optional[str] = None
     place_id: Optional[int] = None
     media_type: Optional[str] = "image"  # 'image' | 'video'
+    mention_user_ids: Optional[List[int]] = None  # @멘션한 친구 user_id
+
+
+class MentionInfo(BaseModel):
+    id: int
+    name: str
 
 class PlaceSummary(BaseModel):
     id: int
@@ -58,6 +64,8 @@ class PostResponse(BaseModel):
     image_urls: List[str]
     media_type: str = "image"
     content: Optional[str]
+    hashtags: List[str] = []
+    mentions: List[MentionInfo] = []
     location_name: Optional[str]
     place_id: Optional[int] = None
     place_name: Optional[str] = None
@@ -87,6 +95,44 @@ class CommentResponse(BaseModel):
 
 
 # --- Helper Functions ---
+import re as _re
+
+_HASHTAG_RE = _re.compile(r"#([0-9A-Za-z가-힣_]+)")
+
+
+def extract_hashtags(content: Optional[str]) -> List[str]:
+    """본문에서 #해시태그 추출 → 소문자·중복제거(최대 20개)."""
+    if not content:
+        return []
+    tags = []
+    for m in _HASHTAG_RE.findall(content):
+        t = m.strip().lower()
+        if t and t not in tags:
+            tags.append(t)
+        if len(tags) >= 20:
+            break
+    return tags
+
+
+def resolve_mentions(db: Session, user_ids: Optional[List[int]]) -> List[dict]:
+    """멘션 user_id 목록 → [{id, name}] (실존 유저만, 최대 20명)."""
+    if not user_ids:
+        return []
+    uniq = []
+    for uid in user_ids:
+        try:
+            iv = int(uid)
+        except (TypeError, ValueError):
+            continue
+        if iv not in uniq:
+            uniq.append(iv)
+    uniq = uniq[:20]
+    if not uniq:
+        return []
+    users = db.query(models.User).filter(models.User.id.in_(uniq)).all()
+    return [{"id": u.id, "name": u.name} for u in users]
+
+
 def upload_base64_image(base64_data: str, user_id: int) -> str:
     """
     Base64 이미지를 처리합니다.
@@ -229,6 +275,11 @@ def create_post(
             raise HTTPException(status_code=400, detail="Place not found")
 
     
+    # 해시태그(본문 추출) + 멘션(친구 user_id) 처리
+    hashtags = extract_hashtags(req.content)
+    mention_infos = resolve_mentions(db, req.mention_user_ids)
+    mention_ids = [m["id"] for m in mention_infos]
+
     # 게시물 생성
     post = models.Post(
         user_id=current_user.id,
@@ -236,13 +287,15 @@ def create_post(
         media_type=(req.media_type if req.media_type in ("image", "video") else "image"),
         content=req.content,
         location_name=req.location_name,
-        place_id=req.place_id
+        place_id=req.place_id,
+        hashtags=hashtags,
+        mentions=mention_ids
     )
-    
+
     db.add(post)
     db.commit()
     db.refresh(post)
-    
+
     place_summary = build_place_summary(place)
     return PostResponse(
         id=post.id,
@@ -264,6 +317,8 @@ def create_post(
         is_liked=False,
         is_saved=False,
         media_type=getattr(post, "media_type", None) or "image",
+        hashtags=hashtags,
+        mentions=[MentionInfo(**m) for m in mention_infos],
         created_at=format_time_ago(post.created_at)
     )
 
@@ -347,6 +402,8 @@ def get_posts(
             is_liked=is_liked,
             is_saved=is_saved,
             media_type=getattr(post, "media_type", None) or "image",
+            hashtags=getattr(post, "hashtags", None) or [],
+            mentions=[MentionInfo(**x) for x in resolve_mentions(db, getattr(post, "mentions", None))],
             created_at=format_time_ago(post.created_at)
         ))
     
@@ -397,10 +454,68 @@ def get_my_posts(
             is_liked=False,
             is_saved=False,
             media_type=getattr(post, "media_type", None) or "image",
+            hashtags=getattr(post, "hashtags", None) or [],
+            mentions=[MentionInfo(**x) for x in resolve_mentions(db, getattr(post, "mentions", None))],
             created_at=format_time_ago(post.created_at)
         ))
     
     return result
+
+
+@router.get("/api/posts/by-hashtag", response_model=List[PostResponse])
+def posts_by_hashtag(
+    tag: str,
+    skip: int = 0,
+    limit: int = 30,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """해시태그로 게시물 검색 (#제외한 태그 문자열)."""
+    norm = (tag or "").lstrip("#").strip().lower()
+    if not norm:
+        return []
+    # JSONB 포함(@>) 검색 — GIN 인덱스 활용 (ORM JSON 타입은 LIKE로 잘못 변환되므로 raw)
+    import json as _json
+    from sqlalchemy import text as _text
+    posts = (
+        db.query(models.Post)
+        .filter(models.Post.is_public == True)
+        .filter(_text("posts.hashtags @> (:tagjson)::jsonb"))
+        .params(tagjson=_json.dumps([norm], ensure_ascii=False))
+        .order_by(desc(models.Post.created_at))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    place_ids = [p.place_id for p in posts if p.place_id]
+    place_map = {}
+    if place_ids:
+        for pl in db.query(models.Place).filter(models.Place.id.in_(place_ids)).all():
+            place_map[pl.id] = pl
+    out = []
+    for post in posts:
+        user = db.query(models.User).filter(models.User.id == post.user_id).first()
+        place = place_map.get(post.place_id) if post.place_id else None
+        out.append(PostResponse(
+            id=post.id, user_id=post.user_id,
+            user_name=user.name if user else "Unknown",
+            user_avatar=user.avatar if user else None,
+            image_urls=post.image_urls or [],
+            media_type=getattr(post, "media_type", None) or "image",
+            content=post.content,
+            hashtags=getattr(post, "hashtags", None) or [],
+            mentions=[MentionInfo(**x) for x in resolve_mentions(db, getattr(post, "mentions", None))],
+            location_name=post.location_name,
+            place_id=post.place_id,
+            place_name=place.name if place else None,
+            place_category=(place.cuisine_type or place.category or "") if place else None,
+            place_address=(place.address or "") if place else None,
+            place=build_place_summary(place),
+            likes_count=post.likes_count, comments_count=post.comments_count,
+            is_liked=False, is_saved=False,
+            created_at=format_time_ago(post.created_at),
+        ))
+    return out
 
 
 @router.get("/api/posts/{post_id}", response_model=PostResponse)
@@ -454,8 +569,57 @@ def get_post(
         is_liked=is_liked,
         is_saved=is_saved,
         media_type=getattr(post, "media_type", None) or "image",
+        hashtags=getattr(post, "hashtags", None) or [],
+        mentions=[MentionInfo(**x) for x in resolve_mentions(db, getattr(post, "mentions", None))],
         created_at=format_time_ago(post.created_at)
     )
+
+
+@router.get("/api/places/{place_id}/visitors")
+def place_visitors(
+    place_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """이 장소를 다녀온/언급한 사람들 — place 태그 게시물의 작성자 + 멘션된 친구.
+    '누가 이 장소를 방문했는지'를 보여주는 소셜 시그널."""
+    posts = (
+        db.query(models.Post)
+        .filter(models.Post.place_id == place_id, models.Post.is_public == True)
+        .order_by(desc(models.Post.created_at))
+        .all()
+    )
+    # 작성자(방문) + 멘션(동행)을 집계
+    visitor_ids = []   # 작성자
+    mentioned_ids = []
+    for p in posts:
+        if p.user_id and p.user_id not in visitor_ids:
+            visitor_ids.append(p.user_id)
+        for mid in (p.mentions or []):
+            try:
+                miv = int(mid)
+            except (TypeError, ValueError):
+                continue
+            if miv not in mentioned_ids:
+                mentioned_ids.append(miv)
+
+    all_ids = list(dict.fromkeys(visitor_ids + mentioned_ids))
+    users = {}
+    if all_ids:
+        for u in db.query(models.User).filter(models.User.id.in_(all_ids)).all():
+            users[u.id] = u
+
+    def pack(uid):
+        u = users.get(uid)
+        return {"id": uid, "name": u.name if u else "사용자", "avatar": (u.avatar if u else None)}
+
+    return {
+        "place_id": place_id,
+        "post_count": len(posts),
+        "visitor_count": len(visitor_ids),
+        "visitors": [pack(uid) for uid in visitor_ids[:30] if uid in users],
+        "mentioned": [pack(uid) for uid in mentioned_ids[:30] if uid in users],
+    }
 
 
 class PostUpdate(BaseModel):

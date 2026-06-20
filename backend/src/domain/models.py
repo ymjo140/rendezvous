@@ -382,6 +382,10 @@ class Post(Base):
 
     # 내용
     content = Column(String, nullable=True)
+
+    # 소셜: 해시태그(#) 문자열 배열 + 멘션(@) 친구 user_id 배열
+    hashtags = Column(JSON, default=[])
+    mentions = Column(JSON, default=[])
     
     # 위치/장소 태그
     location_name = Column(String, nullable=True)
