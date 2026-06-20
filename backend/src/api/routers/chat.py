@@ -238,20 +238,58 @@ async def share_to_friends(
     return {"status": "shared", "rooms": shared_rooms}
 
 
+_WD_KO = ["월", "화", "수", "목", "금", "토", "일"]
+
+
 @router.get("/api/chat/rooms/{room_id}/available-dates")
-def get_available_dates(room_id: str):
-    fallback_time = (datetime.now() + timedelta(hours=1)).strftime("%H:%M")
-    return [
-        {"fullDate": "2026-01-20", "displayDate": "1/20 (화)", "time": fallback_time},
-        {"fullDate": "2026-01-21", "displayDate": "1/21 (수)", "time": fallback_time}
-    ]
+def get_available_dates(room_id: str, db: Session = Depends(get_db),
+                        current_user: models.User = Depends(get_current_user)):
+    """오늘 기준 다가오는 후보 날짜 — 멤버들의 기존 일정(events) 날짜는 '바쁜 날'로 제외.
+    (기존엔 2026-01-20 등으로 하드코딩돼 있었음)"""
+    now = datetime.now()
+    # 오늘이 늦었으면(20시 이후) 내일부터 제안
+    start = now + timedelta(days=1) if now.hour >= 20 else now
+
+    # 멤버 기존 일정 = 바쁜 날 → 비는 날 우선
+    busy = set()
+    try:
+        member_ids = [m.user_id for m in db.query(models.ChatRoomMember).filter(
+            models.ChatRoomMember.room_id == room_id).all()]
+        if member_ids:
+            for (d,) in db.query(models.Event.date).filter(models.Event.user_id.in_(member_ids)).all():
+                if d:
+                    busy.add(str(d))
+    except Exception as exc:
+        print(f"[available-dates] busy 조회 스킵: {exc}")
+
+    slots = []
+    cur = start
+    guard = 0
+    while len(slots) < 6 and guard < 30:
+        ds = cur.strftime("%Y-%m-%d")
+        if ds not in busy:
+            slots.append({
+                "fullDate": ds,
+                "displayDate": f"{cur.month}/{cur.day} ({_WD_KO[cur.weekday()]})",
+                "time": "19:00",
+            })
+        cur += timedelta(days=1)
+        guard += 1
+    return slots
+
 
 @router.post("/api/ai/parse-schedule")
 def parse_schedule(req: dict):
-    fallback_time = (datetime.now() + timedelta(hours=1)).strftime("%H:%M")
+    """자연어 일정 파싱(간이). 날짜 미지정 시 오늘 기준 가장 가까운 평일 저녁으로.
+    (기존엔 2026-01-24 하드코딩)"""
+    now = datetime.now()
+    base = now + timedelta(days=1) if now.hour >= 19 else now
     return {
-        "title": "새로운 약속", "date": "2026-01-24", "time": fallback_time,
-        "location_name": "강남역", "purpose": "식사"
+        "title": "새로운 약속",
+        "date": base.strftime("%Y-%m-%d"),
+        "time": "19:00",
+        "location_name": (req or {}).get("location_name") or "중간지점",
+        "purpose": (req or {}).get("purpose") or "식사",
     }
 
 @router.websocket("/api/ws/{room_id}")
