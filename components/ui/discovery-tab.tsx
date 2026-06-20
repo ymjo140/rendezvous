@@ -1179,7 +1179,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                     const createdPlace = formatPlaceFromPost(createdPost) || placePreview;
                     const newPost = {
                         id: createdPost.id,
-                        type: (createdPost.media_type === "video" ? "video" : "image") as const,
+                        type: (createdPost.media_type === "video" ? "video" : "image") as "video" | "image",
                         images: createdPost.image_urls || mediaUrls,
                         poster: isVideoDraft ? draftVideoPoster : undefined,
                         author: {
@@ -1220,7 +1220,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     const addLocalPost = (locationName: string | null, placePreview: any | null) => {
         const newPost = {
             id: `local_${Date.now()}`,
-            type: (draftMediaType === "video" ? "video" : "image") as const,
+            type: (draftMediaType === "video" ? "video" : "image") as "video" | "image",
             images: draftMediaType === "video" && draftVideoUrl ? [draftVideoUrl] : newPostImages,
             poster: draftMediaType === "video" ? draftVideoPoster : undefined,
             author: { id: 999, name: "나", avatar: "ME", profileImage: "" },
