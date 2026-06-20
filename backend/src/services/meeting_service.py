@@ -25,7 +25,12 @@ data_provider = RealDataProvider()
 # 값이 None인 항목(콜키지/단체석/코스요리 등)은 데이터가 없어 매칭 불가(검색 스킵).
 FACILITY_KEY_MAP = {
     "룸": "private_room", "프라이빗룸": "private_room", "프라이빗": "private_room",
-    "주차": "parking", "발렛": "parking",
+    "주차": "parking",
+    "발렛": "valet",
+    "단체석": "group_seat",
+    "콜키지": "corkage",
+    "코스요리": "course", "기념일코스": "course",
+    "예약가능": "reservation",
     "반려동물": "pet_friendly",
     "루프탑": "rooftop", "야외": "rooftop",
     "24시간": "24hours",
