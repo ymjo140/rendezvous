@@ -493,6 +493,22 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     const [inviteLoading, setInviteLoading] = useState(false)
     const [invitedIds, setInvitedIds] = useState<number[]>([])
 
+    // 채팅방 멤버
+    const [members, setMembers] = useState<{ id: number; name: string; is_me?: boolean }[]>([])
+    const [membersOpen, setMembersOpen] = useState(false)
+
+    const fetchMembers = async (roomId: string | number) => {
+        try {
+            const res = await fetchChatAPI(`/api/chat/rooms/${roomId}/members`)
+            if (res.ok) {
+                const data = await res.json()
+                setMembers(Array.isArray(data?.members) ? data.members : [])
+            }
+        } catch {
+            /* graceful */
+        }
+    }
+
     // 📤 공유된 아이템 클릭 → 탐색 탭으로 이동
     const handleSharedItemClick = (item: any) => {
         if (item.type === "post" && item.post_id) {
@@ -557,6 +573,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
             })
             if (res.ok) {
                 setInvitedIds(prev => [...prev, friend.id])
+                fetchMembers(activeRoom.id) // 초대 후 멤버 목록 갱신
             } else {
                 alert("초대 실패: 잠시 후 다시 시도해주세요.")
             }
@@ -583,7 +600,9 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     useEffect(() => {
         if (view === 'room' && activeRoom) {
             setShowPlanner(false)
-            fetchMessages(); 
+            setMembersOpen(false)
+            fetchMembers(activeRoom.id)
+            fetchMessages();
 
             // WebSocket 연결
             const token = localStorage.getItem("token");
@@ -703,10 +722,24 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 <div className="bg-white px-4 py-3 flex items-center shadow-sm sticky top-0 z-20 justify-between">
                 <div className="flex items-center gap-2">
                     <Button variant="ghost" size="icon" onClick={() => setView('list')} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
-                    <div>
-                        <h2 className="font-bold text-sm text-gray-900 truncate max-w-[150px]">{activeRoom?.title || activeRoom?.name}</h2>
-                        {isConnected ? <span className="text-[10px] text-green-500 font-bold block">● 실시간 연결됨</span> : <span className="text-[10px] text-red-500 font-bold block">● 연결 중...</span>}
-                    </div>
+                    <button className="text-left" onClick={() => setMembersOpen((v) => !v)}>
+                        <h2 className="font-bold text-sm text-gray-900 truncate max-w-[160px] flex items-center gap-1">
+                            {activeRoom?.title || activeRoom?.name}
+                            {members.length > 0 && (
+                                <span className="text-[11px] font-normal text-gray-400">{members.length}</span>
+                            )}
+                            <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${membersOpen ? "rotate-180" : ""}`} />
+                        </h2>
+                        {members.length > 0 ? (
+                            <span className="text-[10px] text-gray-500 block truncate max-w-[180px]">
+                                {members.map((m) => m.name).join(", ")}
+                            </span>
+                        ) : isConnected ? (
+                            <span className="text-[10px] text-green-500 font-bold block">● 실시간 연결됨</span>
+                        ) : (
+                            <span className="text-[10px] text-red-500 font-bold block">● 연결 중...</span>
+                        )}
+                    </button>
                 </div>
                 
                 <div className="flex items-center gap-2">
@@ -739,6 +772,24 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                     </Button>
                 </div>
                 </div>
+
+                {/* 멤버 펼침 패널 */}
+                {membersOpen && members.length > 0 && (
+                    <div className="bg-white border-b border-gray-100 px-4 py-3 sticky top-[57px] z-10">
+                        <div className="text-[11px] font-bold text-gray-400 mb-2">참여 멤버 {members.length}</div>
+                        <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                            {members.map((m) => (
+                                <div key={m.id} className="flex items-center gap-2.5 py-1">
+                                    <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                        {m.name?.[0] || "?"}
+                                    </div>
+                                    <span className="text-sm text-gray-800">{m.name}</span>
+                                    {m.is_me && <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">나</span>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <ScrollArea className="flex-1 p-4" ref={scrollRef}>
                 <div className="flex flex-col gap-3 pb-4">

@@ -56,6 +56,24 @@ def get_chat_rooms(db: Session = Depends(get_db), current_user: models.User = De
         })
     return result
 
+@router.get("/api/chat/rooms/{room_id}/members")
+def get_room_members(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """채팅방 참여 멤버 목록 — 이름/취향유형. 그룹 장소추천의 입력(멤버 user_id)도 됨."""
+    rows = db.query(models.ChatRoomMember).filter(models.ChatRoomMember.room_id == room_id).all()
+    uids = [r.user_id for r in rows]
+    if not uids:
+        return {"room_id": room_id, "count": 0, "members": []}
+    users = db.query(models.User).filter(models.User.id.in_(uids)).all()
+    members = [{
+        "id": u.id,
+        "name": u.name,
+        "is_me": u.id == current_user.id,
+    } for u in users]
+    # 나를 맨 앞으로
+    members.sort(key=lambda m: (not m["is_me"], m["name"]))
+    return {"room_id": room_id, "count": len(members), "members": members}
+
+
 # --- 2. 메시지 내역 ---
 @router.get("/api/chat/{room_id}/messages")
 def get_messages(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
