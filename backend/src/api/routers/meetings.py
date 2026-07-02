@@ -101,14 +101,18 @@ def get_vacancy_now(
     lng: float = Query(126.978),
     db: Session = Depends(get_db),
 ):
-    """🔴 지금 빈자리 있는 장소(사장님 원탭 신호, TTL 자동만료) — 내 주변 순."""
+    """🔴 지금 빈자리 있는 장소(사장님 원탭/테이블맵 신호, TTL 자동만료) — 내 주변 순.
+    테이블맵 사용 매장은 빈 테이블 수·좌석수·테이블 한정 최대할인까지 포함."""
     from sqlalchemy import text as _t
     rows = db.execute(_t("""
-        SELECT id, name, category, address, lat, lng, wemeet_rating,
-               (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) AS dist_km,
-               EXTRACT(EPOCH FROM (vacancy_until - NOW()))/60 AS remain_min
-        FROM places
-        WHERE vacancy_until IS NOT NULL AND vacancy_until > NOW()
+        SELECT p.id, p.name, p.category, p.address, p.lat, p.lng, p.wemeet_rating,
+               (6371 * acos(cos(radians(:lat)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(p.lat)))) AS dist_km,
+               EXTRACT(EPOCH FROM (p.vacancy_until - NOW()))/60 AS remain_min,
+               (SELECT COUNT(*) FROM store_tables t WHERE t.place_id = p.id AND t.is_empty) AS empty_tables,
+               (SELECT COALESCE(SUM(t.capacity),0) FROM store_tables t WHERE t.place_id = p.id AND t.is_empty) AS empty_seats,
+               (SELECT MAX(t.deal_percent) FROM store_tables t WHERE t.place_id = p.id AND t.is_empty) AS best_deal
+        FROM places p
+        WHERE p.vacancy_until IS NOT NULL AND p.vacancy_until > NOW()
         ORDER BY dist_km ASC
         LIMIT 15
     """), {"lat": lat, "lng": lng}).fetchall()
@@ -119,6 +123,9 @@ def get_vacancy_now(
             "lat": r[4], "lng": r[5], "wemeet_rating": r[6],
             "dist_km": round(float(r[7] or 0), 1),
             "remain_min": max(0, int(r[8] or 0)),
+            "empty_tables": int(r[9] or 0),
+            "empty_seats": int(r[10] or 0),
+            "best_deal": int(r[11]) if r[11] else None,
         } for r in rows],
     }
 

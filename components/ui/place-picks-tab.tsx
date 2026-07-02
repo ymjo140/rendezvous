@@ -156,6 +156,16 @@ export function PlacePicksTab() {
                       <div className="text-[11px] text-gray-500 flex items-center gap-1">
                         <MapPin className="w-3 h-3" /> {v.category} · {v.dist_km}km
                       </div>
+                      {v.empty_tables > 0 && (
+                        <div className="text-[11px] font-semibold text-emerald-600 mt-0.5">
+                          🪑 {v.empty_tables}테이블 · {v.empty_seats}석 비어있음
+                        </div>
+                      )}
+                      {v.best_deal && (
+                        <div className="mt-0.5 inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                          💸 빈 테이블 한정 최대 {v.best_deal}% 할인
+                        </div>
+                      )}
                     </div>
                     <div className="text-right flex-shrink-0 ml-2">
                       <div className="text-[11px] font-bold text-rose-600">🔴 지금 입장 가능</div>
