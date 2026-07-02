@@ -1,8 +1,14 @@
+from datetime import date
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from domain import models
 from repositories.coin_repository import CoinRepository
 from schemas import coins as schemas
+
+# 지도 보물찾기 하루 최대 획득 횟수(남용 방지)
+MAP_LOOT_DAILY_CAP = 20
+MAP_LOOT_DESC = "지도 보물찾기 획득"
 
 class CoinService:
     def __init__(self):
@@ -58,14 +64,27 @@ class CoinService:
             raise e
             
     def loot_coin(self, db: Session, user: models.User, lat: float, lng: float):
-        """지도에서 보물상자 열기"""
-        # (추후 위치 검증 로직 추가 가능)
-        amount = 50 # 획득량
+        """지도에서 보물상자 열기 (하루 획득 횟수 제한 — 무한 적립 남용 방지)."""
+        today_count = (
+            db.query(models.CoinHistory)
+            .filter(
+                models.CoinHistory.user_id == user.id,
+                models.CoinHistory.description == MAP_LOOT_DESC,
+                func.date(models.CoinHistory.created_at) == date.today(),
+            )
+            .count()
+        )
+        if today_count >= MAP_LOOT_DAILY_CAP:
+            raise HTTPException(status_code=429, detail="오늘의 보물찾기 획득 한도에 도달했어요. 내일 다시 도전해주세요!")
+
+        amount = 50  # 획득량
         try:
-            user.wallet_balance += amount
-            self.repo.create_history(db, user.id, amount, "reward", "지도 보물찾기 획득")
+            user.wallet_balance = (user.wallet_balance or 0) + amount
+            self.repo.create_history(db, user.id, amount, "reward", MAP_LOOT_DESC)
             db.commit()
             return {"message": f"{amount} 코인을 획득했습니다!", "balance": user.wallet_balance}
-        except:
+        except HTTPException:
+            raise
+        except Exception:
             db.rollback()
             raise HTTPException(status_code=500, detail="Loot failed")
