@@ -159,6 +159,9 @@ export function PlacePicksTab() {
                       {v.empty_tables > 0 && (
                         <div className="text-[11px] font-semibold text-emerald-600 mt-0.5">
                           🪑 {v.empty_tables}테이블 · {v.empty_seats}석 비어있음
+                          {v.max_group_seats > v.max_single_seats && (
+                            <span className="text-indigo-500"> · ⛓ 합석 시 최대 {v.max_group_seats}명</span>
+                          )}
                         </div>
                       )}
                       {v.best_deal && (

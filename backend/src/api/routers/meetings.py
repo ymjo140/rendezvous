@@ -95,6 +95,45 @@ def search_places(
     return results
 
 
+def _table_cells(x: int, y: int, shape: str, rotated: bool):
+    """테이블이 차지하는 격자 셀(긴 테이블은 2칸)."""
+    cells = [(x, y)]
+    if shape == "long":
+        cells.append((x, y + 1) if rotated else ((x + 1), y))
+    return cells
+
+
+def _max_group_seats(tables: list) -> tuple:
+    """빈 테이블 중 (최대 단일 테이블 인원, 합석 가능 인접 테이블 최대 합계).
+    tables: [{capacity, cells, mergeable, area}] — 같은 구역에서 변을 맞댄
+    합석 가능 테이블들을 붙였을 때 앉을 수 있는 최대 인원."""
+    from collections import deque
+    best_single = max((t["capacity"] for t in tables), default=0)
+    merge = [t for t in tables if t.get("mergeable")]
+    cellmap = {}
+    for i, t in enumerate(merge):
+        for c in t["cells"]:
+            cellmap[(t["area"], c)] = i
+    seen, best_comp = set(), 0
+    for i in range(len(merge)):
+        if i in seen:
+            continue
+        seen.add(i)
+        comp, dq = 0, deque([i])
+        while dq:
+            j = dq.popleft()
+            tj = merge[j]
+            comp += tj["capacity"]
+            for (cx, cy) in tj["cells"]:
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    k = cellmap.get((tj["area"], (cx + dx, cy + dy)))
+                    if k is not None and k not in seen:
+                        seen.add(k)
+                        dq.append(k)
+        best_comp = max(best_comp, comp)
+    return best_single, max(best_single, best_comp)
+
+
 @router.get("/api/places/vacancy-now")
 def get_vacancy_now(
     lat: float = Query(37.5665),
@@ -116,9 +155,9 @@ def get_vacancy_now(
         ORDER BY dist_km ASC
         LIMIT 15
     """), {"lat": lat, "lng": lng}).fetchall()
-    return {
-        "count": len(rows),
-        "places": [{
+    out = []
+    for r in rows:
+        item = {
             "id": r[0], "name": r[1], "category": r[2], "address": r[3],
             "lat": r[4], "lng": r[5], "wemeet_rating": r[6],
             "dist_km": round(float(r[7] or 0), 1),
@@ -126,8 +165,31 @@ def get_vacancy_now(
             "empty_tables": int(r[9] or 0),
             "empty_seats": int(r[10] or 0),
             "best_deal": int(r[11]) if r[11] else None,
-        } for r in rows],
-    }
+            "max_single_seats": 0,
+            "max_group_seats": 0,
+        }
+        # 합석(⛓) 시 최대 인원 — 빈 테이블 좌표 기반 인접 집계
+        if item["empty_tables"] > 0:
+            try:
+                trows = db.execute(_t("""
+                    SELECT capacity, pos_x, pos_y, COALESCE(shape,'square'),
+                           COALESCE(rotated,false), COALESCE(mergeable,false), COALESCE(area,'1층')
+                    FROM store_tables WHERE place_id = :pid AND status = 'empty'
+                """), {"pid": item["id"]}).fetchall()
+                tbls = [{
+                    "capacity": int(t[0] or 0),
+                    "cells": _table_cells(int(t[1] or 0), int(t[2] or 0), t[3], bool(t[4])),
+                    "mergeable": bool(t[5]),
+                    "area": t[6],
+                } for t in trows]
+                single, group = _max_group_seats(tbls)
+                item["max_single_seats"] = single
+                item["max_group_seats"] = group
+            except Exception as exc:
+                print(f"[vacancy] group seats skip: {exc}")
+                db.rollback()  # 트랜잭션 오염 방지(다음 장소 집계 보호)
+        out.append(item)
+    return {"count": len(out), "places": out}
 
 
 @router.get("/api/places/{place_id}")
