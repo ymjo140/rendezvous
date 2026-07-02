@@ -34,6 +34,23 @@ export default function OnboardingPage() {
   const [selectedAlcohol, setSelectedAlcohol] = useState<string[]>([])
   const [budget, setBudget] = useState([20000])
 
+  // 필수 동의(법적 요건): 만14세·이용약관·개인정보(step1) + 위치정보 별도동의(step2)
+  const [agreedAge14, setAgreedAge14] = useState(false)
+  const [agreedTerms, setAgreedTerms] = useState(false)
+  const [agreedPrivacy, setAgreedPrivacy] = useState(false)
+  const [agreedLocation, setAgreedLocation] = useState(false)
+
+  const CheckBox = ({ checked, onToggle }: { checked: boolean; onToggle: () => void }) => (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={checked}
+      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${checked ? "border-[#F5A623] bg-[#F5A623] text-white" : "border-gray-300 bg-white"}`}
+    >
+      {checked && <Check className="w-3.5 h-3.5" />}
+    </button>
+  )
+
   useEffect(() => {
     const token = localStorage.getItem("token")
     if (!token) router.push("/login")
@@ -83,7 +100,12 @@ export default function OnboardingPage() {
         preferred_foods: selectedFoods,
         preferred_vibes: selectedVibes,
         preferred_alcohol: selectedAlcohol,
-        avg_budget: budget[0]
+        avg_budget: budget[0],
+        // 필수 동의 이력(법적 근거 보존)
+        agreed_terms: agreedTerms,
+        agreed_privacy: agreedPrivacy,
+        agreed_location: agreedLocation,
+        age_over_14: agreedAge14,
       }
 
       const res = await fetch(`${API_URL}/api/users/me/onboarding`, {
@@ -141,8 +163,24 @@ export default function OnboardingPage() {
         </div>
       </div>
 
+      <div className="space-y-2.5 rounded-xl border border-gray-100 bg-gray-50 p-4 mt-2">
+        <div className="flex items-start gap-2">
+          <CheckBox checked={agreedAge14} onToggle={() => setAgreedAge14(v => !v)} />
+          <div className="text-xs leading-relaxed text-gray-600"><span className="font-bold text-[#F5A623]">[필수]</span> 만 14세 이상입니다.</div>
+        </div>
+        <div className="flex items-start gap-2">
+          <CheckBox checked={agreedTerms} onToggle={() => setAgreedTerms(v => !v)} />
+          <div className="text-xs leading-relaxed text-gray-600"><span className="font-bold text-[#F5A623]">[필수]</span> <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline">이용약관</a>에 동의합니다.</div>
+        </div>
+        <div className="flex items-start gap-2">
+          <CheckBox checked={agreedPrivacy} onToggle={() => setAgreedPrivacy(v => !v)} />
+          <div className="text-xs leading-relaxed text-gray-600"><span className="font-bold text-[#F5A623]">[필수]</span> <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline">개인정보 수집·이용</a>에 동의합니다.</div>
+        </div>
+      </div>
+
       <Button className="w-full h-14 rounded-xl bg-[#F5A623] text-white font-bold text-lg mt-4" onClick={() => {
         if (!name || !gender || !ageGroup) return alert("정보를 모두 입력해주세요.")
+        if (!agreedAge14 || !agreedTerms || !agreedPrivacy) return alert("필수 항목에 동의해주세요.")
         setStep(2)
       }}>다음으로 <ChevronRight className="w-5 h-5" /></Button>
     </div>
@@ -158,7 +196,21 @@ export default function OnboardingPage() {
         <p className="text-sm text-gray-500 mt-1">거주지 또는 자주 가는 곳을 설정해주세요.</p>
       </div>
 
-      <Button variant="outline" className={`w-full h-16 rounded-xl justify-start px-4 gap-3 border-2 ${coords.lat !== 0 ? "border-[#F5A623] bg-amber-50 text-[#F5A623]" : "border-dashed border-gray-300"}`} onClick={handleGetLocation}>
+      <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+        <div className="flex items-start gap-2">
+          <CheckBox checked={agreedLocation} onToggle={() => setAgreedLocation(v => !v)} />
+          <div className="text-xs leading-relaxed text-gray-600">
+            <span className="font-bold text-[#F5A623]">[필수]</span>{" "}
+            <a href="/location-terms" target="_blank" rel="noopener noreferrer" className="underline">위치기반서비스 이용약관</a> 및 위치정보 수집·이용에 동의합니다.
+            <span className="mt-1 block text-[11px] text-gray-400">동네·중간지점 추천에 사용되며, 동의는 위치 권한 해제 또는 탈퇴로 철회할 수 있어요.</span>
+          </div>
+        </div>
+      </div>
+
+      <Button variant="outline" className={`w-full h-16 rounded-xl justify-start px-4 gap-3 border-2 ${coords.lat !== 0 ? "border-[#F5A623] bg-amber-50 text-[#F5A623]" : "border-dashed border-gray-300"}`} onClick={() => {
+        if (!agreedLocation) return alert("위치정보 수집·이용에 동의해주세요.")
+        handleGetLocation()
+      }}>
         {locLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <MapPin className="w-6 h-6" />}
         <div className="flex-1 text-left">
           <div className="font-bold text-sm">현재 위치로 설정</div>
@@ -168,6 +220,7 @@ export default function OnboardingPage() {
       </Button>
 
       <Button className="w-full h-14 rounded-xl bg-[#F5A623] text-white font-bold text-lg mt-8" onClick={() => {
+        if (!agreedLocation) return alert("위치정보 수집·이용에 동의해주세요.")
         if (coords.lat === 0) return alert("위치를 설정해주세요.")
         setStep(3)
       }}>다음으로 <ChevronRight className="w-5 h-5" /></Button>

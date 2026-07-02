@@ -92,6 +92,11 @@ class OnboardingRequest(BaseModel):
     preferred_vibes: List[str] = []
     preferred_alcohol: List[str] = []
     avg_budget: int = 20000
-    
+    # 필수 동의 이력(선택 필드 — 미전송 시 False로 기록)
+    agreed_terms: bool = False
+    agreed_privacy: bool = False
+    agreed_location: bool = False
+    age_over_14: bool = False
+
 class KakaoLoginRequest(BaseModel):
     code: str

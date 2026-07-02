@@ -53,12 +53,23 @@ class UserService:
         user.lng = req.lng
         user.location_name = req.location_name
         
+        from datetime import datetime as _dt
+        existing = user.preferences if isinstance(user.preferences, dict) else {}
         preferences = {
             "foods": req.preferred_foods,
             "vibes": req.preferred_vibes,
             "alcohol": req.preferred_alcohol,
             "avg_spend": req.avg_budget,
-            "job_status": req.job_status
+            "job_status": req.job_status,
+            # 필수 동의 이력(법적 근거) — 기존 동의 기록은 보존
+            "consents": {
+                **(existing.get("consents") or {}),
+                "terms": bool(req.agreed_terms),
+                "privacy": bool(req.agreed_privacy),
+                "location": bool(req.agreed_location),
+                "age_over_14": bool(req.age_over_14),
+                "at": _dt.now().isoformat(),
+            },
         }
         user.preferences = preferences
         flag_modified(user, "preferences")
