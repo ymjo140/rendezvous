@@ -301,6 +301,8 @@ class Reservation(Base):
     deposit_amount = Column(Integer, default=0)  # 캐시 예약금(원)
     status = Column(String, default="confirmed")  # confirmed, cancelled, completed
     offer_rule_id = Column(Integer, nullable=True)  # 핫딜 예약이면 해당 offer_rule(수량 차감용)
+    table_id = Column(Integer, nullable=True)       # 손님이 지정한 테이블(store_tables.id)
+    table_label = Column(String, nullable=True)     # 지정 테이블 라벨 스냅샷(예: '창가 T1')
     created_at = Column(DateTime, default=datetime.now)
 
 class Campaign(Base):

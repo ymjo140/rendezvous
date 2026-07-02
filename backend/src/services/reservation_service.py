@@ -29,6 +29,30 @@ class ReservationService:
         if deposit > 0 and (user.wallet_balance or 0) < deposit:
             raise HTTPException(status_code=400, detail="캐시 잔액이 부족합니다. 충전 후 이용해주세요.")
 
+        # 손님 지정 테이블 — 같은 날 ±2시간 내 동일 테이블 지정 예약과 충돌 방지
+        table_id = getattr(req, "table_id", None)
+        table_label = getattr(req, "table_label", None)
+        if table_id and req.place_id:
+            def _to_min(t):
+                try:
+                    h, m = str(t or "0:0").split(":")[:2]
+                    return int(h) * 60 + int(m)
+                except Exception:
+                    return 0
+            new_min = _to_min(req.time)
+            clashes = db.query(models.Reservation).filter(
+                models.Reservation.place_id == req.place_id,
+                models.Reservation.table_id == table_id,
+                models.Reservation.date == req.date,
+                models.Reservation.status == "confirmed",
+            ).all()
+            for c in clashes:
+                if abs(_to_min(c.time) - new_min) < 120:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"{table_label or '해당 테이블'}은 그 시간대에 이미 지정 예약이 있어요. 다른 테이블을 선택해주세요.",
+                    )
+
         try:
             rid = uuid.uuid4().hex
             offer_rule_id = getattr(req, "offer_rule_id", None)
@@ -43,6 +67,8 @@ class ReservationService:
                 deposit_amount=deposit,
                 status="confirmed",
                 offer_rule_id=offer_rule_id,
+                table_id=table_id,
+                table_label=table_label,
             )
             db.add(resv)
 

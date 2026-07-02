@@ -192,6 +192,37 @@ def get_vacancy_now(
     return {"count": len(out), "places": out}
 
 
+@router.get("/api/places/{place_id}/tables")
+def get_place_tables(place_id: int, db: Session = Depends(get_db)):
+    """손님용 테이블 목록 — 예약 시 '창가 4인석' 지정용. 테이블맵 미등록이면 빈 배열."""
+    from sqlalchemy import text as _t
+    zone_ko = {"hall": "홀", "window": "창가", "room": "룸", "outdoor": "야외", "bar": "바"}
+    try:
+        rows = db.execute(_t("""
+            SELECT id, label, capacity, COALESCE(shape,'square'), COALESCE(zone_type,'hall'),
+                   COALESCE(area,'1층'), status, deal_percent, COALESCE(mergeable,false)
+            FROM store_tables WHERE place_id = :pid ORDER BY area, id
+        """), {"pid": place_id}).fetchall()
+    except Exception as exc:
+        print(f"[place-tables] 조회 실패: {exc}")
+        db.rollback()
+        return {"count": 0, "tables": []}
+    return {
+        "count": len(rows),
+        "tables": [{
+            "id": r[0],
+            "label": r[1],
+            "capacity": int(r[2] or 0),
+            "shape": r[3],
+            "zone": zone_ko.get(r[4], r[4]),
+            "area": r[5],
+            "status": r[6],
+            "deal_percent": int(r[7]) if r[7] else None,
+            "mergeable": bool(r[8]),
+        } for r in rows],
+    }
+
+
 @router.get("/api/places/{place_id}")
 def get_place_detail(
     place_id: int,

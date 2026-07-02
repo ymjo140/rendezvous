@@ -54,6 +54,7 @@ export type Reservation = {
   party_size: number
   deposit_amount: number
   status: "confirmed" | "cancelled" | "completed"
+  table_label?: string | null
   created_at: string
 }
 
@@ -72,6 +73,8 @@ export async function createReservation(payload: {
   party_size: number
   deposit_amount: number
   offer_rule_id?: number | null
+  table_id?: number | null
+  table_label?: string | null
 }): Promise<Reservation> {
   const res = await fetchWithAuth("/api/reservations", {
     method: "POST",

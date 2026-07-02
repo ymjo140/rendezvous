@@ -163,6 +163,28 @@ export default function PlaceDetailPage() {
   const DEPOSIT_PER_PERSON = 5000
   const depositAmount = partySize * DEPOSIT_PER_PERSON
 
+  // 🪑 테이블 지정 예약 — 사장님 테이블맵이 있는 매장이면 '창가 4인석' 지정 가능
+  type PlaceTable = {
+    id: number; label: string; capacity: number; shape: string
+    zone: string; area: string; status: string; deal_percent: number | null; mergeable: boolean
+  }
+  const [placeTables, setPlaceTables] = useState<PlaceTable[]>([])
+  const [selectedTable, setSelectedTable] = useState<PlaceTable | null>(null)
+
+  useEffect(() => {
+    if (!reserveOpen || !placeId) return
+    let active = true
+    fetch(`${API_BASE_URL}/api/places/${placeId}/tables`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (active) setPlaceTables(d?.tables || [])
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [reserveOpen, placeId])
+
   // 찜(저장) — 기본 폴더에 place 저장 (이미 저장돼 있으면 저장됨 처리)
   const [savedPlace, setSavedPlace] = useState(false)
   const [savingPlace, setSavingPlace] = useState(false)
@@ -276,8 +298,12 @@ export default function PlaceDetailPage() {
         party_size: partySize,
         deposit_amount: depositAmount,
         offer_rule_id: offerRuleId,
+        table_id: selectedTable?.id ?? null,
+        table_label: selectedTable ? `${selectedTable.zone} ${selectedTable.label}` : null,
       })
-      setReserveSuccess(`예약 완료! 예약금 ${won(depositAmount)}이 캐시에서 결제됐어요.`)
+      setReserveSuccess(
+        `예약 완료!${selectedTable ? ` ${selectedTable.zone} ${selectedTable.label} 지정 ·` : ""} 예약금 ${won(depositAmount)}이 캐시에서 결제됐어요.`
+      )
       recordActivity("reserve") // 게임 XP/퀘스트
       setTimeout(() => setReserveOpen(false), 1400)
     } catch (err: any) {
@@ -987,6 +1013,61 @@ export default function PlaceDetailPage() {
                   </Button>
                 </div>
               </div>
+
+              {/* 🪑 테이블 지정(선택) — 테이블맵 등록 매장만 노출 */}
+              {placeTables.length > 0 && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-500">
+                    원하는 자리 <span className="text-gray-400 font-normal">(선택)</span>
+                  </label>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTable(null)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        !selectedTable
+                          ? "border-amber-500 bg-amber-500 text-white"
+                          : "border-gray-200 bg-white text-gray-600"
+                      }`}
+                    >
+                      아무 자리나 괜찮아요
+                    </button>
+                    {placeTables.map((t) => {
+                      const tooSmall = t.capacity < partySize && !t.mergeable
+                      const on = selectedTable?.id === t.id
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          disabled={tooSmall}
+                          onClick={() => setSelectedTable(on ? null : t)}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                            on
+                              ? "border-amber-500 bg-amber-500 text-white"
+                              : tooSmall
+                              ? "border-gray-100 bg-gray-50 text-gray-300"
+                              : "border-gray-200 bg-white text-gray-600 hover:border-amber-300"
+                          }`}
+                          title={tooSmall ? `${t.capacity}인석 — 인원 초과` : ""}
+                        >
+                          {t.zone !== "홀" ? `${t.zone} ` : ""}{t.label} · {t.capacity}인
+                          {t.mergeable ? " ⛓" : ""}
+                          {t.deal_percent ? ` 💸-${t.deal_percent}%` : ""}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {selectedTable?.deal_percent ? (
+                    <p className="mt-1 text-[11px] text-rose-500 font-semibold">
+                      💸 이 테이블은 매장에서 {selectedTable.deal_percent}% 할인이 적용돼요 (지금 비어있을 때 한정)
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-[11px] text-gray-400">
+                      원하는 자리를 고르면 사장님께 함께 전달돼요.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="rounded-xl bg-gray-50 p-3 space-y-1.5">
                 <div className="flex items-center justify-between text-sm">
