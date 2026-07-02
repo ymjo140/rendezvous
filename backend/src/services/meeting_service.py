@@ -440,7 +440,8 @@ class MeetingService:
                 filter_sql = f"({filter_sql}) AND " + " AND ".join(facility_clauses)
 
             db_query = text(f"""
-                SELECT id, name, category, lat, lng, address, tags, wemeet_rating
+                SELECT id, name, category, lat, lng, address, tags, wemeet_rating,
+                       (vacancy_until IS NOT NULL AND vacancy_until > NOW()) AS vacancy_now
                 FROM places
                 WHERE (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) <= 2.0
                 AND ({filter_sql})
@@ -464,11 +465,13 @@ class MeetingService:
                 except:
                     loaded_tags = []
 
-                place_candidates.append(POI(
+                poi = POI(
                     id=int(row[0]), name=row[1], category=row[2], tags=loaded_tags,
                     location=np.array([row[3], row[4]]), price_level=1,
                     avg_rating=float(row[7] or 0.0), address=row[5]
-                ))
+                )
+                poi.vacancy_now = bool(row[8])  # 🔴 지금 빈자리(사장님 신호, TTL)
+                place_candidates.append(poi)
 
             if search_queries and len(place_candidates) < 5:
                 ext = data_provider.search_places_all_queries(search_queries, r["name"], r["lat"], r["lng"], db=db)
@@ -529,6 +532,8 @@ class MeetingService:
                         "reason": reason,
                         # 유사 취향 그룹 사회적 증거(있을 때만)
                         "social_proof": social_proof.get(p.id),
+                        # 🔴 지금 빈자리(사장님 원탭 신호, 자동 만료)
+                        "vacancy_now": bool(getattr(p, "vacancy_now", False)),
                     } for p, reason in ranked_pairs]
                 })
         return results

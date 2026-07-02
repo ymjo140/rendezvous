@@ -323,6 +323,11 @@ const RecommendChatbot = ({ roomId, members }: { roomId: string; members: ChatMe
                             <div className="font-bold text-sm text-gray-800">{p.name}</div>
                             <div className="text-[11px] text-gray-500">{p.category} · {p.address}</div>
                             {p.reason && <div className="mt-1 text-[11px] font-bold text-[#F5A623]">✨ {p.reason}</div>}
+                            {p.vacancy_now && (
+                                <div className="mt-1 mr-1 inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-600">
+                                    🔴 지금 입장 가능
+                                </div>
+                            )}
                             {p.social_proof?.count > 0 && (
                                 <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
                                     🫂 비슷한 취향 {p.social_proof.count}명이 좋아함

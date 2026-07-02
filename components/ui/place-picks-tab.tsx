@@ -28,6 +28,7 @@ export function PlacePicksTab() {
   const [recsLoading, setRecsLoading] = useState(true)
   const [meetingRecsLoading, setMeetingRecsLoading] = useState(true)
   const [meetingRecs, setMeetingRecs] = useState<any[]>([])
+  const [vacancies, setVacancies] = useState<any[]>([])
 
   useEffect(() => {
     let active = true
@@ -71,6 +72,27 @@ export function PlacePicksTab() {
     }
   }, [])
 
+  // 🔴 지금 빈자리 (사장님 실시간 신호, 자동 만료)
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const meRes = await fetchWithAuth("/api/users/me")
+        let lat = 37.5665, lng = 126.978
+        if (meRes.ok) {
+          const me = await meRes.json()
+          if (me?.lat && Math.abs(Number(me.lat)) > 1) { lat = me.lat; lng = me.lng }
+        }
+        const res = await fetchWithAuth(`/api/places/vacancy-now?lat=${lat}&lng=${lng}`)
+        const d = res.ok ? await res.json() : null
+        if (active) setVacancies(d?.places || [])
+      } catch { /* graceful */ }
+    }
+    load()
+    const t = setInterval(load, 60_000) // 1분마다 갱신(만료 반영)
+    return () => { active = false; clearInterval(t) }
+  }, [])
+
   // 내 모임(채팅방) 기반 추천 — 방 이름이 근거로 붙음
   useEffect(() => {
     let active = true
@@ -110,6 +132,42 @@ export function PlacePicksTab() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-8 pt-3 space-y-6">
+        {/* 🔴 지금 빈자리 — 사장님 실시간 신호 (있을 때만 노출) */}
+        {vacancies.length > 0 && (
+          <section>
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="relative flex h-3 w-3">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500" />
+              </span>
+              <h3 className="text-sm font-bold text-gray-800">지금 빈자리</h3>
+              <span className="text-[10px] text-gray-400">사장님이 방금 알린 실시간 자리예요</span>
+            </div>
+            <div className="space-y-2">
+              {vacancies.map((v) => (
+                <div
+                  key={v.id}
+                  onClick={() => goPlace(v.id)}
+                  className="bg-white border-2 border-rose-200 rounded-xl p-3 cursor-pointer hover:border-rose-400 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm text-gray-800 truncate">{v.name}</div>
+                      <div className="text-[11px] text-gray-500 flex items-center gap-1">
+                        <MapPin className="w-3 h-3" /> {v.category} · {v.dist_km}km
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-2">
+                      <div className="text-[11px] font-bold text-rose-600">🔴 지금 입장 가능</div>
+                      <div className="text-[10px] text-gray-400">{v.remain_min}분 남음</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* 내 취향 추천 */}
         <section>
           <div className="flex items-center gap-1.5 mb-2">

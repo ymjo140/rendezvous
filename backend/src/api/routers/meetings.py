@@ -95,6 +95,34 @@ def search_places(
     return results
 
 
+@router.get("/api/places/vacancy-now")
+def get_vacancy_now(
+    lat: float = Query(37.5665),
+    lng: float = Query(126.978),
+    db: Session = Depends(get_db),
+):
+    """🔴 지금 빈자리 있는 장소(사장님 원탭 신호, TTL 자동만료) — 내 주변 순."""
+    from sqlalchemy import text as _t
+    rows = db.execute(_t("""
+        SELECT id, name, category, address, lat, lng, wemeet_rating,
+               (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) AS dist_km,
+               EXTRACT(EPOCH FROM (vacancy_until - NOW()))/60 AS remain_min
+        FROM places
+        WHERE vacancy_until IS NOT NULL AND vacancy_until > NOW()
+        ORDER BY dist_km ASC
+        LIMIT 15
+    """), {"lat": lat, "lng": lng}).fetchall()
+    return {
+        "count": len(rows),
+        "places": [{
+            "id": r[0], "name": r[1], "category": r[2], "address": r[3],
+            "lat": r[4], "lng": r[5], "wemeet_rating": r[6],
+            "dist_km": round(float(r[7] or 0), 1),
+            "remain_min": max(0, int(r[8] or 0)),
+        } for r in rows],
+    }
+
+
 @router.get("/api/places/{place_id}")
 def get_place_detail(
     place_id: int,

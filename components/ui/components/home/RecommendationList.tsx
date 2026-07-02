@@ -66,6 +66,11 @@ const PlaceCard = ({ place, onClick }: { place: any; onClick: () => void }) => (
           <span className="truncate">{place.reason}</span>
         </div>
       )}
+      {place.vacancy_now && (
+        <div className="mt-1.5 mr-1.5 inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-600">
+          🔴 지금 입장 가능
+        </div>
+      )}
       {place.social_proof?.count > 0 && (
         <div className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
           <span>🫂</span>
