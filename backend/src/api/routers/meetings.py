@@ -108,9 +108,9 @@ def get_vacancy_now(
         SELECT p.id, p.name, p.category, p.address, p.lat, p.lng, p.wemeet_rating,
                (6371 * acos(cos(radians(:lat)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(p.lat)))) AS dist_km,
                EXTRACT(EPOCH FROM (p.vacancy_until - NOW()))/60 AS remain_min,
-               (SELECT COUNT(*) FROM store_tables t WHERE t.place_id = p.id AND t.is_empty) AS empty_tables,
-               (SELECT COALESCE(SUM(t.capacity),0) FROM store_tables t WHERE t.place_id = p.id AND t.is_empty) AS empty_seats,
-               (SELECT MAX(t.deal_percent) FROM store_tables t WHERE t.place_id = p.id AND t.is_empty) AS best_deal
+               (SELECT COUNT(*) FROM store_tables t WHERE t.place_id = p.id AND t.status = 'empty') AS empty_tables,
+               (SELECT COALESCE(SUM(t.capacity),0) FROM store_tables t WHERE t.place_id = p.id AND t.status = 'empty') AS empty_seats,
+               (SELECT MAX(t.deal_percent) FROM store_tables t WHERE t.place_id = p.id AND t.status = 'empty') AS best_deal
         FROM places p
         WHERE p.vacancy_until IS NOT NULL AND p.vacancy_until > NOW()
         ORDER BY dist_km ASC
