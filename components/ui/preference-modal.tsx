@@ -10,7 +10,9 @@ import { ChevronRight, Check } from "lucide-react"
 
 const OPTIONS = {
   foods: ["한식", "일식", "중식", "양식", "아시아음식", "고기/구이", "해산물", "분식", "패스트푸드", "카페/디저트"],
-  dislikes: ["매운맛", "내장/곱창", "날것", "고수", "해산물", "유제품", "견과류", "없음"],
+  // 불호(감점) + 알레르기(추천 제외). 그룹 추천 시 멤버 전원 반영.
+  dislikes: ["매운맛", "내장/곱창", "날것/회", "고수", "오이", "양고기", "해산물", "없음"],
+  allergies: ["갑각류", "조개류", "견과류", "유제품", "계란", "밀/글루텐", "복숭아"],
   vibes: ["조용한", "감성적인", "힙한", "가성비", "뷰맛집", "인스타감성", "고급진", "야외", "깔끔한", "이국적인"],
   alcohol: ["소주", "맥주", "와인", "하이볼", "칵테일", "막걸리/전통주"],
 }
@@ -69,7 +71,7 @@ export function PreferenceModal({ isOpen, onClose, onComplete }: PreferenceModal
         <DialogHeader>
           <DialogTitle>
             {step === 1 && "선호하는 음식 (복수 선택)"}
-            {step === 2 && "싫어하는 음식"}
+            {step === 2 && "싫어하는 음식 · 알레르기"}
             {step === 3 && "선호하는 분위기"}
             {step === 4 && "주류 취향"}
             {step === 5 && "1인당 평균 예산"}
@@ -93,17 +95,37 @@ export function PreferenceModal({ isOpen, onClose, onComplete }: PreferenceModal
             </div>
           )}
           {step === 2 && (
-            <div className="flex flex-wrap gap-2">
-              {OPTIONS.dislikes.map(opt => (
-                <Badge
-                  key={opt}
-                  variant={selections.disliked_foods.includes(opt) ? "destructive" : "outline"}
-                  className="cursor-pointer py-2 px-3 text-sm"
-                  onClick={() => toggleItem("disliked_foods", opt)}
-                >
-                  {opt} {selections.disliked_foods.includes(opt) && <Check className="w-3 h-3 ml-1" />}
-                </Badge>
-              ))}
+            <div className="space-y-4">
+              <div>
+                <div className="text-xs font-bold text-gray-500 mb-2">싫어하는 음식 (추천에서 뒤로 밀려요)</div>
+                <div className="flex flex-wrap gap-2">
+                  {OPTIONS.dislikes.map(opt => (
+                    <Badge
+                      key={opt}
+                      variant={selections.disliked_foods.includes(opt) ? "destructive" : "outline"}
+                      className="cursor-pointer py-2 px-3 text-sm"
+                      onClick={() => toggleItem("disliked_foods", opt)}
+                    >
+                      {opt} {selections.disliked_foods.includes(opt) && <Check className="w-3 h-3 ml-1" />}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-bold text-rose-500 mb-2">⚠️ 알레르기 (추천에서 제외돼요 · 그룹 모임에도 반영)</div>
+                <div className="flex flex-wrap gap-2">
+                  {OPTIONS.allergies.map(opt => (
+                    <Badge
+                      key={opt}
+                      variant={selections.disliked_foods.includes(opt) ? "destructive" : "outline"}
+                      className="cursor-pointer py-2 px-3 text-sm border-rose-200"
+                      onClick={() => toggleItem("disliked_foods", opt)}
+                    >
+                      {opt} {selections.disliked_foods.includes(opt) && <Check className="w-3 h-3 ml-1" />}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
           {step === 3 && (

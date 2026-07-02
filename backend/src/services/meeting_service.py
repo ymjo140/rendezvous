@@ -23,6 +23,28 @@ data_provider = RealDataProvider()
 # 한글 시설 필터 → places.features 영어 키 매핑(데이터는 영어 키로 적재됨).
 # 매핑된 term은 ILIKE 대신 `features ? key`(키 존재)로 검색해 시설 보유 장소를 잡는다.
 # 값이 None인 항목(콜키지/단체석/코스요리 등)은 데이터가 없어 매칭 불가(검색 스킵).
+# 불호/알레르기 → 장소 텍스트(이름/카테고리/태그) 매칭용 확장어.
+# 알레르기(ALLERGY_KEYS)는 후보에서 '제외'(하드), 그 외 불호는 점수 감점(0.4배)
+# — least-misery 정신: 한 명이라도 못 먹으면 뒤로 보낸다.
+DISLIKE_EXPANSIONS = {
+    "매운맛": ["매운", "매콤", "마라", "불닭", "짬뽕", "떡볶이"],
+    "내장/곱창": ["곱창", "대창", "막창", "내장", "순대"],
+    "날것/회": ["횟집", "사시미", "육회", "초밥", "스시", "참치회", "물회"],
+    "날것": ["횟집", "사시미", "육회", "초밥", "스시", "참치회", "물회"],
+    "고수": ["쌀국수", "베트남", "포"],
+    "오이": ["오이"],
+    "양고기": ["양고기", "램", "양꼬치"],
+    "해산물": ["해산물", "횟집", "조개", "새우", "굴", "생선", "수산"],
+    "갑각류": ["새우", "랍스터", "크랩", "대게", "꽃게"],
+    "조개류": ["조개", "굴", "홍합", "전복", "바지락"],
+    "견과류": ["견과", "땅콩", "아몬드", "호두"],
+    "유제품": ["치즈", "우유", "크림", "젤라또", "요거트"],
+    "계란": ["계란", "오믈렛", "에그"],
+    "밀/글루텐": ["파스타", "피자", "빵", "국수", "베이커리", "라멘", "우동"],
+    "복숭아": ["복숭아"],
+}
+ALLERGY_KEYS = {"갑각류", "조개류", "견과류", "유제품", "계란", "밀/글루텐", "복숭아"}
+
 FACILITY_KEY_MAP = {
     "룸": "private_room", "프라이빗룸": "private_room", "프라이빗": "private_room",
     "주차": "parking",
@@ -82,6 +104,33 @@ class MeetingService:
         if purpose:
             return f"중간지점 근처 · {purpose} 추천"
         return "중간지점에서 가까운 곳이에요"
+
+    def _load_avoidance(self, db: Session, user_ids: list):
+        """멤버들의 불호/알레르기(disliked_foods) → (알레르기 확장어, 불호 확장어).
+        그룹이면 멤버 전원의 합집합 — 한 명의 알레르기도 전체 제외 사유."""
+        allergy, dislike = set(), set()
+        if not user_ids:
+            return allergy, dislike
+        try:
+            users = db.query(models.User).filter(models.User.id.in_(user_ids)).all()
+            for u in users:
+                prefs = u.preferences if isinstance(u.preferences, dict) else {}
+                for d in (prefs.get("disliked_foods") or []):
+                    d = str(d).strip()
+                    if not d or d == "없음":
+                        continue
+                    terms = DISLIKE_EXPANSIONS.get(d, [d])
+                    (allergy if d in ALLERGY_KEYS else dislike).update(terms)
+        except Exception as e:
+            print(f"[avoidance] load skipped: {e}")
+        return allergy, dislike
+
+    @staticmethod
+    def _poi_blob(poi) -> str:
+        return " ".join(
+            [str(getattr(poi, "name", "") or ""), str(getattr(poi, "category", "") or "")]
+            + [str(t) for t in (getattr(poi, "tags", None) or [])]
+        )
 
     def _load_user_vector(self, db: Session, uid: int):
         """유저의 블렌드 취향 벡터(장기 0.7 + 최근 0.3) 로드. 없으면 None."""
@@ -150,6 +199,8 @@ class MeetingService:
             tag_hits = sum(1 for t in (getattr(c, "tags", None) or []) if t in tagset)
             tag_score = min(tag_hits / 3.0, 1.0) if tagset else 0.0
             final = 0.65 * group_vec_score + 0.35 * tag_score
+            if getattr(c, "dislike_hit", False):
+                final *= 0.4  # 멤버 불호 → 후순위
             scored.append((final, min_sim, mean_sim, c))
 
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -254,7 +305,10 @@ class MeetingService:
             v_sim = max(0.0, self._cosine(user_vec, emb)) if emb is not None else 0.0
             tag_hits = sum(1 for t in (getattr(c, "tags", None) or []) if t in tagset)
             tag_score = min(tag_hits / 3.0, 1.0) if tagset else 0.0
-            scored.append((0.65 * v_sim + 0.35 * tag_score, v_sim, c))
+            final = 0.65 * v_sim + 0.35 * tag_score
+            if getattr(c, "dislike_hit", False):
+                final *= 0.4  # 불호 → 후순위
+            scored.append((final, v_sim, c))
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [
@@ -289,6 +343,10 @@ class MeetingService:
             if mv is not None:
                 member_vecs.append(mv)
         is_group = len(member_vecs) >= 2
+
+        # 불호/알레르기 로드 — 그룹이면 멤버 전원 합집합, 개인이면 요청자
+        avoid_ids = member_ids if member_ids else ([int(user_id)] if user_id else [])
+        allergy_terms, dislike_terms = self._load_avoidance(db, avoid_ids)
 
         # 장기 취향 태그(추천 이유 생성용): foods/vibes/alcohol
         pref_tags = []
@@ -421,6 +479,20 @@ class MeetingService:
                             location=np.array(p.location), price_level=1,
                             avg_rating=p.wemeet_rating, address=p.address
                         ))
+
+            # 알레르기=후보 제외(하드), 불호=감점 마킹(dislike_hit → 재랭킹에서 0.4배)
+            if place_candidates and (allergy_terms or dislike_terms):
+                kept = []
+                for c in place_candidates:
+                    blob = self._poi_blob(c)
+                    if any(t in blob for t in allergy_terms):
+                        continue  # 멤버 중 알레르기 → 제외
+                    try:
+                        c.dislike_hit = any(t in blob for t in dislike_terms)
+                    except Exception:
+                        pass
+                    kept.append(c)
+                place_candidates = kept
 
             social_proof = {}
             if place_candidates:
