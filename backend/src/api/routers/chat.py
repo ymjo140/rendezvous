@@ -4,6 +4,8 @@ from typing import List, Dict
 import json
 from datetime import datetime, timedelta
 
+from sqlalchemy.orm.attributes import flag_modified
+
 from core.database import get_db
 from domain import models
 from schemas import user as user_schemas
@@ -150,13 +152,27 @@ def leave_room(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """현재 사용자를 채팅방 멤버에서 제거(실제 나가기). 기존엔 no-op이라 새로고침 시 방이 다시 보였음."""
+    """현재 사용자를 채팅방에서 완전히 제거.
+    ⚠️ ChatRoomMember만 지우면 get_chat_rooms가 Community.member_ids 기준으로 방을
+    되살리므로(_sync_room_members_from_community), 커뮤니티 멤버십에서도 함께 제거한다."""
     if current_user is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
     removed = db.query(models.ChatRoomMember).filter(
         models.ChatRoomMember.room_id == room_id,
         models.ChatRoomMember.user_id == current_user.id,
     ).delete()
+
+    # 모임(커뮤니티) 방이면 member_ids/host_id에서도 제거 → 나가기 후 재출현 방지
+    comm = db.query(models.Community).filter(models.Community.id == room_id).first()
+    if comm:
+        mids = [x for x in (comm.member_ids or []) if x != current_user.id]
+        if mids != (comm.member_ids or []):
+            comm.member_ids = mids
+            flag_modified(comm, "member_ids")
+        if comm.host_id == current_user.id:
+            # 호스트가 나가면 남은 첫 멤버에게 위임(없으면 비움)
+            comm.host_id = mids[0] if mids else None
+
     db.commit()
     return {"status": "left", "removed": bool(removed)}
 
