@@ -225,7 +225,7 @@ export function CalendarTab() {
         return (
             <div className="flex flex-col items-center justify-center h-full p-6 space-y-6 bg-[#F3F4F6] font-['Pretendard']">
                 <div className="text-center space-y-3">
-                    <div className="text-6xl mb-4">??</div>
+                    <div className="text-6xl mb-4">📅</div>
                     <h2 className="text-2xl font-bold text-gray-800">로그인이 필요해요</h2>
                     <p className="text-gray-500 leading-relaxed">나만의 일정을 관리하고<br/>친구들과 약속을 잡아보세요.</p>
                 </div>

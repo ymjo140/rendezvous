@@ -85,7 +85,7 @@ export const useMapLogic = ({
                         position: new window.naver.maps.LatLng(myLocation.lat, myLocation.lng),
                         map: mapRef.current,
                         zIndex: 100,
-                        icon: { content: '<div style="font-size:30px;">??</div>' }
+                        icon: { content: '<div style="font-size:30px;">📍</div>' }
                     });
                 }
             }
@@ -125,7 +125,7 @@ export const useMapLogic = ({
                     const marker = new window.naver.maps.Marker({
                         position: new window.naver.maps.LatLng(loot.lat, loot.lng),
                         map: mapRef.current,
-                        icon: { content: '<div style="font-size:24px; animation: bounce 2s infinite;">??</div>' }
+                        icon: { content: '<div style="font-size:24px; animation: bounce 2s infinite;">🎁</div>' }
                     });
                     lootMarkersRef.current.push(marker);
                 });
