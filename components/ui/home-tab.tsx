@@ -191,8 +191,11 @@ export function HomeTab() {
         const me = await res.json()
         if (cancelled) return
         setMyProfile(me)
-        if (me?.lat && me?.lng && Math.abs(me.lat) > 1.0) {
-          setMyLocation({ lat: me.lat, lng: me.lng })
+        // /api/users/me 는 위치를 me.location.lat/lng(중첩)로 반환한다(과거 me.lat로 읽어 항상 미설정 처리됐음)
+        const lat = me?.location?.lat ?? me?.lat
+        const lng = me?.location?.lng ?? me?.lng
+        if (lat && lng && Math.abs(lat) > 1.0) {
+          setMyLocation({ lat, lng })
           setMyLocationInput(me.location_name || "내 설정 위치")
         } else {
           setMyLocationInput("위치 미설정 (마이페이지에서 설정)")
