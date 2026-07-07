@@ -13,7 +13,7 @@ import { Slider } from "@/components/ui/slider"
 import {
     Bell, LogOut,
     Heart, Star, MessageSquare, Pencil, Check, X, Utensils,
-    ChevronRight, MapPin, Search, Loader2, Calendar, Grid3X3, Trash2
+    ChevronRight, MapPin, Search, Loader2, Calendar, Grid3X3, Trash2, Plus
 } from "lucide-react"
 
 // 🌟 [추가] 캘린더 탭 컴포넌트 가져오기
@@ -314,6 +314,49 @@ export function MyPageTab() {
       } catch (e) {
           alert("삭제 실패");
       }
+  };
+
+  // 💾 폴더 생성
+  const handleCreateFolder = async () => {
+      const name = window.prompt("새 폴더 이름을 입력하세요")?.trim();
+      if (!name) return;
+      try {
+          const res = await fetchWithAuth(`/api/folders`, {
+              method: "POST",
+              body: JSON.stringify({ name }),
+          });
+          if (res.ok) {
+              await fetchSaveFolders();
+          } else {
+              alert("폴더 생성에 실패했어요.");
+          }
+      } catch (e) {
+          alert("폴더 생성 중 오류가 발생했어요.");
+      }
+  };
+
+  // 💾 폴더 삭제 (기본 폴더는 불가)
+  const handleDeleteFolder = async (folder: SaveFolder) => {
+      if (folder.is_default) return;
+      if (!confirm(`'${folder.name}' 폴더를 삭제할까요? 안에 저장된 항목도 함께 삭제됩니다.`)) return;
+      try {
+          const res = await fetchWithAuth(`/api/folders/${folder.id}`, { method: "DELETE" });
+          if (res.ok) {
+              setSaveFolders(prev => prev.filter(f => f.id !== folder.id));
+          } else {
+              alert("폴더 삭제에 실패했어요.");
+          }
+      } catch (e) {
+          alert("폴더 삭제 중 오류가 발생했어요.");
+      }
+  };
+
+  // 💾 저장 항목 클릭 → 상세로 이동 (음식점=장소)
+  const handleOpenSavedItem = (item: SavedItem) => {
+      if (item.item_type === "place" && item.place_id) {
+          router.push(`/places/${item.place_id}`);
+      }
+      // 게시물 항목은 전용 상세 라우트가 없어 이동하지 않음(추후 연결)
   };
 
   useEffect(() => { fetchMyInfo(); fetchSaveFolders(); }, []);
@@ -709,9 +752,10 @@ export function MyPageTab() {
                         ) : folderItems.length > 0 ? (
                             <div className="grid grid-cols-2 gap-3">
                                 {folderItems.map((item) => (
-                                    <div 
-                                        key={item.id} 
-                                        className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group"
+                                    <div
+                                        key={item.id}
+                                        onClick={() => handleOpenSavedItem(item)}
+                                        className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group cursor-pointer"
                                     >
                                         {/* 이미지 */}
                                         <div className="aspect-square bg-gray-100 relative">
@@ -728,7 +772,7 @@ export function MyPageTab() {
                                             )}
                                             {/* 삭제 버튼 */}
                                             <button
-                                                onClick={() => handleUnsaveItem(item.id)}
+                                                onClick={(e) => { e.stopPropagation(); handleUnsaveItem(item.id); }}
                                                 className="absolute top-2 right-2 p-1.5 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                                             >
                                                 <X className="w-3 h-3 text-white" />
@@ -757,6 +801,13 @@ export function MyPageTab() {
                   ) : (
                     /* 폴더 목록 모드 */
                     <>
+                        {/* 새 폴더 만들기 */}
+                        <button
+                            onClick={handleCreateFolder}
+                            className="w-full flex items-center justify-center gap-2 bg-white p-3 rounded-2xl border-2 border-dashed border-gray-200 text-gray-500 hover:border-[#F5A623] hover:text-[#F5A623] transition-colors font-bold text-sm"
+                        >
+                            <Plus className="w-4 h-4" /> 새 폴더 만들기
+                        </button>
                         {foldersLoading ? (
                             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
                                 <Loader2 className="w-6 h-6 animate-spin mx-auto text-amber-500 mb-2" />
@@ -782,7 +833,18 @@ export function MyPageTab() {
                                                 <div className="text-xs text-gray-400">{folder.item_count}개 저장됨</div>
                                             </div>
                                         </div>
-                                        <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-[#14B8A6] transition-colors" />
+                                        <div className="flex items-center gap-1">
+                                            {!folder.is_default && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder); }}
+                                                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                                                    title="폴더 삭제"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                            <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-[#14B8A6] transition-colors" />
+                                        </div>
                                     </div>
                                 ))}
                             </div>
