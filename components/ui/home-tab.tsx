@@ -271,7 +271,8 @@ export function HomeTab() {
       const mainCategory = purposeConfig?.[selectedPurpose]?.mainCategory || ""
       const searchRegion = await searchByQuery(searchQuery, mainCategory)
       if (!searchRegion) {
-        alert("검색에 실패했어요. 네트워크 상태를 확인해주세요.")
+        // 0건: 네트워크 오류가 아니라 결과 없음 — 문구를 정확히 구분
+        alert(`'${searchQuery.trim()}' 검색 결과가 없어요. 다른 이름이나 지역으로 검색해보세요.`)
         return
       }
       if (mapRef.current) {
@@ -280,7 +281,7 @@ export function HomeTab() {
       }
     } catch (e) {
       console.error("Search failed:", e)
-      alert("검색에 실패했어요. 네트워크 상태를 확인해주세요.")
+      alert("검색 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.")
     }
   }
 

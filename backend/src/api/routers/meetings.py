@@ -33,10 +33,12 @@ def search_places(
     results = []
     seen = set()
 
+    # 이름 검색은 카테고리와 무관하게 이름을 찾는다(네이버 지도식).
+    # ⚠️ 크롤 데이터의 main_category가 config와 어긋나 있음(FOOD 10만 vs RESTAURANT 11건)
+    #    + 개별 분류 노이즈(예: '신정동국밥집'이 PUB). 카테고리로 하드 필터하면 정상
+    #    이름 매치를 다 놓쳐 "검색 실패"가 됐음. main_category는 하위호환용으로만 받고
+    #    필터엔 쓰지 않는다(향후 카테고리 정규화 후 소프트 랭킹으로 활용 가능).
     db_query = db.query(models.Place).filter(models.Place.name.ilike(f"%{query}%"))
-    if main_category:
-        db_query = db_query.filter(models.Place.main_category == main_category.upper())
-
     db_places = db_query.limit(50).all()
     for p in db_places:
         name = p.name or ""
@@ -65,7 +67,12 @@ def search_places(
     if db_only:
         return results
 
-    ext_results = data_provider.search_places_all_queries([query], "", 0.0, 0.0, db=db)
+    # 외부(네이버) 검색 실패가 DB 결과까지 날리지 않도록 방어(API키 누락/네트워크 등)
+    try:
+        ext_results = data_provider.search_places_all_queries([query], "", 0.0, 0.0, db=db)
+    except Exception as ex:
+        print(f"[search] 외부 검색 실패(무시하고 DB 결과 반환): {ex}")
+        ext_results = []
     for place in ext_results:
         name = place.name or ""
         if not name or name in seen:
