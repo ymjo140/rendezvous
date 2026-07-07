@@ -146,7 +146,10 @@ export const useRecommendation = ({
             }
 
             const searchResultPlace = data.map((item: any, idx: number) => ({
-                id: 90000 + idx,
+                // ⚠️ 백엔드가 준 실제 place id를 보존해야 상세 페이지로 정확히 연결됨.
+                // 과거 90000+idx 가짜 id는 /places/90000 처럼 무관한 실제 장소(예: '미국식
+                // 압구정점')로 연결되는 버그였음. 외부(비DB) 결과는 id=null → 이름 조회로 폴백.
+                id: item.id ?? null,
                 name: item.name,
                 category: item.category || "Search Place",
                 address: item.address,
