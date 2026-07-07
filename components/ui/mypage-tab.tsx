@@ -60,7 +60,7 @@ function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
         const t = setTimeout(async () => {
             setSearching(true);
             try {
-                const res = await fetchWithAuth(`/api/places/search?query=${query}`);
+                const res = await fetchWithAuth(`/api/geocode?query=${encodeURIComponent(query)}`);
                 if (res.ok) {
                     setResults(await res.json());
                 } else {
@@ -86,7 +86,7 @@ function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
                 <Input 
                     value={query} 
                     onChange={e => setQuery(e.target.value)} 
-                    placeholder="동명(읍/면) 또는 도로명 주소 검색" 
+                    placeholder="동네·지하철역·도로명 주소 검색"
                     className="border-none bg-transparent h-10 text-sm focus-visible:ring-0 placeholder:text-gray-400"
                 />
                 {searching && <Loader2 className="w-3 h-3 animate-spin text-gray-400"/>}

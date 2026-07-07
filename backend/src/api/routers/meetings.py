@@ -102,6 +102,86 @@ def search_places(
     return results
 
 
+@router.get("/api/geocode")
+def geocode_region(query: str = Query(..., min_length=1)):
+    """내 동네 설정용 검색 — 도로명/지번 주소 + 동 + 지하철역(식당 아님).
+    지오코딩(NCP)로 주소/동을, 네이버 지역검색의 '지하철/전철' 카테고리로 역을 찾는다."""
+    import os as _os
+    import re as _re
+    import requests as _rq
+
+    q = query.strip()
+    results = []
+    seen = set()
+
+    # 1) NCP 지오코딩 — 동/도로명·지번 주소
+    mid = _os.getenv("NAVER_MAP_ID")
+    msec = _os.getenv("NAVER_MAP_SECRET")
+    if mid and msec:
+        try:
+            gr = _rq.get(
+                "https://maps.apigw.ntruss.com/map-geocode/v2/geocode",
+                params={"query": q},
+                headers={"X-NCP-APIGW-API-KEY-ID": mid, "X-NCP-APIGW-API-KEY": msec},
+                timeout=8,
+            )
+            if gr.status_code == 200:
+                for a in gr.json().get("addresses", [])[:5]:
+                    title = a.get("roadAddress") or a.get("jibunAddress") or ""
+                    if not title or title in seen:
+                        continue
+                    try:
+                        lat = float(a.get("y"))
+                        lng = float(a.get("x"))
+                    except (TypeError, ValueError):
+                        continue
+                    seen.add(title)
+                    results.append({
+                        "title": title,
+                        "address": a.get("jibunAddress") or title,
+                        "lat": lat, "lng": lng, "type": "address",
+                    })
+        except Exception as ex:
+            print(f"[geocode] 지오코딩 실패: {ex}")
+
+    # 2) 지하철역 — 네이버 지역검색에서 '지하철/전철' 카테고리만 추려 상단 배치
+    sid = _os.getenv("NAVER_SEARCH_ID")
+    ssec = _os.getenv("NAVER_SEARCH_SECRET")
+    if sid and ssec:
+        try:
+            lr = _rq.get(
+                "https://openapi.naver.com/v1/search/local.json",
+                params={"query": q, "display": 5},
+                headers={"X-Naver-Client-Id": sid, "X-Naver-Client-Secret": ssec},
+                timeout=8,
+            )
+            if lr.status_code == 200:
+                stations = []
+                for it in lr.json().get("items", []):
+                    cat = it.get("category", "")
+                    if "지하철" not in cat and "전철" not in cat:
+                        continue
+                    title = _re.sub(r"<[^>]+>", "", it.get("title", ""))
+                    if not title or title in seen:
+                        continue
+                    try:
+                        lng = int(it.get("mapx")) / 1e7
+                        lat = int(it.get("mapy")) / 1e7
+                    except (TypeError, ValueError):
+                        continue
+                    seen.add(title)
+                    stations.append({
+                        "title": title,
+                        "address": it.get("roadAddress") or it.get("address") or "지하철역",
+                        "lat": lat, "lng": lng, "type": "station",
+                    })
+                results = stations + results  # 역을 위로
+        except Exception as ex:
+            print(f"[geocode] 역 검색 실패: {ex}")
+
+    return results
+
+
 def _table_cells(x: int, y: int, shape: str, rotated: bool):
     """테이블이 차지하는 격자 셀(긴 테이블은 2칸)."""
     cells = [(x, y)]
