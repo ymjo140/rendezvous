@@ -41,6 +41,7 @@ export const useMapLogic = ({
     const friendMarkersRef = useRef<any[]>([]);
     const manualMarkersRef = useRef<any[]>([]);
     const myMarkerRef = useRef<any>(null);
+    const centeredRef = useRef(false); // 내 저장 위치로 최초 중심 이동 완료 여부
     const polylinesRef = useRef<any[]>([]);
     const timeMarkersRef = useRef<any[]>([]);
 
@@ -69,6 +70,12 @@ export const useMapLogic = ({
                     center: new window.naver.maps.LatLng(center.lat, center.lng),
                     zoom: 16
                 });
+                if (myLocation) centeredRef.current = true;
+            } else if (myLocation && !centeredRef.current && !currentDisplayRegion) {
+                // 지도 생성 후 내 저장 위치(비동기 로드)가 도착하면 그 위치로 중심 이동(최초 1회).
+                // 검색 결과 표시 중일 땐 검색 위치가 우선이라 건드리지 않음.
+                mapRef.current.setCenter(new window.naver.maps.LatLng(myLocation.lat, myLocation.lng));
+                centeredRef.current = true;
             }
 
             if (myLocation) {
