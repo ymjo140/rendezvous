@@ -15,6 +15,7 @@ import {
   Loader2,
   X,
   Bookmark,
+  Plus,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -185,9 +186,12 @@ export default function PlaceDetailPage() {
     }
   }, [reserveOpen, placeId])
 
-  // 찜(저장) — 기본 폴더에 place 저장 (이미 저장돼 있으면 저장됨 처리)
+  // 찜(저장) — 저장 시 폴더 선택 시트를 띄운다
   const [savedPlace, setSavedPlace] = useState(false)
   const [savingPlace, setSavingPlace] = useState(false)
+  const [savePickerOpen, setSavePickerOpen] = useState(false)
+  const [saveFolders, setSaveFolders] = useState<any[]>([])
+  const [saveFoldersLoading, setSaveFoldersLoading] = useState(false)
 
   // 이 장소를 다녀온/언급한 사람들
   const [visitors, setVisitors] = useState<{
@@ -215,6 +219,7 @@ export default function PlaceDetailPage() {
     }
   }, [placeId])
 
+  // 저장 버튼 → 폴더 선택 시트 열기(+폴더 목록 로드)
   const handleSavePlace = async () => {
     if (!place || savedPlace) return
     const token = localStorage.getItem("token")
@@ -222,27 +227,41 @@ export default function PlaceDetailPage() {
       alert("로그인이 필요합니다.")
       return
     }
-    setSavingPlace(true)
+    setSavePickerOpen(true)
+    setSaveFoldersLoading(true)
     try {
       const fRes = await fetch(`${API_BASE_URL}/api/folders`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (!fRes.ok) throw new Error("folders")
-      const folders = await fRes.json()
-      const target = (folders || []).find((f: any) => f.is_default) || folders?.[0]
-      if (!target) throw new Error("no_folder")
+      setSaveFolders(fRes.ok ? await fRes.json() : [])
+    } catch {
+      setSaveFolders([])
+    } finally {
+      setSaveFoldersLoading(false)
+    }
+  }
+
+  // 선택한 폴더에 저장
+  const saveToFolder = async (folderId: number) => {
+    if (!place) return
+    const token = localStorage.getItem("token")
+    if (!token) return
+    setSavingPlace(true)
+    try {
       const sRes = await fetch(`${API_BASE_URL}/api/saves`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ folder_id: target.id, item_type: "place", place_id: place.id }),
+        body: JSON.stringify({ folder_id: folderId, item_type: "place", place_id: place.id }),
       })
       if (sRes.ok) {
         setSavedPlace(true)
+        setSavePickerOpen(false)
         recordActivity("explore")
       } else {
         const err = await sRes.json().catch(() => null)
         if (String(err?.detail || "").includes("이미")) {
-          setSavedPlace(true) // 이미 저장됨
+          setSavedPlace(true)
+          setSavePickerOpen(false)
         } else {
           throw new Error("save")
         }
@@ -250,6 +269,28 @@ export default function PlaceDetailPage() {
     } catch {
       alert("저장에 실패했어요. 잠시 후 다시 시도해주세요.")
     } finally {
+      setSavingPlace(false)
+    }
+  }
+
+  // 새 폴더 만들어서 바로 저장
+  const handleCreateFolderAndSave = async () => {
+    const name = window.prompt("새 폴더 이름을 입력하세요")?.trim()
+    if (!name) return
+    const token = localStorage.getItem("token")
+    if (!token) return
+    setSavingPlace(true)
+    try {
+      const cRes = await fetch(`${API_BASE_URL}/api/folders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name }),
+      })
+      if (!cRes.ok) throw new Error("folder")
+      const folder = await cRes.json()
+      await saveToFolder(folder.id)
+    } catch {
+      alert("폴더 생성에 실패했어요.")
       setSavingPlace(false)
     }
   }
@@ -920,6 +961,60 @@ export default function PlaceDetailPage() {
           캐시로 예약금을 결제하고, 취소하면 자동 환불돼요.
         </p>
       </div>
+
+      {/* 저장 폴더 선택 시트 */}
+      {savePickerOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center"
+          onClick={() => !savingPlace && setSavePickerOpen(false)}
+        >
+          <div
+            className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-5 font-['Pretendard'] max-h-[70vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900">폴더에 저장</h3>
+              <button
+                onClick={() => !savingPlace && setSavePickerOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {saveFoldersLoading ? (
+              <div className="py-8 text-center">
+                <Loader2 className="mx-auto h-6 w-6 animate-spin text-amber-500" />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {saveFolders.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => saveToFolder(f.id)}
+                    disabled={savingPlace}
+                    className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 p-3 text-left transition-colors hover:border-amber-300 hover:bg-amber-50/40 disabled:opacity-50"
+                  >
+                    <span className="text-2xl">{f.icon || "📁"}</span>
+                    <div className="flex-1">
+                      <div className="font-bold text-gray-800">{f.name}</div>
+                      <div className="text-xs text-gray-400">{f.item_count ?? 0}개 저장됨</div>
+                    </div>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleCreateFolderAndSave}
+                  disabled={savingPlace}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-gray-200 p-3 text-sm font-bold text-gray-500 transition-colors hover:border-amber-400 hover:text-amber-600 disabled:opacity-50"
+                >
+                  <Plus className="h-4 w-4" /> 새 폴더 만들기
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 캐시 예약 모달 */}
       {reserveOpen && (

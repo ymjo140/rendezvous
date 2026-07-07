@@ -8,7 +8,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
@@ -127,14 +127,22 @@ def get_folders(
         .filter(models.SaveFolder.user_id == current_user.id)\
         .order_by(desc(models.SaveFolder.is_default), models.SaveFolder.created_at)\
         .all()
-    
+
+    # item_count는 저장된 카운터가 어긋날 수 있으므로 실제 항목 수로 계산(0으로 뜨던 버그 방지)
+    counts = {}
+    if folders:
+        rows = db.query(models.SavedItem.folder_id, func.count(models.SavedItem.id))\
+            .filter(models.SavedItem.folder_id.in_([f.id for f in folders]))\
+            .group_by(models.SavedItem.folder_id).all()
+        counts = {fid: n for fid, n in rows}
+
     return [FolderResponse(
         id=f.id,
         name=f.name,
         icon=f.icon,
         color=f.color,
         is_default=f.is_default,
-        item_count=f.item_count,
+        item_count=counts.get(f.id, 0),
         created_at=format_datetime(f.created_at)
     ) for f in folders]
 
