@@ -225,6 +225,8 @@ export function MyPageTab() {
       color: string;
       item_count: number;
       is_default: boolean;
+      is_public?: boolean;
+      description?: string | null;
   }
   interface SavedItem {
       id: number;
@@ -431,6 +433,34 @@ export function MyPageTab() {
           }
       } catch (e) {
           alert("폴더 삭제 중 오류가 발생했어요.");
+      }
+  };
+
+  // 💾 폴더 공개/비공개 — 공개 시 큐레이터 '맛집 리스트'로 프로필에 노출
+  const handleTogglePublic = async (folder: SaveFolder) => {
+      if (folder.is_default) {
+          alert("기본 폴더는 공개할 수 없어요. 새 폴더를 만들어 리스트로 공개해보세요.");
+          return;
+      }
+      const makePublic = !folder.is_public;
+      let description = folder.description || "";
+      if (makePublic) {
+          const input = window.prompt("맛집 리스트 소개 문구 (예: 혼밥하기 좋은 국밥집 모음)", description);
+          if (input !== null) description = input.trim();
+      }
+      try {
+          const res = await fetchWithAuth(`/api/folders/${folder.id}/publish`, {
+              method: "PATCH",
+              body: JSON.stringify({ is_public: makePublic, description }),
+          });
+          if (res.ok) {
+              const data = await res.json();
+              setSaveFolders(prev => prev.map(f => f.id === folder.id ? { ...f, is_public: data.is_public, description: data.description } : f));
+          } else {
+              alert("변경에 실패했어요.");
+          }
+      } catch (e) {
+          alert("변경 중 오류가 발생했어요.");
       }
   };
 
@@ -914,12 +944,23 @@ export function MyPageTab() {
                                             >
                                                 {folder.icon}
                                             </div>
-                                            <div>
-                                                <div className="font-bold text-gray-800">{folder.name}</div>
-                                                <div className="text-xs text-gray-400">{folder.item_count}개 저장됨</div>
+                                            <div className="min-w-0">
+                                                <div className="font-bold text-gray-800 truncate">{folder.name}</div>
+                                                <div className="text-xs text-gray-400">
+                                                    {folder.item_count}개 저장됨{folder.is_public ? " · 공개 리스트" : ""}
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-1">
+                                            {!folder.is_default && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleTogglePublic(folder); }}
+                                                    className={`px-2 py-1 rounded-full text-[11px] font-bold transition-colors ${folder.is_public ? "bg-purple-100 text-purple-600 hover:bg-purple-200" : "text-gray-400 hover:bg-gray-100"}`}
+                                                    title={folder.is_public ? "공개 맛집 리스트 · 탭하여 비공개" : "맛집 리스트로 공개하기"}
+                                                >
+                                                    {folder.is_public ? "🌐 공개중" : "비공개"}
+                                                </button>
+                                            )}
                                             {!folder.is_default && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder); }}

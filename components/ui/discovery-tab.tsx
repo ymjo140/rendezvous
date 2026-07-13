@@ -1427,6 +1427,9 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 </div>
             </div>
 
+            {/* 1.5 실시간 급상승 랭킹 (트위터식 실시간 순위) */}
+            <TrendingStrip />
+
             {/* 2. AI 맞춤 추천 섹션 */}
             {showAiSection && aiRecommendations.length > 0 && (
                 <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-4 border-b border-gray-100">
@@ -1615,13 +1618,21 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             <div key={`feed-${feed.id}`} className="pb-3">
                                 {/* 작성자 헤더 */}
                                 <div className="flex items-center gap-2.5 px-4 py-3">
-                                    <Avatar className="w-8 h-8">
-                                        <AvatarFallback className="text-xs bg-gradient-to-r from-amber-400 to-orange-400 text-white">
-                                            {feed.author?.avatar || "US"}
-                                        </AvatarFallback>
-                                    </Avatar>
+                                    <button
+                                        onClick={() => { const _id = feed.author?.id; if (_id && _id !== 999) router.push(`/users/${_id}`) }}
+                                        className="flex-shrink-0"
+                                    >
+                                        <Avatar className="w-8 h-8">
+                                            <AvatarFallback className="text-xs bg-gradient-to-r from-amber-400 to-orange-400 text-white">
+                                                {feed.author?.avatar || "US"}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                    </button>
                                     <div className="flex-1 min-w-0">
-                                        <div className="text-sm font-semibold text-gray-900 truncate">{feed.author?.name}</div>
+                                        <div
+                                            className="text-sm font-semibold text-gray-900 truncate cursor-pointer"
+                                            onClick={() => { const _id = feed.author?.id; if (_id && _id !== 999) router.push(`/users/${_id}`) }}
+                                        >{feed.author?.name}</div>
                                         {(feed.place?.name || feed.locationName) && (
                                             <div className="text-[11px] text-gray-500 truncate flex items-center gap-0.5">
                                                 <MapPin className="w-3 h-3" />
@@ -1739,13 +1750,21 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                             <ChevronLeft className="w-5 h-5" />
                                         </Button>
                                     )}
-                                    <Avatar className="w-8 h-8">
-                                        <AvatarFallback className="text-xs bg-gradient-to-r from-amber-400 to-orange-400 text-white">
-                                            {selectedFeed.author.avatar}
-                                        </AvatarFallback>
-                                    </Avatar>
+                                    <button
+                                        onClick={() => { const _id = selectedFeed.author?.id; if (_id && _id !== 999) router.push(`/users/${_id}`) }}
+                                        className="flex-shrink-0"
+                                    >
+                                        <Avatar className="w-8 h-8">
+                                            <AvatarFallback className="text-xs bg-gradient-to-r from-amber-400 to-orange-400 text-white">
+                                                {selectedFeed.author.avatar}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                    </button>
                                     <div>
-                                        <div className="font-semibold text-sm">{selectedFeed.author.name}</div>
+                                        <div
+                                            className="font-semibold text-sm cursor-pointer"
+                                            onClick={() => { const _id = selectedFeed.author?.id; if (_id && _id !== 999) router.push(`/users/${_id}`) }}
+                                        >{selectedFeed.author.name}</div>
                                         {selectedFeed.place ? (
                                             <div className="text-xs text-gray-500">{selectedFeed.place.name}</div>
                                         ) : selectedFeed.locationName ? (

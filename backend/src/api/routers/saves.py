@@ -40,7 +40,9 @@ class FolderResponse(BaseModel):
     is_default: bool
     item_count: int
     created_at: str
-    
+    is_public: bool = False
+    description: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -143,7 +145,9 @@ def get_folders(
         color=f.color,
         is_default=f.is_default,
         item_count=counts.get(f.id, 0),
-        created_at=format_datetime(f.created_at)
+        created_at=format_datetime(f.created_at),
+        is_public=bool(getattr(f, "is_public", False)),
+        description=getattr(f, "description", None),
     ) for f in folders]
 
 
@@ -178,7 +182,9 @@ def create_folder(
         color=folder.color,
         is_default=folder.is_default,
         item_count=0,
-        created_at=format_datetime(folder.created_at)
+        created_at=format_datetime(folder.created_at),
+        is_public=bool(getattr(folder, "is_public", False)),
+        description=getattr(folder, "description", None),
     )
 
 
@@ -221,7 +227,9 @@ def update_folder(
         color=folder.color,
         is_default=folder.is_default,
         item_count=folder.item_count,
-        created_at=format_datetime(folder.created_at)
+        created_at=format_datetime(folder.created_at),
+        is_public=bool(getattr(folder, "is_public", False)),
+        description=getattr(folder, "description", None),
     )
 
 

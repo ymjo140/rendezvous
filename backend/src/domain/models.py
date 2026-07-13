@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, JSON, ARRAY
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, JSON, ARRAY, UniqueConstraint
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector  # pgvector 768-dim 임베딩 컬럼용
 from datetime import datetime
@@ -232,6 +232,17 @@ class Friendship(Base):
     status = Column(String, default="pending") # pending, accepted
     created_at = Column(DateTime, default=datetime.now)
 
+
+class UserFollow(Base):
+    """큐레이터 팔로우 — 단방향(친구 friendships와 별개).
+    follower가 following(큐레이터)을 팔로우. 인스타 팔로우와 동일 개념."""
+    __tablename__ = "user_follows"
+    id = Column(Integer, primary_key=True, index=True)
+    follower_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    following_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+    __table_args__ = (UniqueConstraint("follower_id", "following_id", name="uq_user_follow"),)
+
 class Review(Base):
     __tablename__ = "reviews"
     id = Column(Integer, primary_key=True, index=True)
@@ -453,9 +464,12 @@ class SaveFolder(Base):
     color = Column(String, default="#7C3AED")  # 색상 코드
     is_default = Column(Boolean, default=False)  # 기본 폴더 여부
     item_count = Column(Integer, default=0)
+    # 큐레이터 '맛집 리스트' 공개 — 공개 시 프로필에 노출되고 남들이 팔로우/열람
+    is_public = Column(Boolean, default=False)
+    description = Column(String, nullable=True)  # 리스트 소개 문구
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    
+
     items = relationship("SavedItem", back_populates="folder", cascade="all, delete-orphan")
 
 
