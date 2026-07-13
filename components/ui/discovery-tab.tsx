@@ -6,7 +6,8 @@ import {
     Search, MapPin, Heart, MessageCircle, Share2, Star, ChevronLeft, 
     MoreHorizontal, Utensils, X, Phone, Clock, ChevronRight, Plus,
     Image as ImageIcon, Camera, Send, Bookmark, Grid3X3, Play, Wand2,
-    FolderPlus, Check, MessageSquare, Users, ShoppingBag, Trash2, Square, Video
+    FolderPlus, Check, MessageSquare, Users, ShoppingBag, Trash2, Square, Video,
+    Flame, ArrowUp, ArrowDown
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -74,6 +75,50 @@ const getGridClass = (index: number) => {
 interface DiscoveryTabProps {
     sharedPostId?: string | null;
     onBackFromShared?: () => void;
+}
+
+// 실시간 급상승 — 최근 관여(예약·재방문·저장·게시물) velocity 순위 + ▲/NEW
+function TrendingStrip() {
+    const router = useRouter();
+    const [items, setItems] = useState<any[]>([]);
+    useEffect(() => {
+        fetchWithAuth("/api/trending/places?days=7&limit=10")
+            .then((r) => (r.ok ? r.json() : { items: [] }))
+            .then((d) => setItems(d.items || []))
+            .catch(() => {});
+    }, []);
+    if (items.length === 0) return null;
+    const move = (m: any) => {
+        if (m?.type === "new") return <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">NEW</span>;
+        if (m?.type === "up") return <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-green-600"><ArrowUp className="w-3 h-3" />{m.delta}</span>;
+        if (m?.type === "down") return <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-gray-400"><ArrowDown className="w-3 h-3" />{m.delta}</span>;
+        return <span className="text-[11px] text-gray-300">–</span>;
+    };
+    return (
+        <div className="p-4 border-b border-gray-100">
+            <div className="flex items-center gap-1.5 mb-2.5">
+                <Flame className="w-4 h-4 text-orange-500" />
+                <span className="font-bold text-gray-800 text-sm">실시간 급상승</span>
+                <span className="text-[11px] text-gray-400">· 최근 7일</span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+                {items.map((it) => (
+                    <div
+                        key={it.place_id}
+                        onClick={() => it.place_id && router.push(`/places/${it.place_id}`)}
+                        className="flex-shrink-0 w-32 bg-gray-50 rounded-xl p-2.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                        <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold text-amber-600">{it.rank}위</span>
+                            {move(it.move)}
+                        </div>
+                        <div className="text-xs font-bold text-gray-800 truncate">{it.name}</div>
+                        <div className="text-[11px] text-gray-400 mt-0.5">{it.signal}</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
 }
 
 export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabProps = {}) {

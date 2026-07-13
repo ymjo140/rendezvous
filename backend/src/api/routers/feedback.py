@@ -1,10 +1,11 @@
 """방문 후 재방문 의향 설문 — 개인 취향 + 모임 적합 2축.
 별점 대신 '또 갈래요?'라는 진성 신호로 자체 신뢰 데이터 구축.
 트리거: 결제(예약) 방문일 다음날부터, 미응답 예약에 노출."""
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -179,3 +180,65 @@ def place_badges(
         result["group"] = {"count": group_yes, "text": f"모임 장소로 {group_yes}팀이 추천했어요"}
 
     return result
+
+
+# (SQL, 가중치, 라벨) — created_at + place_id 있는 관여 신호. 별점 아닌 실제 행동.
+_TREND_SOURCES = [
+    ("select place_id, count(*) c from user_reservations where created_at >= :s and created_at < :u and place_id is not null group by place_id", 3, "예약"),
+    ("select place_id, count(*) c from place_visit_feedback where created_at >= :s and created_at < :u and personal_revisit = true and place_id is not null group by place_id", 3, "재방문"),
+    ("select place_id, count(*) c from saved_items where created_at >= :s and created_at < :u and place_id is not null group by place_id", 2, "저장"),
+    ("select place_id, count(*) c from posts where created_at >= :s and created_at < :u and place_id is not null group by place_id", 2, "게시물"),
+]
+
+
+@router.get("/api/trending/places")
+def trending_places(days: int = 7, limit: int = 10, db: Session = Depends(get_db)):
+    """실시간 급상승 장소 — 최근 N일 관여(예약·재방문·저장·게시물) 가중합 순위 +
+    직전 동일기간 대비 순위 변동(▲/NEW). 앱 안에서 실제로 쌓이는 정직한 신호."""
+    now = datetime.now()
+    cutoff = now - timedelta(days=days)
+    prev_cutoff = now - timedelta(days=days * 2)
+
+    def collect(since, until):
+        agg = {}  # pid -> {"score": x, "q": {label: count}}
+        for sql, w, label in _TREND_SOURCES:
+            try:
+                for pid, c in db.execute(text(sql), {"s": since, "u": until}):
+                    if pid is None:
+                        continue
+                    a = agg.setdefault(int(pid), {"score": 0, "q": {}})
+                    a["score"] += int(c) * w
+                    a["q"][label] = a["q"].get(label, 0) + int(c)
+            except Exception as ex:
+                print(f"[trending] source skip: {str(ex)[:60]}")
+                db.rollback()
+        return agg
+
+    cur = collect(cutoff, now)
+    prev = collect(prev_cutoff, cutoff)
+
+    ranked = sorted(cur.items(), key=lambda kv: kv[1]["score"], reverse=True)[:limit]
+    prev_order = [pid for pid, _ in sorted(prev.items(), key=lambda kv: kv[1]["score"], reverse=True)]
+    prev_rank = {pid: i for i, pid in enumerate(prev_order)}
+
+    pids = [pid for pid, _ in ranked]
+    names = {}
+    if pids:
+        names = {p.id: p.name for p in db.query(models.Place).filter(models.Place.id.in_(pids)).all()}
+
+    items = []
+    for i, (pid, data) in enumerate(ranked):
+        top_label, top_cnt = max(data["q"].items(), key=lambda x: x[1]) if data["q"] else ("관심", 0)
+        if pid not in prev_rank:
+            move = {"type": "new", "delta": 0}
+        else:
+            delta = prev_rank[pid] - i  # +면 상승
+            move = {"type": ("up" if delta > 0 else "down" if delta < 0 else "same"), "delta": abs(delta)}
+        items.append({
+            "rank": i + 1,
+            "place_id": pid,
+            "name": names.get(pid, "장소"),
+            "signal": f"{top_label} +{top_cnt}",
+            "move": move,
+        })
+    return {"days": days, "count": len(items), "items": items}
