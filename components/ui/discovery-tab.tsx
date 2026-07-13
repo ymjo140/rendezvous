@@ -7,7 +7,7 @@ import {
     MoreHorizontal, Utensils, X, Phone, Clock, ChevronRight, Plus,
     Image as ImageIcon, Camera, Send, Bookmark, Grid3X3, Play, Wand2,
     FolderPlus, Check, MessageSquare, Users, ShoppingBag, Trash2, Square, Video,
-    Flame, ArrowUp, ArrowDown
+    Flame, ArrowUp, ArrowDown, BadgeCheck, UserPlus, UserCheck
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -114,6 +114,66 @@ function TrendingStrip() {
                         </div>
                         <div className="text-xs font-bold text-gray-800 truncate">{it.name}</div>
                         <div className="text-[11px] text-gray-400 mt-0.5">{it.signal}</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// 추천 큐레이터 — 공개 맛집 리스트 보유자, 팔로우 유도(인스타식 발견)
+function CuratorStrip() {
+    const router = useRouter();
+    const [items, setItems] = useState<any[]>([]);
+    useEffect(() => {
+        fetchWithAuth("/api/curators/suggested?limit=10")
+            .then((r) => (r.ok ? r.json() : { items: [] }))
+            .then((d) => setItems(d.items || []))
+            .catch(() => {});
+    }, []);
+    if (items.length === 0) return null;
+    const toggle = async (e: React.MouseEvent, c: any) => {
+        e.stopPropagation();
+        const next = !c.is_following;
+        const patch = (on: boolean) =>
+            setItems((prev) => prev.map((x) => x.id === c.id ? { ...x, is_following: on, follower_count: x.follower_count + (on ? 1 : -1) } : x));
+        patch(next);
+        try {
+            const res = await fetchWithAuth(`/api/users/${c.id}/follow`, { method: next ? "POST" : "DELETE" });
+            if (res.status === 401) { patch(!next); alert("로그인이 필요해요."); }
+        } catch { patch(!next); }
+    };
+    return (
+        <div className="p-4 border-b border-gray-100">
+            <div className="flex items-center gap-1.5 mb-2.5">
+                <span className="text-base">👑</span>
+                <span className="font-bold text-gray-800 text-sm">추천 큐레이터</span>
+                <span className="text-[11px] text-gray-400">· 맛집 리스트 팔로우</span>
+            </div>
+            <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
+                {items.map((c) => (
+                    <div
+                        key={c.id}
+                        onClick={() => router.push(`/users/${c.id}`)}
+                        className="flex-shrink-0 w-40 bg-gradient-to-b from-purple-50 to-white border border-purple-100 rounded-2xl p-3 cursor-pointer hover:shadow-sm transition-shadow"
+                    >
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-14 h-14 rounded-full bg-white shadow-sm flex items-center justify-center text-3xl mb-1.5">{c.avatar || "🙂"}</div>
+                            <div className="flex items-center gap-0.5">
+                                <span className="font-bold text-sm text-gray-900 truncate max-w-[110px]">{c.name}</span>
+                                {c.verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
+                            </div>
+                            <div className="text-[11px] text-gray-500 line-clamp-1 mt-0.5 h-4">{c.tagline}</div>
+                            <div className="text-[11px] text-gray-400 mt-0.5">리스트 {c.list_count} · 팔로워 {c.follower_count}</div>
+                            <button
+                                onClick={(e) => toggle(e, c)}
+                                className={`mt-2 w-full h-7 rounded-lg text-[12px] font-bold flex items-center justify-center gap-1 transition-colors ${
+                                    c.is_following ? "bg-gray-100 text-gray-600 hover:bg-gray-200" : "bg-purple-600 text-white hover:bg-purple-700"
+                                }`}
+                            >
+                                {c.is_following ? (<><UserCheck className="w-3 h-3" />팔로잉</>) : (<><UserPlus className="w-3 h-3" />팔로우</>)}
+                            </button>
+                        </div>
                     </div>
                 ))}
             </div>
@@ -1429,6 +1489,9 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
 
             {/* 1.5 실시간 급상승 랭킹 (트위터식 실시간 순위) */}
             <TrendingStrip />
+
+            {/* 1.6 추천 큐레이터 (인스타식 팔로우) */}
+            <CuratorStrip />
 
             {/* 2. AI 맞춤 추천 섹션 */}
             {showAiSection && aiRecommendations.length > 0 && (
