@@ -105,6 +105,89 @@ function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
     )
 }
 
+// 방문 후 재방문 의향 설문 (개인 취향 + 모임 적합 2축) — 방문 다음날부터 미응답 예약에 노출
+function RevisitSurvey() {
+    const [items, setItems] = useState<any[]>([]);
+    const [busy, setBusy] = useState<string | null>(null);
+    const [answers, setAnswers] = useState<Record<string, { personal?: boolean; group?: boolean }>>({});
+
+    useEffect(() => {
+        const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+        if (!token) return;
+        fetchWithAuth("/api/feedback/pending")
+            .then((r) => (r.ok ? r.json() : { items: [] }))
+            .then((d) => setItems(d.items || []))
+            .catch(() => {});
+    }, []);
+
+    const setAns = (rid: string, axis: "personal" | "group", val: boolean) =>
+        setAnswers((p) => ({ ...p, [rid]: { ...p[rid], [axis]: val } }));
+
+    const btnCls = (active: boolean, on: boolean) =>
+        `flex-1 h-9 rounded-lg text-sm font-bold border transition-colors ${
+            active
+                ? on ? "bg-[#F5A623] text-white border-transparent" : "bg-gray-600 text-white border-transparent"
+                : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+        }`;
+
+    const submit = async (item: any) => {
+        const a = answers[item.reservation_id] || {};
+        if (a.personal === undefined) { alert("'또 가고 싶어요?'를 먼저 선택해주세요."); return; }
+        setBusy(item.reservation_id);
+        try {
+            const res = await fetchWithAuth("/api/feedback", {
+                method: "POST",
+                body: JSON.stringify({
+                    reservation_id: item.reservation_id,
+                    place_id: item.place_id,
+                    personal_revisit: a.personal,
+                    group_revisit: a.group ?? null,
+                }),
+            });
+            if (res.ok) setItems((prev) => prev.filter((x) => x.reservation_id !== item.reservation_id));
+            else alert("저장에 실패했어요.");
+        } catch {
+            alert("저장에 실패했어요.");
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    if (items.length === 0) return null;
+
+    return (
+        <div className="px-5 mb-4 space-y-3">
+            {items.map((item) => {
+                const a = answers[item.reservation_id] || {};
+                const rid = item.reservation_id;
+                return (
+                    <div key={rid} className="rounded-2xl border border-amber-100 bg-amber-50/50 p-4">
+                        <div className="text-sm font-bold text-gray-800">📍 {item.place_name} 다녀오셨나요?</div>
+                        <div className="mt-0.5 text-xs text-gray-400">{item.date} · 솔직한 답이 추천을 더 정확하게 해요</div>
+                        <div className="mt-3">
+                            <div className="mb-1 text-xs font-semibold text-gray-600">또 가고 싶어요? <span className="text-gray-400">(내 취향)</span></div>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={() => setAns(rid, "personal", true)} className={btnCls(a.personal === true, true)}>네 👍</button>
+                                <button type="button" onClick={() => setAns(rid, "personal", false)} className={btnCls(a.personal === false, false)}>아니요</button>
+                            </div>
+                        </div>
+                        <div className="mt-2">
+                            <div className="mb-1 text-xs font-semibold text-gray-600">모임 장소로 추천할래요? <span className="text-gray-400">(모임 적합)</span></div>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={() => setAns(rid, "group", true)} className={btnCls(a.group === true, true)}>네 👍</button>
+                                <button type="button" onClick={() => setAns(rid, "group", false)} className={btnCls(a.group === false, false)}>아니요</button>
+                            </div>
+                        </div>
+                        <Button className="w-full mt-3 h-10 rounded-xl bg-[#F5A623] hover:bg-amber-600 text-white font-bold text-sm" disabled={busy === rid} onClick={() => submit(item)}>
+                            {busy === rid ? "저장 중..." : "응답 완료"}
+                        </Button>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 export function MyPageTab() {
   const router = useRouter();
   
@@ -572,6 +655,9 @@ export function MyPageTab() {
 
       {/* 1-2-4. 게임 진행도 (🔥스트릭 / XP·레벨 / 일일퀘스트 / 뱃지) */}
       <GameProfileCard />
+
+      {/* 1-2-4b. 방문 후 재방문 의향 설문(개인/모임 2축) */}
+      <RevisitSurvey />
 
       {/* 1-2-5. 충전 캐시 + 내 예약 */}
       <CashWalletCard />

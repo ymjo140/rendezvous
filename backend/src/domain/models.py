@@ -723,5 +723,21 @@ class RecommendationResult(Base):
     
     # Context
     context = Column(JSON, default={})
-    
+
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class PlaceVisitFeedback(Base):
+    """방문 후 재방문 의향 설문 — 별점 대신 '또 갈래요?'라는 진성 신호.
+    2축: 개인 취향(personal_revisit) + 모임 적합(group_revisit).
+    트리거: 결제(예약) 방문일 다음날부터, 미응답 예약에 노출.
+    집계 → '비슷한 사람/모임이 단골' 사회적 증거 + IR 데이터 해자."""
+    __tablename__ = "place_visit_feedback"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    place_id = Column(Integer, index=True)
+    reservation_id = Column(String, nullable=True)   # user_reservations.id (방문 근거)
+    room_id = Column(String, nullable=True)          # 모임(커뮤니티) 방문이면 링크
+    personal_revisit = Column(Boolean, nullable=True)  # 또 가고 싶어요?(개인 취향 축)
+    group_revisit = Column(Boolean, nullable=True)     # 모임 장소로 추천?(모임 적합 축)
     created_at = Column(DateTime, default=datetime.now, index=True)
