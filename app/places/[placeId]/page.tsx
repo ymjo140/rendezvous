@@ -193,6 +193,12 @@ export default function PlaceDetailPage() {
   const [saveFolders, setSaveFolders] = useState<any[]>([])
   const [saveFoldersLoading, setSaveFoldersLoading] = useState(false)
 
+  // 재방문 신뢰 배지(개인축/모임축)
+  const [badges, setBadges] = useState<{
+    personal?: { text: string } | null
+    group?: { text: string } | null
+  } | null>(null)
+
   // 이 장소를 다녀온/언급한 사람들
   const [visitors, setVisitors] = useState<{
     post_count: number
@@ -212,6 +218,24 @@ export default function PlaceDetailPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (active) setVisitors(d)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [placeId])
+
+  // 재방문 신뢰 배지
+  useEffect(() => {
+    if (!placeId) return
+    const token = localStorage.getItem("token")
+    let active = true
+    fetch(`${API_BASE_URL}/api/feedback/place/${placeId}/badges`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (active) setBadges(d)
       })
       .catch(() => {})
     return () => {
@@ -630,6 +654,22 @@ export default function PlaceDetailPage() {
               <span className="text-gray-300">|</span>
               <span>리뷰 {reviewCount.toLocaleString()}개</span>
             </div>
+
+            {/* 재방문 신뢰 배지 (개인축/모임축) */}
+            {badges && (badges.personal || badges.group) && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {badges.personal && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
+                    👍 {badges.personal.text}
+                  </span>
+                )}
+                {badges.group && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-bold text-teal-700">
+                    🧑‍🤝‍🧑 {badges.group.text}
+                  </span>
+                )}
+              </div>
+            )}
 
             {place.tags && place.tags.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
