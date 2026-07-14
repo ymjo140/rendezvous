@@ -233,3 +233,40 @@ def create_group_folder(cid: str, req: dict, user: Optional[models.User] = Depen
     db.commit()
     db.refresh(folder)
     return {"id": folder.id, "name": folder.name, "community_id": cid, "is_public": True}
+
+
+@router.post("/api/groups/{cid}/save-place")
+def save_place_to_group(cid: str, req: dict, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    """채팅에서 공유한 장소를 모임의 맛집 리스트에 저장(멤버). 모임 폴더 없으면 자동 생성."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    c = db.query(models.Community).filter(models.Community.id == cid).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="모임을 찾을 수 없어요.")
+    if not _is_member(c, user):
+        raise HTTPException(status_code=403, detail="모임 멤버만 저장할 수 있어요.")
+    place_id = req.get("place_id")
+    if not place_id:
+        raise HTTPException(status_code=400, detail="place_id가 필요해요.")
+    # 모임 공개 폴더(첫번째) or 자동 생성
+    folder = (db.query(models.SaveFolder)
+              .filter(models.SaveFolder.community_id == cid, models.SaveFolder.is_public == True)  # noqa: E712
+              .order_by(models.SaveFolder.id).first())
+    if not folder:
+        folder = models.SaveFolder(
+            user_id=(c.host_id or user.id), community_id=cid,
+            name=f"{c.title or '우리 모임'} 맛집 리스트", icon=c.icon or "🍽️",
+            description=f"{c.title or '우리 모임'}이 추천하는 곳", is_public=True, is_default=False,
+        )
+        db.add(folder)
+        db.flush()
+    exists = (db.query(models.SavedItem)
+              .filter(models.SavedItem.folder_id == folder.id, models.SavedItem.place_id == int(place_id)).first())
+    if not exists:
+        db.add(models.SavedItem(folder_id=folder.id, user_id=user.id, item_type="place",
+                                place_id=int(place_id), memo=req.get("memo")))
+    db.flush()
+    cnt = db.query(models.SavedItem).filter(models.SavedItem.folder_id == folder.id).count()
+    folder.item_count = cnt
+    db.commit()
+    return {"folder_id": folder.id, "folder_name": folder.name, "item_count": cnt, "saved": exists is None}

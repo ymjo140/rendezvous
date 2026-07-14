@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ChevronUp, Clock, ThumbsUp, UserPlus } from "lucide-react"
+import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ChevronUp, Clock, ThumbsUp, UserPlus, Globe, Lock, List, Users } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -602,6 +602,10 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     // 채팅방 멤버
     const [members, setMembers] = useState<ChatMember[]>([])
     const [membersOpen, setMembersOpen] = useState(false)
+    // 🍽️ 맛집 모임 공개 설정(방장만) — 룸 id == 모임 id
+    const [groupInfo, setGroupInfo] = useState<any>(null)
+    const [visOpen, setVisOpen] = useState(false)
+    const [visSaving, setVisSaving] = useState(false)
 
     const fetchMembers = async (roomId: string | number) => {
         try {
@@ -707,7 +711,9 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
         if (view === 'room' && activeRoom) {
             setShowPlanner(false)
             setMembersOpen(false)
+            setVisOpen(false)
             fetchMembers(activeRoom.id)
+            fetchGroupInfo(activeRoom.id)
             fetchMessages();
 
             // WebSocket 연결
@@ -749,6 +755,55 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 alert("나가기 실패: 잠시 후 다시 시도해주세요.");
             }
         } catch (e) { alert("오류 발생"); }
+    };
+
+    // 이 채팅방이 '맛집 모임'인지 + 내가 방장인지 조회 (룸 id == 모임 id)
+    const fetchGroupInfo = async (roomId: string) => {
+        try {
+            const res = await fetchChatAPI(`/api/groups/${roomId}`)
+            setGroupInfo(res.ok ? await res.json() : null)
+        } catch { setGroupInfo(null) }
+    };
+
+    // 모임 공개 수준 변경(방장만)
+    const saveVisibility = async (v: string) => {
+        if (!activeRoom || visSaving) return
+        setVisSaving(true)
+        try {
+            const res = await fetchChatAPI(`/api/groups/${activeRoom.id}/visibility`, {
+                method: "PATCH",
+                body: JSON.stringify({ visibility: v }),
+            })
+            if (res.ok) {
+                const d = await res.json()
+                setGroupInfo((p: any) => (p ? { ...p, visibility: d.visibility } : p))
+                setVisOpen(false)
+            } else if (res.status === 403) {
+                alert("모임장만 변경할 수 있어요.")
+            } else {
+                alert("변경에 실패했어요.")
+            }
+        } catch { alert("오류가 발생했어요.") } finally { setVisSaving(false) }
+    };
+
+    // 채팅에서 공유된 장소를 우리 모임 맛집 리스트에 저장(멤버)
+    const savePlaceToGroup = async (e: any, item: any) => {
+        e.stopPropagation()
+        if (!activeRoom || !item?.place_id) return
+        try {
+            const res = await fetchChatAPI(`/api/groups/${activeRoom.id}/save-place`, {
+                method: "POST",
+                body: JSON.stringify({ place_id: item.place_id }),
+            })
+            if (res.ok) {
+                const d = await res.json()
+                alert(d.saved ? `'${d.folder_name}'에 저장했어요! (${d.item_count}곳)` : "이미 저장된 곳이에요.")
+            } else if (res.status === 403) {
+                alert("모임 멤버만 저장할 수 있어요.")
+            } else {
+                alert("저장에 실패했어요.")
+            }
+        } catch { alert("오류가 발생했어요.") }
     };
 
     const handleSend = async () => {
@@ -843,6 +898,18 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                         <UserPlus className="w-4 h-4" />
                     </Button>
 
+                    {groupInfo?.is_host && (
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setVisOpen(true)}
+                            className="h-8 w-8 text-gray-400 hover:text-amber-500 hover:bg-amber-50"
+                            title="모임 공개 설정"
+                        >
+                            <Globe className="w-4 h-4" />
+                        </Button>
+                    )}
+
                     <Button
                         size="icon"
                         variant="ghost"
@@ -854,6 +921,40 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                     </Button>
                 </div>
                 </div>
+
+                {/* 🍽️ 모임 공개 설정 시트 (방장) */}
+                {visOpen && groupInfo && (
+                    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setVisOpen(false)}>
+                        <div className="w-full max-w-lg bg-white rounded-t-3xl p-5 pb-8" onClick={(e) => e.stopPropagation()}>
+                            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+                            <h3 className="font-bold text-gray-900 mb-1">모임 공개 설정</h3>
+                            <p className="text-xs text-gray-500 mb-4">이 모임을 어디까지 공개할까요?</p>
+                            {[
+                                { v: "private", icon: <Lock className="w-4 h-4" />, t: "비공개", d: "우리끼리만. 아무 노출 없음" },
+                                { v: "list_only", icon: <List className="w-4 h-4" />, t: "리스트만 공개", d: "맛집 리스트만 탐색에. 채팅·멤버는 비공개" },
+                                { v: "public", icon: <Users className="w-4 h-4" />, t: "모임 공개", d: "프로필·팔로우 공개. 채팅은 초대제" },
+                                { v: "open", icon: <Globe className="w-4 h-4" />, t: "오픈채팅", d: "누구나 참여 가능. 완전 개방" },
+                            ].map((o) => {
+                                const on = groupInfo.visibility === o.v
+                                return (
+                                    <button
+                                        key={o.v}
+                                        onClick={() => saveVisibility(o.v)}
+                                        disabled={visSaving}
+                                        className={`w-full flex items-center gap-3 text-left rounded-2xl p-3.5 mb-2 border transition-colors ${on ? "border-2 border-amber-500 bg-amber-50" : "border border-gray-200 hover:bg-gray-50"}`}
+                                    >
+                                        <span className={on ? "text-amber-600" : "text-gray-400"}>{o.icon}</span>
+                                        <span className="flex-1">
+                                            <span className={`block text-sm font-bold ${on ? "text-amber-700" : "text-gray-700"}`}>{o.t}</span>
+                                            <span className={`block text-[11px] mt-0.5 ${on ? "text-amber-600" : "text-gray-400"}`}>{o.d}</span>
+                                        </span>
+                                        {on && <Check className="w-4 h-4 text-amber-500" />}
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </div>
+                )}
 
                 {/* 멤버 펼침 패널 */}
                 {membersOpen && members.length > 0 && (
@@ -953,6 +1054,14 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                                                                 </div>
                                                             </div>
                                                         </div>
+                                                        {item.type === "place" && item.place_id && groupInfo?.is_member && (
+                                                            <button
+                                                                onClick={(e) => savePlaceToGroup(e, item)}
+                                                                className="w-full flex items-center justify-center gap-1 py-2 text-[11px] font-bold text-amber-600 bg-amber-50 border-t border-amber-100 hover:bg-amber-100 transition-colors"
+                                                            >
+                                                                <List className="w-3 h-3" /> 우리 모임 리스트에 저장
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
