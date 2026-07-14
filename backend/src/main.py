@@ -12,17 +12,17 @@ if current_dir not in sys.path:
 app = fastapi.FastAPI()
 
 # --- CORS ?ㅼ젙 ---
+# 배포 도메인이 바뀌어도 안 깨지게: vercel/onrender/cloudflare 하위도메인 전부 허용 + 로컬
 origins = [
     "http://localhost:3000",
-    "https://v0-we-meet-app-features.vercel.app",
-    "https://wemeet-frontend.onrender.com", 
-    "https://wemeet-frontend-*.onrender.com",
-    "*"
+    "http://localhost:3001",
 ]
+origin_regex = r"https://.*\.(vercel\.app|onrender\.com|trycloudflare\.com)"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,7 +31,7 @@ app.add_middleware(
 # --- 湲곕낯 ?쇱슦??---
 @app.get("/")
 async def root():
-    return {"status": "ok", "message": "WeMeet Backend is Live."}
+    return {"status": "ok", "message": "Rendezvous Backend is Live."}
 
 # --- ?쇱슦???곌껐 ---
 

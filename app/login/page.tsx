@@ -18,7 +18,9 @@ export default function LoginPage() {
     process.env.NEXT_PUBLIC_KAKAO_REST_API_KEY ?? "ee65ae84782ed20fc6df3256de747e74"
   const redirectUri =
     process.env.NEXT_PUBLIC_KAKAO_REDIRECT_URI ??
-    "https://v0-we-meet-app-features.vercel.app/auth/callback/kakao"
+    (typeof window !== "undefined"
+      ? `${window.location.origin}/auth/callback/kakao`
+      : "")
   const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${kakaoRestApiKey}&redirect_uri=${redirectUri}&response_type=code`
 
   return (

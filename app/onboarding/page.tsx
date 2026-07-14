@@ -275,7 +275,7 @@ export default function OnboardingPage() {
       </div>
 
       <Button className="w-full h-14 rounded-xl bg-gradient-to-r from-[#F5A623] to-[#14B8A6] text-white font-bold text-lg shadow-lg mt-6" onClick={handleSubmit} disabled={loading}>
-        {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : "WeMeet 시작하기! 🚀"}
+        {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : "랑데부 시작하기! 🚀"}
       </Button>
     </div>
   )

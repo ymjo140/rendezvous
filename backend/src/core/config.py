@@ -6,7 +6,7 @@ load_dotenv()
 
 
 class Settings:
-    PROJECT_NAME: str = "WeMeet API"
+    PROJECT_NAME: str = "Rendezvous API"
     VERSION: str = "2.0.0"
 
     # 보안

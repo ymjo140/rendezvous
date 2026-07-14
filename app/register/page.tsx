@@ -45,7 +45,7 @@ export default function RegisterPage() {
       <Card className="w-full max-w-md shadow-lg border-0">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl font-bold text-indigo-600">회원가입</CardTitle>
-          <CardDescription>WeMeet과 함께 취향을 시작해보세요.</CardDescription>
+          <CardDescription>랑데부와 함께 취향을 시작해보세요.</CardDescription>
         </CardHeader>
         <form onSubmit={handleRegister}>
           <CardContent className="space-y-4">

@@ -87,7 +87,7 @@ export function SettingsTab() {
       </Button>
 
       {/* App Version */}
-      <p className="text-center text-xs text-muted-foreground">WeMeet v1.0.0</p>
+      <p className="text-center text-xs text-muted-foreground">랑데부 v1.0.0</p>
     </div>
   )
 }
