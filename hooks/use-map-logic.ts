@@ -15,6 +15,28 @@ const escapeHtml = (s: any) =>
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
+
+// 카테고리 → 칩 아이콘. DB 카테고리가 지저분해서(크롤링) 이름+카테고리 키워드 매칭으로 판정.
+// 구체적인 것 먼저(피자→양식 순서 중요).
+const categoryEmoji = (name: any, cat: any) => {
+    const s = `${name ?? ""} ${cat ?? ""}`;
+    if (/피자|pizza/i.test(s)) return "🍕";
+    if (/버거|burger/i.test(s)) return "🍔";
+    if (/파스타|이탈리|스테이크|브런치|양식/i.test(s)) return "🍝";
+    if (/카페|까페|커피|coffee|cafe|디저트|케이크|빙수|마카롱/i.test(s)) return "☕";
+    if (/베이커리|제과|도넛|베이글|크루아상|크로플|빵/i.test(s)) return "🥐";
+    if (/스시|초밥|오마카세|사시미|일식/i.test(s)) return "🍣";
+    if (/라멘|우동|소바|국수|칼국수|쌀국수|팟타이|아시아|베트남|태국/i.test(s)) return "🍜";
+    if (/중식|중국|짜장|짬뽕|마라|딤섬|만두|훠궈/i.test(s)) return "🥟";
+    if (/치킨|닭강정|통닭/i.test(s)) return "🍗";
+    if (/곱창|막창|대창|삼겹|갈비|숯불|구이|정육|양꼬치|고기/i.test(s)) return "🥩";
+    if (/호프|맥주|펍|pub|포차|술집|이자카야|와인|칵테일|하이볼/i.test(s)) return "🍺";
+    if (/분식|떡볶이|김밥|순대|어묵|토스트/i.test(s)) return "🍢";
+    if (/해산물|수산|횟집|물회|조개|대게|랍스터|새우/i.test(s)) return "🦐";
+    if (/샐러드|포케/i.test(s)) return "🥗";
+    if (/국밥|설렁탕|해장국|감자탕|찌개|백반|족발|보쌈|비빔밥|불고기|한식/i.test(s)) return "🍚";
+    return "🍽️";
+};
 type ManualInput = { text: string; lat?: number; lng?: number };
 
 type UseMapLogicParams = {
@@ -162,20 +184,25 @@ export const useMapLogic = ({
                                     const p = members[0];
                                     const n = members.length;
                                     const label = n > 1 ? `${p.name} 외 ${n - 1}` : p.name;
+                                    const emoji = categoryEmoji(p.name, p.category);
+                                    const iconSize = chip ? Math.round(chip.font * 1.45) : 0;
 
                                     let showChip = false;
                                     if (chip && proj) {
                                         const pt = proj.fromCoordToOffset(new window.naver.maps.LatLng(p.lat, p.lng));
-                                        const w = Math.min(chip.maxw, label.length * chip.font) + chip.padH * 2 + 2;
-                                        const h = chip.font + chip.padV * 2 + 6;
+                                        const w = Math.min(chip.maxw, p.name.length * chip.font) + chip.padH * 2 + iconSize + 6 + (n > 1 ? chip.font * 2 : 0);
+                                        const h = Math.max(chip.font + chip.padV * 2, iconSize) + 6;
                                         const box = { x1: pt.x - w / 2, y1: pt.y - dotSize - h, x2: pt.x + w / 2, y2: pt.y - dotSize };
                                         const collide = keptBoxes.some((k) => box.x1 < k.x2 && box.x2 > k.x1 && box.y1 < k.y2 && box.y2 > k.y1);
                                         if (!collide) { keptBoxes.push(box); showChip = true; }
                                     }
 
+                                    // ② 흰 칩 + 오렌지 카테고리 아이콘 원 + 진한 이름 + (+N 연호박 배지)
                                     const chipHtml = showChip && chip
-                                        ? `<div style="position:absolute;left:0;bottom:${dotSize}px;transform:translateX(-50%);background:#fff;border:1px solid rgba(0,0,0,0.08);border-radius:10px;padding:${chip.padV}px ${chip.padH}px;box-shadow:0 1px 3px rgba(0,0,0,0.16);white-space:nowrap;">
-                                                <span style="font-size:${chip.font}px;font-weight:700;color:#374151;max-width:${chip.maxw}px;display:inline-block;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;">${escapeHtml(label)}</span>
+                                        ? `<div style="position:absolute;left:0;bottom:${dotSize}px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;background:#fff;border-radius:11px;padding:${chip.padV}px ${chip.padH}px ${chip.padV}px 3px;box-shadow:0 1px 3px rgba(0,0,0,0.15);white-space:nowrap;">
+                                                <span style="width:${iconSize}px;height:${iconSize}px;background:#F5A623;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:${chip.font - 1}px;flex:none;">${emoji}</span>
+                                                <span style="font-size:${chip.font}px;font-weight:700;color:#374151;max-width:${chip.maxw}px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(p.name)}</span>
+                                                ${n > 1 ? `<span style="background:#FEF3C7;border-radius:7px;padding:0 4px;font-size:${chip.font - 1}px;font-weight:800;color:#B45309;flex:none;">+${n - 1}</span>` : ""}
                                             </div>`
                                         : "";
                                     const marker = new window.naver.maps.Marker({
