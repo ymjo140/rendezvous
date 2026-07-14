@@ -145,8 +145,8 @@ export const useMapLogic = ({
                         };
                         const zoom = map.getZoom();
                         if (zoom < 14) { clearNearby(); nearbyPlacesRef.current = []; return; }  // 너무 넓으면 노이즈라 생략
-                        // 확대할수록 더 많이(동네 수준이면 사실상 전부). 너무 많으면 렉+칩 떡칠이라 줌별 상한.
-                        const lim = zoom >= 18 ? 400 : zoom >= 17 ? 300 : zoom >= 16 ? 180 : 100;
+                        // 영역 내 전부 요청(사용자 결정) — 이름표 노출량은 충돌감지가 알아서 조절
+                        const lim = 3000;
                         // 줌별 칩 크기(축소하면 글씨도 작게, 더 축소(≤15)하면 점만 — 글씨가 안 읽히는 수준이라)
                         const chip = zoom >= 18 ? { font: 11, maxw: 96, dot: 9, padV: 2, padH: 8 }
                             : zoom >= 17 ? { font: 10, maxw: 80, dot: 8, padV: 1, padH: 7 }
