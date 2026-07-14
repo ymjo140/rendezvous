@@ -1,3 +1,4 @@
+import os
 import requests
 import urllib.parse
 import time
@@ -26,9 +27,10 @@ def clean_text(text: str) -> str:
 
 class RealDataProvider:
     def __init__(self):
+        # 키는 env로(하드코딩 금지) — geocode 등과 동일한 NAVER_SEARCH_* 사용
         self.search_headers = {
-            "X-Naver-Client-Id": "7hzPrrLNl9CqLaAffBDb", 
-            "X-Naver-Client-Secret": "aijs1MO01i"
+            "X-Naver-Client-Id": os.getenv("NAVER_SEARCH_ID", ""),
+            "X-Naver-Client-Secret": os.getenv("NAVER_SEARCH_SECRET", ""),
         }
         
         # [Fix] Render/Linux Transformer setup
