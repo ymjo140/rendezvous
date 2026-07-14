@@ -154,6 +154,7 @@ def user_lists(uid: int, db: Session = Depends(get_db)):
                 "color": f.color or "#7C3AED",
                 "description": f.description or "",
                 "item_count": f.item_count or 0,
+                "like_count": db.query(models.ListLike).filter(models.ListLike.folder_id == f.id).count(),
                 "preview": preview,
             }
         )
@@ -161,7 +162,7 @@ def user_lists(uid: int, db: Session = Depends(get_db)):
 
 
 @router.get("/api/lists/{folder_id}")
-def public_list_detail(folder_id: int, db: Session = Depends(get_db)):
+def public_list_detail(folder_id: int, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
     f = db.query(models.SaveFolder).filter(models.SaveFolder.id == folder_id).first()
     if not f or not f.is_public:
         raise HTTPException(status_code=404, detail="공개된 리스트가 아니에요.")
@@ -190,6 +191,9 @@ def public_list_detail(folder_id: int, db: Session = Depends(get_db)):
                 "memo": it.memo or "",
             }
         )
+    like_count = db.query(models.ListLike).filter(models.ListLike.folder_id == f.id).count()
+    comment_count = db.query(models.ListComment).filter(models.ListComment.folder_id == f.id).count()
+    is_liked = bool(user and db.query(models.ListLike).filter_by(folder_id=f.id, user_id=user.id).first())
     return {
         "id": f.id,
         "name": f.name,
@@ -198,6 +202,9 @@ def public_list_detail(folder_id: int, db: Session = Depends(get_db)):
         "owner": ({"id": owner.id, "name": owner.name, "avatar": owner.avatar or "🙂"} if owner else None),
         "count": len(entries),
         "items": entries,
+        "like_count": like_count,
+        "comment_count": comment_count,
+        "is_liked": is_liked,
     }
 
 
@@ -300,3 +307,177 @@ def suggested_curators(limit: int = 8, user: Optional[models.User] = Depends(get
             }
         )
     return {"items": out}
+
+
+# ===== 맛집 리스트 추천(좋아요) + 댓글 + 인기 랭킹 (#4) =====
+# 라우트 순서 주의: /api/lists/{folder_id}가 그리디하므로 랭킹은 /api/list-ranking,
+# 댓글 삭제는 /api/list-comments/{id}로 분리(충돌 회피).
+
+def _list_counts(db: Session, folder_id: int):
+    likes = db.query(models.ListLike).filter(models.ListLike.folder_id == folder_id).count()
+    comments = db.query(models.ListComment).filter(models.ListComment.folder_id == folder_id).count()
+    return likes, comments
+
+
+@router.post("/api/lists/{folder_id}/like")
+def like_list(folder_id: int, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    f = db.query(models.SaveFolder).filter(models.SaveFolder.id == folder_id).first()
+    if not f or not f.is_public:
+        raise HTTPException(status_code=404, detail="공개된 리스트가 아니에요.")
+    ex = db.query(models.ListLike).filter_by(folder_id=folder_id, user_id=user.id).first()
+    if not ex:
+        db.add(models.ListLike(folder_id=folder_id, user_id=user.id))
+        db.commit()
+    likes, _ = _list_counts(db, folder_id)
+    return {"liked": True, "like_count": likes}
+
+
+@router.delete("/api/lists/{folder_id}/like")
+def unlike_list(folder_id: int, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    row = db.query(models.ListLike).filter_by(folder_id=folder_id, user_id=user.id).first()
+    if row:
+        db.delete(row)
+        db.commit()
+    likes, _ = _list_counts(db, folder_id)
+    return {"liked": False, "like_count": likes}
+
+
+@router.get("/api/lists/{folder_id}/comments")
+def get_list_comments(folder_id: int, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = (
+        db.query(models.ListComment)
+        .filter(models.ListComment.folder_id == folder_id)
+        .order_by(models.ListComment.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    uids = list({r.user_id for r in rows})
+    users = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(uids)).all()} if uids else {}
+    my_id = user.id if user else None
+    out = []
+    for r in rows:
+        u = users.get(r.user_id)
+        out.append(
+            {
+                "id": r.id,
+                "user_id": r.user_id,
+                "user_name": u.name if u else "익명",
+                "user_avatar": (u.avatar if u else None) or "🙂",
+                "content": r.content,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "is_mine": r.user_id == my_id,
+            }
+        )
+    return {"count": len(out), "items": out}
+
+
+@router.post("/api/lists/{folder_id}/comments")
+def add_list_comment(folder_id: int, req: dict, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    content = (req.get("content") or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="댓글 내용을 입력해주세요.")
+    f = db.query(models.SaveFolder).filter(models.SaveFolder.id == folder_id).first()
+    if not f or not f.is_public:
+        raise HTTPException(status_code=404, detail="공개된 리스트가 아니에요.")
+    c = models.ListComment(folder_id=folder_id, user_id=user.id, content=content[:500])
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return {
+        "id": c.id,
+        "user_id": user.id,
+        "user_name": user.name,
+        "user_avatar": user.avatar or "🙂",
+        "content": c.content,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+        "is_mine": True,
+    }
+
+
+@router.delete("/api/list-comments/{comment_id}")
+def delete_list_comment(comment_id: int, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    c = db.query(models.ListComment).filter(models.ListComment.id == comment_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="댓글을 찾을 수 없어요.")
+    folder = db.query(models.SaveFolder).filter(models.SaveFolder.id == c.folder_id).first()
+    if c.user_id != user.id and not (folder and folder.user_id == user.id):
+        raise HTTPException(status_code=403, detail="삭제 권한이 없어요.")
+    db.delete(c)
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/api/list-ranking")
+def list_ranking(limit: int = 10, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    """인기 맛집 리스트 랭킹 — 추천x3 + 댓글x2 + 큐레이터 팔로워 보너스(상한20).
+    팔로우·추천·댓글이 쌓일수록 랭크 상승."""
+    folders = db.query(models.SaveFolder).filter(models.SaveFolder.is_public == True).all()  # noqa: E712
+    if not folders:
+        return {"count": 0, "items": []}
+    fids = [f.id for f in folders]
+    owner_ids = list({f.user_id for f in folders})
+
+    like_rows = (
+        db.query(models.ListLike.folder_id, func.count(models.ListLike.id))
+        .filter(models.ListLike.folder_id.in_(fids))
+        .group_by(models.ListLike.folder_id)
+        .all()
+    )
+    likes = {fid: c for fid, c in like_rows}
+    cmt_rows = (
+        db.query(models.ListComment.folder_id, func.count(models.ListComment.id))
+        .filter(models.ListComment.folder_id.in_(fids))
+        .group_by(models.ListComment.folder_id)
+        .all()
+    )
+    comments = {fid: c for fid, c in cmt_rows}
+    fol_rows = (
+        db.query(models.UserFollow.following_id, func.count(models.UserFollow.id))
+        .filter(models.UserFollow.following_id.in_(owner_ids))
+        .group_by(models.UserFollow.following_id)
+        .all()
+    )
+    followers = {uid: c for uid, c in fol_rows}
+    users = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()}
+
+    scored = []
+    for f in folders:
+        lk = int(likes.get(f.id, 0))
+        cm = int(comments.get(f.id, 0))
+        fb = int(followers.get(f.user_id, 0))
+        score = lk * 3 + cm * 2 + min(fb, 20)
+        scored.append((score, lk, cm, f))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    scored = scored[:limit]
+
+    my_liked = set()
+    if user:
+        my_liked = {r.folder_id for r in db.query(models.ListLike).filter(models.ListLike.user_id == user.id).all()}
+
+    items = []
+    for i, (score, lk, cm, f) in enumerate(scored):
+        owner = users.get(f.user_id)
+        items.append(
+            {
+                "rank": i + 1,
+                "folder_id": f.id,
+                "name": f.name,
+                "icon": f.icon or "📁",
+                "description": f.description or "",
+                "item_count": f.item_count or 0,
+                "like_count": lk,
+                "comment_count": cm,
+                "score": score,
+                "is_liked": f.id in my_liked,
+                "curator": ({"id": owner.id, "name": owner.name, "avatar": owner.avatar or "🙂"} if owner else None),
+            }
+        )
+    return {"count": len(items), "items": items}

@@ -493,6 +493,26 @@ class SavedItem(Base):
     folder = relationship("SaveFolder", back_populates="items")
 
 
+class ListLike(Base):
+    """공개 맛집 리스트 '추천'(좋아요) — 추천 수가 리스트 랭킹을 올림."""
+    __tablename__ = "list_likes"
+    id = Column(Integer, primary_key=True, index=True)
+    folder_id = Column(Integer, ForeignKey("save_folders.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+    __table_args__ = (UniqueConstraint("folder_id", "user_id", name="uq_list_like"),)
+
+
+class ListComment(Base):
+    """공개 맛집 리스트 댓글 — '친구 추천으로 갔는데 최고' 같은 반응."""
+    __tablename__ = "list_comments"
+    id = Column(Integer, primary_key=True, index=True)
+    folder_id = Column(Integer, ForeignKey("save_folders.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 # === 공유 담기 시스템 ===
 
 class ShareCart(Base):

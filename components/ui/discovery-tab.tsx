@@ -181,6 +181,50 @@ function CuratorStrip() {
     );
 }
 
+// 인기 맛집 리스트 랭킹 — 추천·댓글·팔로워로 랭크 상승(뿌듯함 루프)
+function ListRankingStrip() {
+    const router = useRouter();
+    const [items, setItems] = useState<any[]>([]);
+    useEffect(() => {
+        fetchWithAuth("/api/list-ranking?limit=10")
+            .then((r) => (r.ok ? r.json() : { items: [] }))
+            .then((d) => setItems(d.items || []))
+            .catch(() => {});
+    }, []);
+    if (items.length === 0) return null;
+    return (
+        <div className="p-4 border-b border-gray-100">
+            <div className="flex items-center gap-1.5 mb-2.5">
+                <span className="text-base">🏆</span>
+                <span className="font-bold text-gray-800 text-sm">인기 맛집 리스트</span>
+                <span className="text-[11px] text-gray-400">· 추천 랭킹</span>
+            </div>
+            <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
+                {items.map((l) => (
+                    <div
+                        key={l.folder_id}
+                        onClick={() => router.push(`/lists/${l.folder_id}`)}
+                        className="flex-shrink-0 w-44 bg-white border border-gray-100 rounded-2xl p-3 cursor-pointer hover:shadow-sm transition-shadow"
+                    >
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                            <span className={`text-xs font-extrabold ${l.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{l.rank}위</span>
+                            <span className="text-lg">{l.icon || "📁"}</span>
+                        </div>
+                        <div className="font-bold text-sm text-gray-900 truncate">{l.name}</div>
+                        {l.curator && <div className="text-[11px] text-gray-400 truncate mt-0.5">by {l.curator.name}</div>}
+                        <div className="flex items-center gap-2 mt-1.5 text-[11px] text-gray-500">
+                            <span className="inline-flex items-center gap-0.5"><Heart className="w-3 h-3 text-pink-400" />{l.like_count}</span>
+                            <span className="inline-flex items-center gap-0.5"><MessageCircle className="w-3 h-3 text-gray-300" />{l.comment_count}</span>
+                            <span className="text-gray-300">·</span>
+                            <span>{l.item_count}곳</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabProps = {}) {
     const router = useRouter();
     const { decisionCell, requestId } = useDecisionCell();
@@ -1492,6 +1536,9 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
 
             {/* 1.6 추천 큐레이터 (인스타식 팔로우) */}
             <CuratorStrip />
+
+            {/* 1.7 인기 맛집 리스트 랭킹 (추천 랭크) */}
+            <ListRankingStrip />
 
             {/* 2. AI 맞춤 추천 섹션 */}
             {showAiSection && aiRecommendations.length > 0 && (
