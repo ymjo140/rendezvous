@@ -6,6 +6,15 @@ import { placeApi } from "@/lib/place-api";
 import { fetchWithAuth } from "@/lib/api-client";
 
 type LatLng = { lat: number; lng: number };
+
+// 지도 라벨용 HTML 이스케이프(가게명에 특수문자 대비)
+const escapeHtml = (s: any) =>
+    String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 type ManualInput = { text: string; lat?: number; lng?: number };
 
 type UseMapLogicParams = {
@@ -98,12 +107,16 @@ export const useMapLogic = ({
                                 clearNearby();
                                 (d.items || []).forEach((place: any) => {
                                     if (!place.id || !place.lat || !place.lng) return;
+                                    // 네이버 지도 POI처럼: 점 아이콘 + 아래 작은 이름 라벨(흰 테두리 halo)
                                     const marker = new window.naver.maps.Marker({
                                         position: new window.naver.maps.LatLng(place.lat, place.lng),
                                         map,
                                         title: place.name,
                                         icon: {
-                                            content: '<div style="width:11px;height:11px;background:#F5A623;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.35);cursor:pointer;"></div>',
+                                            content: `<div style="position:relative;width:15px;height:15px;cursor:pointer;">
+                                                <div style="width:11px;height:11px;background:#F5A623;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.35);"></div>
+                                                <div style="position:absolute;top:14px;left:50%;transform:translateX(-50%);max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:600;color:#374151;text-shadow:-1px 0 #fff,0 1px #fff,1px 0 #fff,0 -1px #fff,-1px -1px #fff,1px 1px #fff,-1px 1px #fff,1px -1px #fff;">${escapeHtml(place.name)}</div>
+                                            </div>`,
                                             anchor: new window.naver.maps.Point(7, 7),
                                         },
                                     });
