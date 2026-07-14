@@ -51,7 +51,6 @@ export const useMapLogic = ({
     const markersRef = useRef<any[]>([]);
     const nearbyMarkersRef = useRef<any[]>([]);   // 지도 영역 내 가게 핀(클릭→상세)
     const nearbyBoundRef = useRef(false);         // idle 리스너 중복 부착 방지
-    const infoWindowRef = useRef<any>(null);      // 핀 탭 시 이름 확인 버블
     const lootMarkersRef = useRef<any[]>([]);
     const friendMarkersRef = useRef<any[]>([]);
     const manualMarkersRef = useRef<any[]>([]);
@@ -90,13 +89,10 @@ export const useMapLogic = ({
                 // 🗺️ 지도 영역 내 가게를 클릭 가능한 핀으로 (idle=이동/줌 멈추면 재조회 → 클릭 시 상세)
                 if (!nearbyBoundRef.current && window.naver?.maps?.Event) {
                     nearbyBoundRef.current = true;
-                    // 지도 빈 곳 탭 → 이름 버블 닫기
-                    window.naver.maps.Event.addListener(mapRef.current, "click", () => infoWindowRef.current?.close());
                     window.naver.maps.Event.addListener(mapRef.current, "idle", () => {
                         const map = mapRef.current;
                         if (!map) return;
                         const clearNearby = () => {
-                            infoWindowRef.current?.close();
                             nearbyMarkersRef.current.forEach((m: any) => m.setMap(null));
                             nearbyMarkersRef.current = [];
                         };
@@ -111,35 +107,23 @@ export const useMapLogic = ({
                                 clearNearby();
                                 (d.items || []).forEach((place: any) => {
                                     if (!place.id || !place.lat || !place.lng) return;
-                                    // 점 핀만(이름 라벨은 네이버 기본 라벨과 중복이라 생략)
-                                    // → 탭하면 이름 버블(InfoWindow) → 버블 탭 시 상세 이동 (네이버 지도 앱 패턴)
+                                    // 점 + 흰 알약 이름 칩(우리 UI로 확실히 구분 — 네이버 라벨과 겹쳐도 오버레이로 읽힘)
+                                    // 칩 탭 → 바로 상세 이동
                                     const marker = new window.naver.maps.Marker({
                                         position: new window.naver.maps.LatLng(place.lat, place.lng),
                                         map,
                                         title: place.name,
                                         icon: {
-                                            content: '<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;"><div style="width:12px;height:12px;background:#F5A623;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.35);"></div></div>',
-                                            anchor: new window.naver.maps.Point(12, 12),
+                                            content: `<div style="position:relative;width:0;height:0;cursor:pointer;">
+                                                <div style="position:absolute;left:0;top:0;transform:translate(-50%,-50%);width:9px;height:9px;background:#F5A623;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
+                                                <div style="position:absolute;left:0;bottom:9px;transform:translateX(-50%);background:#fff;border:1px solid rgba(0,0,0,0.08);border-radius:11px;padding:2px 8px;box-shadow:0 1px 4px rgba(0,0,0,0.18);white-space:nowrap;">
+                                                    <span style="font-size:11px;font-weight:700;color:#374151;max-width:96px;display:inline-block;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;">${escapeHtml(place.name)}</span>
+                                                </div>
+                                            </div>`,
+                                            anchor: new window.naver.maps.Point(0, 0),
                                         },
                                     });
-                                    window.naver.maps.Event.addListener(marker, "click", () => {
-                                        (window as any).__rdvOpenPlace = (pid: number) => router.push(`/places/${pid}`);
-                                        if (!infoWindowRef.current) {
-                                            infoWindowRef.current = new window.naver.maps.InfoWindow({
-                                                borderWidth: 0,
-                                                disableAnchor: true,
-                                                backgroundColor: "transparent",
-                                                pixelOffset: new window.naver.maps.Point(0, -6),
-                                            });
-                                        }
-                                        infoWindowRef.current.setContent(
-                                            `<div onclick="window.__rdvOpenPlace(${place.id})" style="cursor:pointer;background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.18);padding:8px 12px;display:flex;align-items:center;gap:10px;">` +
-                                            `<div><div style="font-size:13px;font-weight:700;color:#111827;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(place.name)}</div>` +
-                                            (place.category ? `<div style="font-size:11px;color:#9CA3AF;margin-top:1px;">${escapeHtml(place.category)}</div>` : "") +
-                                            `</div><div style="font-size:12px;font-weight:700;color:#F5A623;white-space:nowrap;">상세보기 ›</div></div>`
-                                        );
-                                        infoWindowRef.current.open(map, marker);
-                                    });
+                                    window.naver.maps.Event.addListener(marker, "click", () => router.push(`/places/${place.id}`));
                                     nearbyMarkersRef.current.push(marker);
                                 });
                             })

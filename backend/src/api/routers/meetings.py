@@ -313,30 +313,42 @@ def get_place_tables(place_id: int, db: Session = Depends(get_db)):
 @router.get("/api/places/nearby")
 def places_nearby(
     min_lat: float, max_lat: float, min_lng: float, max_lng: float,
-    limit: int = 60, db: Session = Depends(get_db),
+    limit: int = 100, db: Session = Depends(get_db),
 ):
-    """지도 영역(bounds) 안의 가게들 — 지도 핀 클릭→상세용. {place_id} 라우트보다 위에 있어야 함."""
-    rows = (
-        db.query(models.Place)
-        .filter(
-            models.Place.lat >= min_lat, models.Place.lat <= max_lat,
-            models.Place.lng >= min_lng, models.Place.lng <= max_lng,
+    """지도 영역(bounds) 안의 가게들 — 지도 핀→상세용. {place_id} 라우트보다 위에 있어야 함.
+    밀집 지역(뷰포트에 수천 곳)에서 임의 N개를 뽑으면 유명한 곳이 밀리므로,
+    뷰포트를 12x12 격자로 나눠 셀당 1곳씩 우선 선발(md5 해시 = 팬/줌해도 같은 가게 유지)."""
+    from sqlalchemy import text as _t
+    lim = min(max(limit, 1), 150)
+    sql = _t("""
+        with cand as (
+            select id, name, lat, lng,
+                   coalesce(cuisine_type, category, main_category, '') as cat,
+                   floor((lat - :min_lat) / nullif(:max_lat - :min_lat, 0) * 12) as gy,
+                   floor((lng - :min_lng) / nullif(:max_lng - :min_lng, 0) * 12) as gx
+            from places
+            where lat between :min_lat and :max_lat
+              and lng between :min_lng and :max_lng
+        ),
+        ranked as (
+            select id, name, lat, lng, cat,
+                   row_number() over (partition by gx, gy order by md5(id::text)) as rn
+            from cand
         )
-        .limit(min(max(limit, 1), 120))
-        .all()
-    )
+        select id, name, lat, lng, cat from ranked
+        order by rn, md5(id::text)
+        limit :lim
+    """)
+    rows = db.execute(sql, {
+        "min_lat": min_lat, "max_lat": max_lat,
+        "min_lng": min_lng, "max_lng": max_lng, "lim": lim,
+    }).fetchall()
     return {
         "count": len(rows),
         "items": [
-            {
-                "id": p.id,
-                "name": p.name,
-                "lat": p.lat,
-                "lng": p.lng,
-                "category": p.cuisine_type or p.category or p.main_category or "",
-            }
-            for p in rows
-            if p.lat and p.lng
+            {"id": r[0], "name": r[1], "lat": r[2], "lng": r[3], "category": r[4]}
+            for r in rows
+            if r[2] and r[3]
         ],
     }
 
