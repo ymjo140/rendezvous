@@ -1531,13 +1531,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 </div>
             </div>
 
-            {/* 1.5 실시간 급상승 랭킹 (트위터식 실시간 순위) */}
+            {/* 1.5 상단 고정: 실시간 급상승 + 인기 맛집 리스트 (큐레이터 추천은 그리드 중간에 끼움) */}
             <TrendingStrip />
-
-            {/* 1.6 추천 큐레이터 (인스타식 팔로우) */}
-            <CuratorStrip />
-
-            {/* 1.7 인기 맛집 리스트 랭킹 (추천 랭크) */}
             <ListRankingStrip />
 
             {/* 2. AI 맞춤 추천 섹션 */}
@@ -1657,8 +1652,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 {viewMode === "grid" ? (
                     <div className="grid grid-cols-3 gap-0.5 p-0.5">
                         {filteredFeeds.map((feed, index) => (
+                            <React.Fragment key={feed.id}>
                             <div
-                                key={feed.id}
                                 onClick={() => handleFeedClick(feed)}
                                 className={`relative aspect-square cursor-pointer group overflow-hidden ${getGridClass(index)}`}
                             >
@@ -1719,6 +1714,13 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                                     </div>
                                 </div>
                             </div>
+                            {/* 그리드 중간(6번째 이후)에 큐레이터 추천 한 줄 끼움 */}
+                            {index === 5 && filteredFeeds.length > 6 && (
+                                <div className="col-span-3">
+                                    <CuratorStrip />
+                                </div>
+                            )}
+                            </React.Fragment>
                         ))}
                     </div>
                 ) : (
