@@ -51,6 +51,7 @@ export const useMapLogic = ({
     const markersRef = useRef<any[]>([]);
     const nearbyMarkersRef = useRef<any[]>([]);   // 지도 영역 내 가게 핀(클릭→상세)
     const nearbyBoundRef = useRef(false);         // idle 리스너 중복 부착 방지
+    const infoWindowRef = useRef<any>(null);      // 핀 탭 시 이름 확인 버블
     const lootMarkersRef = useRef<any[]>([]);
     const friendMarkersRef = useRef<any[]>([]);
     const manualMarkersRef = useRef<any[]>([]);
@@ -89,10 +90,13 @@ export const useMapLogic = ({
                 // 🗺️ 지도 영역 내 가게를 클릭 가능한 핀으로 (idle=이동/줌 멈추면 재조회 → 클릭 시 상세)
                 if (!nearbyBoundRef.current && window.naver?.maps?.Event) {
                     nearbyBoundRef.current = true;
+                    // 지도 빈 곳 탭 → 이름 버블 닫기
+                    window.naver.maps.Event.addListener(mapRef.current, "click", () => infoWindowRef.current?.close());
                     window.naver.maps.Event.addListener(mapRef.current, "idle", () => {
                         const map = mapRef.current;
                         if (!map) return;
                         const clearNearby = () => {
+                            infoWindowRef.current?.close();
                             nearbyMarkersRef.current.forEach((m: any) => m.setMap(null));
                             nearbyMarkersRef.current = [];
                         };
@@ -107,20 +111,35 @@ export const useMapLogic = ({
                                 clearNearby();
                                 (d.items || []).forEach((place: any) => {
                                     if (!place.id || !place.lat || !place.lng) return;
-                                    // 네이버 지도 POI처럼: 점 아이콘 + 아래 작은 이름 라벨(흰 테두리 halo)
+                                    // 점 핀만(이름 라벨은 네이버 기본 라벨과 중복이라 생략)
+                                    // → 탭하면 이름 버블(InfoWindow) → 버블 탭 시 상세 이동 (네이버 지도 앱 패턴)
                                     const marker = new window.naver.maps.Marker({
                                         position: new window.naver.maps.LatLng(place.lat, place.lng),
                                         map,
                                         title: place.name,
                                         icon: {
-                                            content: `<div style="position:relative;width:15px;height:15px;cursor:pointer;">
-                                                <div style="width:11px;height:11px;background:#F5A623;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.35);"></div>
-                                                <div style="position:absolute;top:14px;left:50%;transform:translateX(-50%);max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:600;color:#374151;text-shadow:-1px 0 #fff,0 1px #fff,1px 0 #fff,0 -1px #fff,-1px -1px #fff,1px 1px #fff,-1px 1px #fff,1px -1px #fff;">${escapeHtml(place.name)}</div>
-                                            </div>`,
-                                            anchor: new window.naver.maps.Point(7, 7),
+                                            content: '<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;"><div style="width:12px;height:12px;background:#F5A623;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.35);"></div></div>',
+                                            anchor: new window.naver.maps.Point(12, 12),
                                         },
                                     });
-                                    window.naver.maps.Event.addListener(marker, "click", () => router.push(`/places/${place.id}`));
+                                    window.naver.maps.Event.addListener(marker, "click", () => {
+                                        (window as any).__rdvOpenPlace = (pid: number) => router.push(`/places/${pid}`);
+                                        if (!infoWindowRef.current) {
+                                            infoWindowRef.current = new window.naver.maps.InfoWindow({
+                                                borderWidth: 0,
+                                                disableAnchor: true,
+                                                backgroundColor: "transparent",
+                                                pixelOffset: new window.naver.maps.Point(0, -6),
+                                            });
+                                        }
+                                        infoWindowRef.current.setContent(
+                                            `<div onclick="window.__rdvOpenPlace(${place.id})" style="cursor:pointer;background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.18);padding:8px 12px;display:flex;align-items:center;gap:10px;">` +
+                                            `<div><div style="font-size:13px;font-weight:700;color:#111827;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(place.name)}</div>` +
+                                            (place.category ? `<div style="font-size:11px;color:#9CA3AF;margin-top:1px;">${escapeHtml(place.category)}</div>` : "") +
+                                            `</div><div style="font-size:12px;font-weight:700;color:#F5A623;white-space:nowrap;">상세보기 ›</div></div>`
+                                        );
+                                        infoWindowRef.current.open(map, marker);
+                                    });
                                     nearbyMarkersRef.current.push(marker);
                                 });
                             })
