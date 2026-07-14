@@ -51,6 +51,7 @@ export const useMapLogic = ({
     const markersRef = useRef<any[]>([]);
     const nearbyMarkersRef = useRef<any[]>([]);   // 지도 영역 내 가게 핀(클릭→상세)
     const nearbyBoundRef = useRef(false);         // idle 리스너 중복 부착 방지
+    const nearbyPlacesRef = useRef<any[]>([]);    // 뷰포트 가게 캐시(지도 탭→근처 가게 매칭용)
     const lootMarkersRef = useRef<any[]>([]);
     const friendMarkersRef = useRef<any[]>([]);
     const manualMarkersRef = useRef<any[]>([]);
@@ -89,6 +90,30 @@ export const useMapLogic = ({
                 // 🗺️ 지도 영역 내 가게를 클릭 가능한 핀으로 (idle=이동/줌 멈추면 재조회 → 클릭 시 상세)
                 if (!nearbyBoundRef.current && window.naver?.maps?.Event) {
                     nearbyBoundRef.current = true;
+
+                    // 🎯 지도 탭 → 근처 가게 매칭 (네이버 라벨이 사실상 우리 버튼이 되는 효과)
+                    // 라벨 자체 클릭은 못 잡지만(타일 그림) 탭 좌표는 잡히므로, 탭 지점 ~30px 내 가게로 연결
+                    window.naver.maps.Event.addListener(mapRef.current, "click", (e: any) => {
+                        const map = mapRef.current;
+                        if (!map || !e?.coord) return;
+                        const proj = map.getProjection();
+                        if (!proj) return;
+                        const tap = proj.fromCoordToOffset(e.coord);
+                        let best: any = null;
+                        let bestD = 30; // px 반경(네이버 라벨 텍스트는 가게 좌표에서 10~20px 아래라 커버됨)
+                        nearbyPlacesRef.current.forEach((g: any) => {
+                            const pt = proj.fromCoordToOffset(new window.naver.maps.LatLng(g.lat, g.lng));
+                            const d = Math.hypot(pt.x - tap.x, pt.y - tap.y);
+                            if (d < bestD) { bestD = d; best = g; }
+                        });
+                        if (!best) return; // 빈 곳/도로 탭 = 무시(토스트 없음 — 일반 지도 조작이 많아서)
+                        if (best.members.length > 1) {
+                            window.dispatchEvent(new CustomEvent("map:place-group", { detail: { places: best.members } }));
+                        } else {
+                            router.push(`/places/${best.members[0].id}`);
+                        }
+                    });
+
                     window.naver.maps.Event.addListener(mapRef.current, "idle", () => {
                         const map = mapRef.current;
                         if (!map) return;
@@ -97,7 +122,7 @@ export const useMapLogic = ({
                             nearbyMarkersRef.current = [];
                         };
                         const zoom = map.getZoom();
-                        if (zoom < 14) { clearNearby(); return; }  // 너무 넓으면 노이즈라 생략
+                        if (zoom < 14) { clearNearby(); nearbyPlacesRef.current = []; return; }  // 너무 넓으면 노이즈라 생략
                         // 확대할수록 더 많이(동네 수준이면 사실상 전부). 너무 많으면 렉+칩 떡칠이라 줌별 상한.
                         const lim = zoom >= 18 ? 400 : zoom >= 17 ? 300 : zoom >= 16 ? 180 : 100;
                         // 줌별 칩 크기(축소하면 글씨도 작게, 더 축소(≤15)하면 점만 — 글씨가 안 읽히는 수준이라)
@@ -122,6 +147,11 @@ export const useMapLogic = ({
                                     const arr = groups.get(key);
                                     if (arr) arr.push(p); else groups.set(key, [p]);
                                 });
+
+                                // 지도 탭 매칭용 캐시 갱신
+                                nearbyPlacesRef.current = Array.from(groups.values()).map((members: any[]) => ({
+                                    lat: members[0].lat, lng: members[0].lng, members,
+                                }));
 
                                 // ② 라벨 충돌 감지 — 화면 픽셀로 투영, 겹치는 칩은 점으로 강등(확대하면 복귀)
                                 const proj = map.getProjection();
