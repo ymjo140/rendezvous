@@ -421,7 +421,6 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
     // ?? AI 추천 관련 상태
     const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
     const [aiLoading, setAiLoading] = useState(false);
-    const [showAiSection, setShowAiSection] = useState(true);
     
     // ?? 저장 폴더 관련 상태
     const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
@@ -1587,62 +1586,7 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
             <GroupStrip />
             <ListRankingStrip />
 
-            {/* 2. AI 맞춤 추천 섹션 */}
-            {showAiSection && aiRecommendations.length > 0 && (
-                <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-4 border-b border-gray-100">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-gradient-to-r from-amber-500 to-orange-500 rounded-lg flex items-center justify-center">
-                                <Wand2 className="w-3.5 h-3.5 text-white" />
-                            </div>
-                            <span className="font-bold text-gray-800 text-sm">AI 맞춤 추천</span>
-                            <Badge className="bg-amber-100 text-amber-600 text-[10px] font-medium">For You</Badge>
-                        </div>
-                        <button 
-                            onClick={() => setShowAiSection(false)}
-                            className="text-gray-400 hover:text-gray-600 p-1"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
-                    </div>
-                    
-                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                        {aiRecommendations.map((rec, index) => (
-                            <div 
-                                key={rec.place_id}
-                                onClick={() => {
-                                    recordAiAction("CLICK", rec.place_id);
-                                    if (rec.place_id) {
-                                        router.push(`/places/${rec.place_id}`);
-                                    }
-                                }}
-                                className="flex-shrink-0 w-36 bg-white rounded-xl p-3 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all"
-                            >
-                                <div className="flex items-center gap-2 mb-2">
-                                    <div className="w-8 h-8 bg-gradient-to-br from-amber-100 to-orange-100 rounded-lg flex items-center justify-center">
-                                        <Utensils className="w-4 h-4 text-amber-600" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-xs text-gray-800 truncate">{rec.place_name}</div>
-                                        <div className="text-[10px] text-gray-500">{rec.category || "맛집"}</div>
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-1">
-                                        <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                                        <span className="text-[10px] font-bold text-gray-700">
-                                            {rec.avg_rating ? rec.avg_rating.toFixed(1) : (rec.score * 5).toFixed(1)}
-                                        </span>
-                                    </div>
-                                    <Badge className="text-[8px] bg-gray-100 text-gray-600 px-1.5 py-0.5">
-                                        {rec.reason}
-                                    </Badge>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+            {/* AI 맞춤 추천 섹션 제거됨 — 장소 추천(장소 상세)에서 제공하므로 탐색 탭에선 뺌 */}
 
             {/* 2-1. 장소 검색 결과 (검색바 입력 시) */}
             {searchQuery.trim().length >= 2 && (searchPlaceHits.length > 0 || searchPlaceLoading) && (
