@@ -100,6 +100,11 @@ export const useMapLogic = ({
                         if (zoom < 14) { clearNearby(); return; }  // 너무 넓으면 노이즈라 생략
                         // 확대할수록 더 많이(동네 수준이면 사실상 전부). 너무 많으면 렉+칩 떡칠이라 줌별 상한.
                         const lim = zoom >= 18 ? 400 : zoom >= 17 ? 300 : zoom >= 16 ? 180 : 100;
+                        // 줌별 칩 크기(축소하면 글씨도 작게, 더 축소(≤15)하면 점만 — 글씨가 안 읽히는 수준이라)
+                        const chip = zoom >= 18 ? { font: 11, maxw: 96, dot: 9, padV: 2, padH: 8 }
+                            : zoom >= 17 ? { font: 10, maxw: 80, dot: 8, padV: 1, padH: 7 }
+                            : zoom >= 16 ? { font: 8.5, maxw: 60, dot: 7, padV: 1, padH: 5 }
+                            : null;
                         const b = map.getBounds();
                         const sw = b.getMin ? b.getMin() : b.getSW();
                         const ne = b.getMax ? b.getMax() : b.getNE();
@@ -110,18 +115,21 @@ export const useMapLogic = ({
                                 clearNearby();
                                 (d.items || []).forEach((place: any) => {
                                     if (!place.id || !place.lat || !place.lng) return;
-                                    // 점 + 흰 알약 이름 칩(우리 UI로 확실히 구분 — 네이버 라벨과 겹쳐도 오버레이로 읽힘)
-                                    // 칩 탭 → 바로 상세 이동
+                                    // 점 + 흰 알약 이름 칩(줌별 크기, ≤15는 점만) — 칩 탭 → 바로 상세 이동
+                                    const dotSize = chip ? chip.dot : 7;
+                                    const chipHtml = chip
+                                        ? `<div style="position:absolute;left:0;bottom:${dotSize}px;transform:translateX(-50%);background:#fff;border:1px solid rgba(0,0,0,0.08);border-radius:10px;padding:${chip.padV}px ${chip.padH}px;box-shadow:0 1px 3px rgba(0,0,0,0.16);white-space:nowrap;">
+                                                <span style="font-size:${chip.font}px;font-weight:700;color:#374151;max-width:${chip.maxw}px;display:inline-block;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;">${escapeHtml(place.name)}</span>
+                                            </div>`
+                                        : "";
                                     const marker = new window.naver.maps.Marker({
                                         position: new window.naver.maps.LatLng(place.lat, place.lng),
                                         map,
                                         title: place.name,
                                         icon: {
                                             content: `<div style="position:relative;width:0;height:0;cursor:pointer;">
-                                                <div style="position:absolute;left:0;top:0;transform:translate(-50%,-50%);width:9px;height:9px;background:#F5A623;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
-                                                <div style="position:absolute;left:0;bottom:9px;transform:translateX(-50%);background:#fff;border:1px solid rgba(0,0,0,0.08);border-radius:11px;padding:2px 8px;box-shadow:0 1px 4px rgba(0,0,0,0.18);white-space:nowrap;">
-                                                    <span style="font-size:11px;font-weight:700;color:#374151;max-width:96px;display:inline-block;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;">${escapeHtml(place.name)}</span>
-                                                </div>
+                                                <div style="position:absolute;left:0;top:0;transform:translate(-50%,-50%);width:${dotSize}px;height:${dotSize}px;background:#F5A623;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
+                                                ${chipHtml}
                                             </div>`,
                                             anchor: new window.naver.maps.Point(0, 0),
                                         },
