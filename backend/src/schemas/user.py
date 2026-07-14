@@ -100,3 +100,4 @@ class OnboardingRequest(BaseModel):
 
 class KakaoLoginRequest(BaseModel):
     code: str
+    redirect_uri: str | None = None  # 프론트가 authorize에 쓴 값 그대로 → 토큰교환 일치(도메인 무관)

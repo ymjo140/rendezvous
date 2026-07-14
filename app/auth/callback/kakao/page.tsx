@@ -33,7 +33,7 @@ function KakaoCallbackContent() {
     fetch(`${API_URL}/api/auth/kakao`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code })
+      body: JSON.stringify({ code, redirect_uri: `${window.location.origin}/auth/callback/kakao` })
     })
       .then(res => res.json())
       .then(data => {

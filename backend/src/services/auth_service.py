@@ -88,9 +88,10 @@ class AuthService:
             "name": user.name
         }
 
-    async def kakao_login(self, db: Session, code: str):
+    async def kakao_login(self, db: Session, code: str, redirect_uri: str = None):
         token_url = "https://kauth.kakao.com/oauth/token"
-        data = { "grant_type": "authorization_code", "client_id": settings.KAKAO_REST_API_KEY, "redirect_uri": settings.KAKAO_REDIRECT_URI, "code": code }
+        # 프론트가 authorize에 쓴 redirect_uri를 그대로 사용(없으면 환경변수 폴백) → 도메인 바뀌어도 일치
+        data = { "grant_type": "authorization_code", "client_id": settings.KAKAO_REST_API_KEY, "redirect_uri": redirect_uri or settings.KAKAO_REDIRECT_URI, "code": code }
         
         async with httpx.AsyncClient() as client:
             token_res = await client.post(token_url, data=data)

@@ -19,7 +19,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 @router.post("/api/auth/kakao")
 async def kakao_login(req: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
-    return await auth_service.kakao_login(db, req.code)
+    return await auth_service.kakao_login(db, req.code, getattr(req, "redirect_uri", None))
 
 # Frontend compatibility: /api/auth/kakao/callback
 @router.get("/api/auth/kakao/callback")
