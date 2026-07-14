@@ -113,19 +113,45 @@ export const useMapLogic = ({
                             .then((r) => (r.ok ? r.json() : { items: [] }))
                             .then((d) => {
                                 clearNearby();
-                                (d.items || []).forEach((place: any) => {
-                                    if (!place.id || !place.lat || !place.lng) return;
-                                    // 점 + 흰 알약 이름 칩(줌별 크기, ≤15는 점만) — 칩 탭 → 바로 상세 이동
-                                    const dotSize = chip ? chip.dot : 7;
-                                    const chipHtml = chip
+                                const items = (d.items || []).filter((p: any) => p.id && p.lat && p.lng);
+
+                                // ① 같은 건물 묶기(≈11m 격자) — 한 건물 여러 가게는 핀 하나 + "외 N"
+                                const groups = new Map<string, any[]>();
+                                items.forEach((p: any) => {
+                                    const key = `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`;
+                                    const arr = groups.get(key);
+                                    if (arr) arr.push(p); else groups.set(key, [p]);
+                                });
+
+                                // ② 라벨 충돌 감지 — 화면 픽셀로 투영, 겹치는 칩은 점으로 강등(확대하면 복귀)
+                                const proj = map.getProjection();
+                                const keptBoxes: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+                                const dotSize = chip ? chip.dot : 7;
+
+                                groups.forEach((members) => {
+                                    const p = members[0];
+                                    const n = members.length;
+                                    const label = n > 1 ? `${p.name} 외 ${n - 1}` : p.name;
+
+                                    let showChip = false;
+                                    if (chip && proj) {
+                                        const pt = proj.fromCoordToOffset(new window.naver.maps.LatLng(p.lat, p.lng));
+                                        const w = Math.min(chip.maxw, label.length * chip.font) + chip.padH * 2 + 2;
+                                        const h = chip.font + chip.padV * 2 + 6;
+                                        const box = { x1: pt.x - w / 2, y1: pt.y - dotSize - h, x2: pt.x + w / 2, y2: pt.y - dotSize };
+                                        const collide = keptBoxes.some((k) => box.x1 < k.x2 && box.x2 > k.x1 && box.y1 < k.y2 && box.y2 > k.y1);
+                                        if (!collide) { keptBoxes.push(box); showChip = true; }
+                                    }
+
+                                    const chipHtml = showChip && chip
                                         ? `<div style="position:absolute;left:0;bottom:${dotSize}px;transform:translateX(-50%);background:#fff;border:1px solid rgba(0,0,0,0.08);border-radius:10px;padding:${chip.padV}px ${chip.padH}px;box-shadow:0 1px 3px rgba(0,0,0,0.16);white-space:nowrap;">
-                                                <span style="font-size:${chip.font}px;font-weight:700;color:#374151;max-width:${chip.maxw}px;display:inline-block;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;">${escapeHtml(place.name)}</span>
+                                                <span style="font-size:${chip.font}px;font-weight:700;color:#374151;max-width:${chip.maxw}px;display:inline-block;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;">${escapeHtml(label)}</span>
                                             </div>`
                                         : "";
                                     const marker = new window.naver.maps.Marker({
-                                        position: new window.naver.maps.LatLng(place.lat, place.lng),
+                                        position: new window.naver.maps.LatLng(p.lat, p.lng),
                                         map,
-                                        title: place.name,
+                                        title: label,
                                         icon: {
                                             content: `<div style="position:relative;width:0;height:0;cursor:pointer;">
                                                 <div style="position:absolute;left:0;top:0;transform:translate(-50%,-50%);width:${dotSize}px;height:${dotSize}px;background:#F5A623;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
@@ -134,7 +160,14 @@ export const useMapLogic = ({
                                             anchor: new window.naver.maps.Point(0, 0),
                                         },
                                     });
-                                    window.naver.maps.Event.addListener(marker, "click", () => router.push(`/places/${place.id}`));
+                                    window.naver.maps.Event.addListener(marker, "click", () => {
+                                        if (n > 1) {
+                                            // 같은 건물 여러 곳 → 하단 시트에서 선택(home-tab이 수신)
+                                            window.dispatchEvent(new CustomEvent("map:place-group", { detail: { places: members } }));
+                                        } else {
+                                            router.push(`/places/${p.id}`);
+                                        }
+                                    });
                                     nearbyMarkersRef.current.push(marker);
                                 });
                             })

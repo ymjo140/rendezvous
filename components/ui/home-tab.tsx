@@ -47,6 +47,14 @@ const AI_PERSONAS = [
 export function HomeTab() {
   const router = useRouter()
 
+  // 🏢 같은 건물 여러 가게 핀 탭 → 목록 시트 (use-map-logic이 dispatch)
+  const [buildingGroup, setBuildingGroup] = useState<any[] | null>(null)
+  useEffect(() => {
+    const h = (e: any) => setBuildingGroup(e?.detail?.places || null)
+    window.addEventListener("map:place-group", h)
+    return () => window.removeEventListener("map:place-group", h)
+  }, [])
+
   // State
   const [searchQuery, setSearchQuery] = useState("")
   const [myLocation, setMyLocation] = useState<{ lat: number, lng: number } | null>(null)
@@ -529,6 +537,38 @@ export function HomeTab() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 🏢 같은 건물 가게 목록 시트 */}
+      {buildingGroup && buildingGroup.length > 0 && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40" onClick={() => setBuildingGroup(null)}>
+          <div
+            className="w-full max-w-lg bg-white rounded-t-3xl p-5 pb-8 max-h-[70vh] overflow-y-auto font-['Pretendard']"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+            <h3 className="font-bold text-gray-900 mb-3">이 건물의 가게 {buildingGroup.length}곳</h3>
+            <div className="space-y-1.5">
+              {buildingGroup.map((p: any) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setBuildingGroup(null)
+                    router.push(`/places/${p.id}`)
+                  }}
+                  className="w-full flex items-center gap-3 text-left rounded-xl px-3 py-3 hover:bg-gray-50 transition-colors"
+                >
+                  <span className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-base flex-shrink-0">🍽️</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-bold text-gray-900 truncate">{p.name}</span>
+                    {p.category && <span className="block text-[11px] text-gray-400 truncate">{p.category}</span>}
+                  </span>
+                  <span className="text-gray-300">›</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   )
 }
