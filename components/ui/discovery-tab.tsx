@@ -181,6 +181,57 @@ function CuratorStrip() {
     );
 }
 
+// 인기 모임 — 채팅 모임(공개)이 큐레이션한 맛집. 팔로워·리스트좋아요로 랭크
+function GroupStrip() {
+    const router = useRouter();
+    const [items, setItems] = useState<any[]>([]);
+    useEffect(() => {
+        fetchWithAuth("/api/group-ranking?limit=8")
+            .then((r) => (r.ok ? r.json() : { items: [] }))
+            .then((d) => setItems(d.items || []))
+            .catch(() => {});
+    }, []);
+    if (items.length === 0) return null;
+    return (
+        <div className="p-4 border-b border-gray-100 bg-amber-50/40">
+            <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-base">👥</span>
+                    <span className="font-bold text-gray-800 text-sm">인기 모임</span>
+                    <span className="text-[11px] text-gray-400">· 동아리·모임 팔로우</span>
+                </div>
+                <button onClick={() => router.push("/groups")} className="text-[11px] font-medium text-amber-600 flex items-center gap-0.5">
+                    전체 <ChevronRight className="w-3 h-3" />
+                </button>
+            </div>
+            <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
+                {items.map((g) => (
+                    <div
+                        key={g.community_id}
+                        onClick={() => router.push(`/groups/${g.community_id}`)}
+                        className="flex-shrink-0 w-44 bg-white border border-amber-100 rounded-2xl p-3 cursor-pointer hover:shadow-sm transition-shadow"
+                    >
+                        <div className="flex items-center gap-2">
+                            <span className={`text-xs font-extrabold ${g.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{g.rank}위</span>
+                            <span className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-lg">{g.icon || "🍽️"}</span>
+                            <div className="min-w-0 flex-1">
+                                <div className="font-bold text-sm text-gray-900 truncate">{g.title}</div>
+                                <div className="text-[10px] text-gray-400">멤버 {g.member_count}</div>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2 text-[11px] text-gray-500">
+                            <span>팔로워 {g.follower_count}</span>
+                            <span className="inline-flex items-center gap-0.5 text-pink-500"><Heart className="w-3 h-3" />{g.like_count}</span>
+                            <span className="text-gray-300">·</span>
+                            <span>리스트 {g.list_count}</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 // 인기 맛집 리스트 랭킹 — 추천·댓글·팔로워로 랭크 상승(뿌듯함 루프)
 function ListRankingStrip() {
     const router = useRouter();
@@ -1531,8 +1582,9 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 </div>
             </div>
 
-            {/* 1.5 상단 고정: 실시간 급상승 + 인기 맛집 리스트 (큐레이터 추천은 그리드 중간에 끼움) */}
+            {/* 1.5 상단 고정: 급상승(음식점) → 인기 모임 → 인기 맛집 리스트 (큐레이터 추천은 그리드 중간) */}
             <TrendingStrip />
+            <GroupStrip />
             <ListRankingStrip />
 
             {/* 2. AI 맞춤 추천 섹션 */}

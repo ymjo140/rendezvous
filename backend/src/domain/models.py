@@ -208,7 +208,20 @@ class Community(Base):
     description = Column(String)
     tags = Column(JSON, default=[])
     member_ids = Column(JSON, default=[])
+    # 맛집 모임 공개 수준: private(우리끼리) | list_only(리스트만 공개) | public(모임 공개) | open(오픈채팅)
+    visibility = Column(String, default="private")
+    icon = Column(String, nullable=True)  # 모임 대표 이모지(탐색 노출용)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class CommunityFollow(Base):
+    """맛집 모임 팔로우 — 공개 모임을 팔로우(친구/유저 팔로우와 별개)."""
+    __tablename__ = "community_follows"
+    id = Column(Integer, primary_key=True, index=True)
+    follower_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    community_id = Column(String, ForeignKey("communities.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+    __table_args__ = (UniqueConstraint("follower_id", "community_id", name="uq_community_follow"),)
 
 # --- 기타 기능 (이벤트, 친구, 리뷰, 코인) ---
 class Event(Base):
@@ -467,6 +480,7 @@ class SaveFolder(Base):
     # 큐레이터 '맛집 리스트' 공개 — 공개 시 프로필에 노출되고 남들이 팔로우/열람
     is_public = Column(Boolean, default=False)
     description = Column(String, nullable=True)  # 리스트 소개 문구
+    community_id = Column(String, ForeignKey("communities.id"), nullable=True, index=True)  # 모임 소유 폴더(개인 폴더면 null)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
