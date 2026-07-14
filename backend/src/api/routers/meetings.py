@@ -319,13 +319,13 @@ def places_nearby(
     밀집 지역(뷰포트에 수천 곳)에서 임의 N개를 뽑으면 유명한 곳이 밀리므로,
     뷰포트를 12x12 격자로 나눠 셀당 1곳씩 우선 선발(md5 해시 = 팬/줌해도 같은 가게 유지)."""
     from sqlalchemy import text as _t
-    lim = min(max(limit, 1), 150)
+    lim = min(max(limit, 1), 400)
     sql = _t("""
         with cand as (
             select id, name, lat, lng,
                    coalesce(cuisine_type, category, main_category, '') as cat,
-                   floor((lat - :min_lat) / nullif(:max_lat - :min_lat, 0) * 12) as gy,
-                   floor((lng - :min_lng) / nullif(:max_lng - :min_lng, 0) * 12) as gx
+                   floor((lat - :min_lat) / nullif(:max_lat - :min_lat, 0) * 20) as gy,
+                   floor((lng - :min_lng) / nullif(:max_lng - :min_lng, 0) * 20) as gx
             from places
             where lat between :min_lat and :max_lat
               and lng between :min_lng and :max_lng

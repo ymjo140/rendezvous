@@ -96,11 +96,14 @@ export const useMapLogic = ({
                             nearbyMarkersRef.current.forEach((m: any) => m.setMap(null));
                             nearbyMarkersRef.current = [];
                         };
-                        if (map.getZoom() < 14) { clearNearby(); return; }  // 너무 넓으면 노이즈라 생략
+                        const zoom = map.getZoom();
+                        if (zoom < 14) { clearNearby(); return; }  // 너무 넓으면 노이즈라 생략
+                        // 확대할수록 더 많이(동네 수준이면 사실상 전부). 너무 많으면 렉+칩 떡칠이라 줌별 상한.
+                        const lim = zoom >= 18 ? 400 : zoom >= 17 ? 300 : zoom >= 16 ? 180 : 100;
                         const b = map.getBounds();
                         const sw = b.getMin ? b.getMin() : b.getSW();
                         const ne = b.getMax ? b.getMax() : b.getNE();
-                        const q = `min_lat=${sw.lat()}&max_lat=${ne.lat()}&min_lng=${sw.lng()}&max_lng=${ne.lng()}&limit=60`;
+                        const q = `min_lat=${sw.lat()}&max_lat=${ne.lat()}&min_lng=${sw.lng()}&max_lng=${ne.lng()}&limit=${lim}`;
                         fetchWithAuth(`/api/places/nearby?${q}`)
                             .then((r) => (r.ok ? r.json() : { items: [] }))
                             .then((d) => {
