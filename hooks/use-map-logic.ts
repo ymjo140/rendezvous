@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { placeApi } from "@/lib/place-api";
+import { fetchWithAuth } from "@/lib/api-client";
 
 type LatLng = { lat: number; lng: number };
 type ManualInput = { text: string; lat?: number; lng?: number };
@@ -35,8 +37,11 @@ export const useMapLogic = ({
     fallbackName = "Me",
     formatTravelTime = (minutes: number) => `~${minutes} min`
 }: UseMapLogicParams) => {
+    const router = useRouter();
     const mapRef = useRef<any>(null);
     const markersRef = useRef<any[]>([]);
+    const nearbyMarkersRef = useRef<any[]>([]);   // 지도 영역 내 가게 핀(클릭→상세)
+    const nearbyBoundRef = useRef(false);         // idle 리스너 중복 부착 방지
     const lootMarkersRef = useRef<any[]>([]);
     const friendMarkersRef = useRef<any[]>([]);
     const manualMarkersRef = useRef<any[]>([]);
@@ -71,6 +76,44 @@ export const useMapLogic = ({
                     zoom: 16
                 });
                 if (myLocation) centeredRef.current = true;
+
+                // 🗺️ 지도 영역 내 가게를 클릭 가능한 핀으로 (idle=이동/줌 멈추면 재조회 → 클릭 시 상세)
+                if (!nearbyBoundRef.current && window.naver?.maps?.Event) {
+                    nearbyBoundRef.current = true;
+                    window.naver.maps.Event.addListener(mapRef.current, "idle", () => {
+                        const map = mapRef.current;
+                        if (!map) return;
+                        const clearNearby = () => {
+                            nearbyMarkersRef.current.forEach((m: any) => m.setMap(null));
+                            nearbyMarkersRef.current = [];
+                        };
+                        if (map.getZoom() < 14) { clearNearby(); return; }  // 너무 넓으면 노이즈라 생략
+                        const b = map.getBounds();
+                        const sw = b.getMin ? b.getMin() : b.getSW();
+                        const ne = b.getMax ? b.getMax() : b.getNE();
+                        const q = `min_lat=${sw.lat()}&max_lat=${ne.lat()}&min_lng=${sw.lng()}&max_lng=${ne.lng()}&limit=60`;
+                        fetchWithAuth(`/api/places/nearby?${q}`)
+                            .then((r) => (r.ok ? r.json() : { items: [] }))
+                            .then((d) => {
+                                clearNearby();
+                                (d.items || []).forEach((place: any) => {
+                                    if (!place.id || !place.lat || !place.lng) return;
+                                    const marker = new window.naver.maps.Marker({
+                                        position: new window.naver.maps.LatLng(place.lat, place.lng),
+                                        map,
+                                        title: place.name,
+                                        icon: {
+                                            content: '<div style="width:11px;height:11px;background:#F5A623;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.35);cursor:pointer;"></div>',
+                                            anchor: new window.naver.maps.Point(7, 7),
+                                        },
+                                    });
+                                    window.naver.maps.Event.addListener(marker, "click", () => router.push(`/places/${place.id}`));
+                                    nearbyMarkersRef.current.push(marker);
+                                });
+                            })
+                            .catch(() => {});
+                    });
+                }
             } else if (myLocation && !centeredRef.current && !currentDisplayRegion) {
                 // 지도 생성 후 내 저장 위치(비동기 로드)가 도착하면 그 위치로 중심 이동(최초 1회).
                 // 검색 결과 표시 중일 땐 검색 위치가 우선이라 건드리지 않음.
@@ -102,6 +145,9 @@ export const useMapLogic = ({
                         map: mapRef.current,
                         title: place.name
                     });
+                    if (place.id) {
+                        window.naver.maps.Event.addListener(marker, "click", () => router.push(`/places/${place.id}`));
+                    }
                     markersRef.current.push(marker);
                 });
 

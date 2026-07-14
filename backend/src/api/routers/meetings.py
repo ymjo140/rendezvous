@@ -310,6 +310,37 @@ def get_place_tables(place_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/api/places/nearby")
+def places_nearby(
+    min_lat: float, max_lat: float, min_lng: float, max_lng: float,
+    limit: int = 60, db: Session = Depends(get_db),
+):
+    """지도 영역(bounds) 안의 가게들 — 지도 핀 클릭→상세용. {place_id} 라우트보다 위에 있어야 함."""
+    rows = (
+        db.query(models.Place)
+        .filter(
+            models.Place.lat >= min_lat, models.Place.lat <= max_lat,
+            models.Place.lng >= min_lng, models.Place.lng <= max_lng,
+        )
+        .limit(min(max(limit, 1), 120))
+        .all()
+    )
+    return {
+        "count": len(rows),
+        "items": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "lat": p.lat,
+                "lng": p.lng,
+                "category": p.cuisine_type or p.category or p.main_category or "",
+            }
+            for p in rows
+            if p.lat and p.lng
+        ],
+    }
+
+
 @router.get("/api/places/{place_id}")
 def get_place_detail(
     place_id: int,
