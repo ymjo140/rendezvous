@@ -47,6 +47,15 @@ def get_current_user(token: Optional[str] = Depends(oauth2_scheme), db: Session 
     return user
 
 
+def require_user(current_user=Depends(get_current_user)):
+    """로그인 필수 엔드포인트용 — 비로그인이면 500(NoneType.id) 대신 401.
+    get_current_user는 게스트 허용 엔드포인트(추천 등)를 위해 None 반환을 유지."""
+    if current_user is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    return current_user
+
+
 # 머천트(사장님 콘솔) 인증 — Supabase Auth(uuid) 기반.
 # B2C(get_current_user)는 FastAPI JWT라 머천트 토큰을 해독 못 함(인증 체계 분리).
 # 머천트 토큰은 Supabase /auth/v1/user 로 검증해 uuid를 얻는다(별도 시크릿 불필요).
