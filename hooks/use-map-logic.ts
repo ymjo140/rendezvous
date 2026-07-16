@@ -96,9 +96,15 @@ export const useMapLogic = ({
     };
 
     useEffect(() => {
-        const initMap = () => {
+        const initMap = (attempt: number = 0) => {
             if (typeof window.naver === "undefined" || !window.naver.maps) {
-                setTimeout(initMap, 100);
+                setTimeout(() => initMap(attempt + 1), 100);
+                return;
+            }
+            // GL 서브모듈(maps-gl.js)은 코어보다 늦게 로드됨 — 먼저 지도를 만들면
+            // 라스터(라벨 구워진 타일)로 폴백되므로 glEnabled까지 대기(최대 3초).
+            if (!(window.naver.maps as any).glEnabled && attempt < 30) {
+                setTimeout(() => initMap(attempt + 1), 100);
                 return;
             }
             const center = myLocation || { lat: 37.5665, lng: 126.9780 };
