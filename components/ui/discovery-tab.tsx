@@ -89,31 +89,31 @@ function TrendingStrip() {
     }, []);
     if (items.length === 0) return null;
     const move = (m: any) => {
-        if (m?.type === "new") return <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">NEW</span>;
-        if (m?.type === "up") return <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-green-600"><ArrowUp className="w-3 h-3" />{m.delta}</span>;
-        if (m?.type === "down") return <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-gray-400"><ArrowDown className="w-3 h-3" />{m.delta}</span>;
-        return <span className="text-[11px] text-gray-300">–</span>;
+        if (m?.type === "new") return <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-1 py-0.5 rounded">NEW</span>;
+        if (m?.type === "up") return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-green-600"><ArrowUp className="w-2.5 h-2.5" />{m.delta}</span>;
+        if (m?.type === "down") return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-gray-400"><ArrowDown className="w-2.5 h-2.5" />{m.delta}</span>;
+        return <span className="text-[10px] text-gray-300">–</span>;
     };
     return (
-        <div className="p-4 border-b border-gray-100">
-            <div className="flex items-center gap-1.5 mb-2.5">
-                <Flame className="w-4 h-4 text-orange-500" />
-                <span className="font-bold text-gray-800 text-sm">실시간 급상승</span>
-                <span className="text-[11px] text-gray-400">· 최근 7일</span>
+        <div className="px-3 pt-2 pb-1.5 border-b border-gray-100">
+            <div className="flex items-center gap-1 mb-1.5">
+                <Flame className="w-3.5 h-3.5 text-orange-500" />
+                <span className="font-bold text-gray-800 text-xs">실시간 급상승</span>
+                <span className="text-[10px] text-gray-400">· 최근 7일</span>
             </div>
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
                 {items.map((it) => (
                     <div
                         key={it.place_id}
                         onClick={() => it.place_id && router.push(`/places/${it.place_id}`)}
-                        className="flex-shrink-0 w-32 bg-gray-50 rounded-xl p-2.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                        className="flex-shrink-0 w-28 bg-gray-50 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-gray-100 transition-colors"
                     >
-                        <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-bold text-amber-600">{it.rank}위</span>
+                        <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-amber-600">{it.rank}위</span>
                             {move(it.move)}
                         </div>
-                        <div className="text-xs font-bold text-gray-800 truncate">{it.name}</div>
-                        <div className="text-[11px] text-gray-400 mt-0.5">{it.signal}</div>
+                        <div className="text-[11px] font-bold text-gray-800 truncate">{it.name}</div>
+                        <div className="text-[10px] text-gray-400 truncate">{it.signal}</div>
                     </div>
                 ))}
             </div>
@@ -193,37 +193,31 @@ function GroupStrip() {
     }, []);
     if (items.length === 0) return null;
     return (
-        <div className="p-4 border-b border-gray-100 bg-amber-50/40">
-            <div className="flex items-center justify-between mb-2.5">
-                <div className="flex items-center gap-1.5">
-                    <span className="text-base">👥</span>
-                    <span className="font-bold text-gray-800 text-sm">인기 모임</span>
-                    <span className="text-[11px] text-gray-400">· 동아리·모임 팔로우</span>
+        <div className="px-3 pt-2 pb-1.5 border-b border-gray-100 bg-amber-50/40">
+            <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-1">
+                    <span className="text-sm">👥</span>
+                    <span className="font-bold text-gray-800 text-xs">인기 모임</span>
+                    <span className="text-[10px] text-gray-400">· 동아리·모임 팔로우</span>
                 </div>
-                <button onClick={() => router.push("/groups")} className="text-[11px] font-medium text-amber-600 flex items-center gap-0.5">
+                <button onClick={() => router.push("/groups")} className="text-[10px] font-medium text-amber-600 flex items-center gap-0.5">
                     전체 <ChevronRight className="w-3 h-3" />
                 </button>
             </div>
-            <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
+            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
                 {items.map((g) => (
                     <div
                         key={g.community_id}
                         onClick={() => router.push(`/groups/${g.community_id}`)}
-                        className="flex-shrink-0 w-44 bg-white border border-amber-100 rounded-2xl p-3 cursor-pointer hover:shadow-sm transition-shadow"
+                        className="flex-shrink-0 w-40 bg-white border border-amber-100 rounded-lg px-2 py-1.5 cursor-pointer hover:shadow-sm transition-shadow"
                     >
-                        <div className="flex items-center gap-2">
-                            <span className={`text-xs font-extrabold ${g.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{g.rank}위</span>
-                            <span className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-lg">{g.icon || "🍽️"}</span>
+                        <div className="flex items-center gap-1.5">
+                            <span className={`text-[10px] font-extrabold ${g.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{g.rank}위</span>
+                            <span className="w-6 h-6 rounded-md bg-amber-100 flex items-center justify-center text-sm flex-shrink-0">{g.icon || "🍽️"}</span>
                             <div className="min-w-0 flex-1">
-                                <div className="font-bold text-sm text-gray-900 truncate">{g.title}</div>
-                                <div className="text-[10px] text-gray-400">멤버 {g.member_count}</div>
+                                <div className="font-bold text-[11px] text-gray-900 truncate">{g.title}</div>
+                                <div className="text-[9px] text-gray-400 truncate">멤버 {g.member_count} · 팔로워 {g.follower_count} · ♥{g.like_count} · 리스트 {g.list_count}</div>
                             </div>
-                        </div>
-                        <div className="flex items-center gap-2 mt-2 text-[11px] text-gray-500">
-                            <span>팔로워 {g.follower_count}</span>
-                            <span className="inline-flex items-center gap-0.5 text-pink-500"><Heart className="w-3 h-3" />{g.like_count}</span>
-                            <span className="text-gray-300">·</span>
-                            <span>리스트 {g.list_count}</span>
                         </div>
                     </div>
                 ))}
@@ -244,30 +238,28 @@ function ListRankingStrip() {
     }, []);
     if (items.length === 0) return null;
     return (
-        <div className="p-4 border-b border-gray-100">
-            <div className="flex items-center gap-1.5 mb-2.5">
-                <span className="text-base">🏆</span>
-                <span className="font-bold text-gray-800 text-sm">인기 맛집 리스트</span>
-                <span className="text-[11px] text-gray-400">· 추천 랭킹</span>
+        <div className="px-3 pt-2 pb-1.5 border-b border-gray-100">
+            <div className="flex items-center gap-1 mb-1.5">
+                <span className="text-sm">🏆</span>
+                <span className="font-bold text-gray-800 text-xs">인기 맛집 리스트</span>
+                <span className="text-[10px] text-gray-400">· 추천 랭킹</span>
             </div>
-            <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
+            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
                 {items.map((l) => (
                     <div
                         key={l.folder_id}
                         onClick={() => router.push(`/lists/${l.folder_id}`)}
-                        className="flex-shrink-0 w-44 bg-white border border-gray-100 rounded-2xl p-3 cursor-pointer hover:shadow-sm transition-shadow"
+                        className="flex-shrink-0 w-40 bg-white border border-gray-100 rounded-lg px-2 py-1.5 cursor-pointer hover:shadow-sm transition-shadow"
                     >
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                            <span className={`text-xs font-extrabold ${l.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{l.rank}위</span>
-                            <span className="text-lg">{l.icon || "📁"}</span>
-                        </div>
-                        <div className="font-bold text-sm text-gray-900 truncate">{l.name}</div>
-                        {l.curator && <div className="text-[11px] text-gray-400 truncate mt-0.5">by {l.curator.name}</div>}
-                        <div className="flex items-center gap-2 mt-1.5 text-[11px] text-gray-500">
-                            <span className="inline-flex items-center gap-0.5"><Heart className="w-3 h-3 text-pink-400" />{l.like_count}</span>
-                            <span className="inline-flex items-center gap-0.5"><MessageCircle className="w-3 h-3 text-gray-300" />{l.comment_count}</span>
-                            <span className="text-gray-300">·</span>
-                            <span>{l.item_count}곳</span>
+                        <div className="flex items-center gap-1.5">
+                            <span className={`text-[10px] font-extrabold ${l.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{l.rank}위</span>
+                            <span className="text-sm flex-shrink-0">{l.icon || "📁"}</span>
+                            <div className="min-w-0 flex-1">
+                                <div className="font-bold text-[11px] text-gray-900 truncate">{l.name}</div>
+                                <div className="text-[9px] text-gray-400 truncate">
+                                    {l.curator ? `by ${l.curator.name} · ` : ""}♥{l.like_count} · 💬{l.comment_count} · {l.item_count}곳
+                                </div>
+                            </div>
                         </div>
                     </div>
                 ))}
@@ -1581,11 +1573,6 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                 </div>
             </div>
 
-            {/* 1.5 상단 고정: 급상승(음식점) → 인기 모임 → 인기 맛집 리스트 (큐레이터 추천은 그리드 중간) */}
-            <TrendingStrip />
-            <GroupStrip />
-            <ListRankingStrip />
-
             {/* AI 맞춤 추천 섹션 제거됨 — 장소 추천(장소 상세)에서 제공하므로 탐색 탭에선 뺌 */}
 
             {/* 2-1. 장소 검색 결과 (검색바 입력 시) */}
@@ -1620,6 +1607,10 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
 
             {/* 3. 게시물 — 그리드(인스타 탐색) ↔ 피드(인스타 홈) */}
             <div className="flex-1 overflow-y-auto bg-white">
+                {/* 급상승/인기 모임/인기 리스트 — 스크롤과 함께 지나가는 컴팩트 스트립 */}
+                <TrendingStrip />
+                <GroupStrip />
+                <ListRankingStrip />
                 {isLoading && (
                     <div className="py-16 text-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-4 border-amber-500 border-t-transparent mx-auto mb-3"></div>
