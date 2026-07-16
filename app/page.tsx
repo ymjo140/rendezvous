@@ -33,6 +33,23 @@ export default function Page() {
     setIsLoggedIn(!!token)
     const saved = sessionStorage.getItem("activeTab")
     if (saved && (saved === "home" || token)) setActiveTab(saved)
+    // 📱 앱(Capacitor)이면 푸시 등록 — 브라우저에선 no-op
+    if (token) {
+      import("@/lib/push").then((m) => m.initPushNotifications()).catch(() => {})
+    }
+  }, [])
+
+  // 🔔 푸시 알림 탭 → 해당 채팅방 열기
+  useEffect(() => {
+    const onPushOpenRoom = (e: any) => {
+      const roomId = e?.detail?.roomId
+      if (roomId) {
+        setOpenRoomId(String(roomId))
+        setActiveTab("chat")
+      }
+    }
+    window.addEventListener("push:openRoom" as any, onPushOpenRoom)
+    return () => window.removeEventListener("push:openRoom" as any, onPushOpenRoom)
   }, [])
 
   // 현재 탭 저장 — 장소/모임/리스트 상세에서 뒤로가기로 돌아왔을 때 복원용

@@ -152,6 +152,29 @@ async def send_message_api(req: dict, db: Session = Depends(get_db), current_use
         "timestamp": datetime.now().strftime("%H:%M")
     }
     await manager.broadcast(msg_data, room_id)
+
+    # 🔔 푸시: 방 멤버(발신자 제외)에게 — FCM 미설정이면 no-op
+    try:
+        from services import push_service
+        if push_service.push_enabled():
+            member_ids = [m.user_id for m in db.query(models.ChatRoomMember).filter(
+                models.ChatRoomMember.room_id == room_id).all()]
+            room = db.query(models.ChatRoom).filter(models.ChatRoom.id == room_id).first()
+            if isinstance(payload, dict) and payload.get("type"):
+                body_map = {"image": "📷 사진", "video": "🎬 동영상", "settlement": "💸 정산 요청", "shared_items": "📍 장소 공유"}
+                body = body_map.get(payload.get("type"), "새 메시지")
+            else:
+                body = str(content or "")[:80]
+            push_service.notify_users_async(
+                member_ids,
+                (room.title if room else "랑데부").replace("[모임] ", ""),
+                f"{current_user.name}: {body}",
+                {"room_id": str(room_id)},
+                exclude_user_id=current_user.id,
+            )
+    except Exception as _e:
+        print(f"[Push] chat hook skip: {_e}")
+
     return {"status": "ok"}
 
 # --- 4. 기타 API ---

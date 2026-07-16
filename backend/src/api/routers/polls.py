@@ -138,6 +138,25 @@ async def create_poll(
         },
         room_id,
     )
+
+    # 🔔 푸시: 멤버들에게 투표 시작 알림
+    try:
+        from services import push_service
+        if push_service.push_enabled():
+            member_ids = [m.user_id for m in db.query(models.ChatRoomMember).filter(
+                models.ChatRoomMember.room_id == room_id).all()]
+            room = db.query(models.ChatRoom).filter(models.ChatRoom.id == room_id).first()
+            what = "장소" if kind == "place" else "일정"
+            push_service.notify_users_async(
+                member_ids,
+                (room.title if room else "랑데부").replace("[모임] ", ""),
+                f"🗳️ {current_user.name}님이 {what} 투표를 올렸어요 — 후보를 담고 투표해보세요!",
+                {"room_id": str(room_id), "poll_id": str(poll.id)},
+                exclude_user_id=current_user.id,
+            )
+    except Exception as _e:
+        print(f"[Push] poll hook skip: {_e}")
+
     return _serialize_poll(db, poll, current_user.id)
 
 
@@ -400,4 +419,23 @@ async def confirm_poll(
         },
         poll.room_id,
     )
+
+    # 🔔 푸시: 확정 알림
+    try:
+        from services import push_service
+        if push_service.push_enabled():
+            member_ids = [m.user_id for m in db.query(models.ChatRoomMember).filter(
+                models.ChatRoomMember.room_id == poll.room_id).all()]
+            room = db.query(models.ChatRoom).filter(models.ChatRoom.id == poll.room_id).first()
+            emoji = "📍" if poll.kind == "place" else "📅"
+            push_service.notify_users_async(
+                member_ids,
+                (room.title if room else "랑데부").replace("[모임] ", ""),
+                f"{emoji} '{opt.label}'(으)로 확정됐어요!",
+                {"room_id": str(poll.room_id), "poll_id": str(poll.id)},
+                exclude_user_id=current_user.id,
+            )
+    except Exception as _e:
+        print(f"[Push] confirm hook skip: {_e}")
+
     return _serialize_poll(db, poll, current_user.id)

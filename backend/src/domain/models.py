@@ -214,6 +214,17 @@ class Community(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class UserPushToken(Base):
+    """FCM 디바이스 토큰 — 유저당 여러 기기 가능, 토큰은 전역 유니크."""
+    __tablename__ = "user_push_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token = Column(String, nullable=False, unique=True)
+    platform = Column(String, default="android")
+    created_at = Column(DateTime, default=datetime.now)
+    last_seen_at = Column(DateTime, default=datetime.now)
+
+
 class ChatPoll(Base):
     """채팅방 투표 카드 — 장소/일정 조율. 만든 사람만 확정 가능."""
     __tablename__ = "chat_polls"

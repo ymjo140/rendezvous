@@ -26,6 +26,10 @@ except Exception as _e:
 
 app = fastapi.FastAPI()
 
+# 🚧 레이트 리밋 — 로그인/가입/충전 분당 10회, 전체 API 분당 300회(IP 기준)
+from core.rate_limit import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware)
+
 # --- CORS ?ㅼ젙 ---
 # 배포 도메인이 바뀌어도 안 깨지게: vercel/onrender/cloudflare 하위도메인 전부 허용 + 로컬
 origins = [
@@ -59,7 +63,7 @@ async def root():
 #     print("?좑툘 Events ?쇱슦???놁쓬")
 
 # 2. Routers ?대뜑 ?곌껐
-from api.routers import sync, auth, users, coins, meetings, community, chat, posts, system, offers, merchant, hotdeals, reservations, game, moderation, admin, feedback, social, groups, polls
+from api.routers import sync, auth, users, coins, meetings, community, chat, posts, system, offers, merchant, hotdeals, reservations, game, moderation, admin, feedback, social, groups, polls, push
 
 # ??[?섏젙] ?뚯씪 ?덉뿉 ?대? '/api/...' 寃쎈줈媛 ?덈뒗 ?좊뱾? prefix瑜?類띾땲??
 app.include_router(auth.router, tags=["auth"])
@@ -72,6 +76,7 @@ app.include_router(admin.router, tags=["admin"])
 app.include_router(feedback.router, tags=["feedback"])
 app.include_router(chat.router, tags=["chat"])
 app.include_router(polls.router, tags=["polls"])  # 채팅방 투표 카드(장소/일정 조율)
+app.include_router(push.router, tags=["push"])  # FCM 푸시 토큰 등록
 # ?뙚 以묒슂: ?댁젣 meetings.py媛 '/api/events' ?붿껌??泥섎━?섍쾶 ?⑸땲??
 app.include_router(meetings.router, tags=["meetings"]) 
 app.include_router(community.router, tags=["community"])
