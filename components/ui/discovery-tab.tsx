@@ -7,7 +7,7 @@ import {
     MoreHorizontal, Utensils, X, Phone, Clock, ChevronRight, Plus,
     Image as ImageIcon, Camera, Send, Bookmark, Grid3X3, Play, Wand2,
     FolderPlus, Check, MessageSquare, Users, ShoppingBag, Trash2, Square, Video,
-    Flame, ArrowUp, ArrowDown, BadgeCheck, UserPlus, UserCheck
+    Flame, BadgeCheck, UserPlus, UserCheck
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -63,13 +63,8 @@ const DISCOVERY_FILTERS: { key: string; label: string; reels?: boolean }[] = [
     { key: "dessert", label: "디저트" },
 ]
 
-// 인스타그램 탐색탭 그리드 사이즈 패턴 (큰 이미지와 작은 이미지 믹스)
-const getGridClass = (index: number) => {
-    const pattern = index % 10;
-    // 0번째와 5번째는 큰 이미지 (2x2)
-    if (pattern === 0) return "col-span-2 row-span-2";
-    return "col-span-1 row-span-1";
-};
+// 그리드 타일 — 전부 균일 1x1 (2x2 믹스 패턴 제거)
+const getGridClass = (_index: number) => "col-span-1 row-span-1";
 
 // Props 타입 정의
 interface DiscoveryTabProps {
@@ -88,33 +83,22 @@ function TrendingStrip() {
             .catch(() => {});
     }, []);
     if (items.length === 0) return null;
-    const move = (m: any) => {
-        if (m?.type === "new") return <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-1 py-0.5 rounded">NEW</span>;
-        if (m?.type === "up") return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-green-600"><ArrowUp className="w-2.5 h-2.5" />{m.delta}</span>;
-        if (m?.type === "down") return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-gray-400"><ArrowDown className="w-2.5 h-2.5" />{m.delta}</span>;
-        return <span className="text-[10px] text-gray-300">–</span>;
-    };
     return (
-        <div className="px-3 pt-2 pb-1.5 border-b border-gray-100">
-            <div className="flex items-center gap-1 mb-1.5">
-                <Flame className="w-3.5 h-3.5 text-orange-500" />
-                <span className="font-bold text-gray-800 text-xs">실시간 급상승</span>
-                <span className="text-[10px] text-gray-400">· 최근 7일</span>
+        <div className="px-3 py-1.5 border-b border-gray-100">
+            <div className="flex items-center gap-1 mb-1">
+                <Flame className="w-3 h-3 text-orange-500" />
+                <span className="font-bold text-gray-800 text-[11px]">실시간 급상승</span>
             </div>
-            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
+            <div className="flex gap-1 overflow-x-auto scrollbar-hide">
                 {items.map((it) => (
-                    <div
+                    <button
                         key={it.place_id}
                         onClick={() => it.place_id && router.push(`/places/${it.place_id}`)}
-                        className="flex-shrink-0 w-28 bg-gray-50 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                        className="flex-shrink-0 flex items-center gap-1 bg-gray-50 hover:bg-gray-100 rounded-full px-2 py-1 transition-colors"
                     >
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-amber-600">{it.rank}위</span>
-                            {move(it.move)}
-                        </div>
-                        <div className="text-[11px] font-bold text-gray-800 truncate">{it.name}</div>
-                        <div className="text-[10px] text-gray-400 truncate">{it.signal}</div>
-                    </div>
+                        <span className="text-[10px] font-extrabold text-amber-600">{it.rank}</span>
+                        <span className="text-[11px] font-bold text-gray-800 truncate max-w-[96px]">{it.name}</span>
+                    </button>
                 ))}
             </div>
         </div>
@@ -193,33 +177,26 @@ function GroupStrip() {
     }, []);
     if (items.length === 0) return null;
     return (
-        <div className="px-3 pt-2 pb-1.5 border-b border-gray-100 bg-amber-50/40">
-            <div className="flex items-center justify-between mb-1.5">
+        <div className="px-3 py-1.5 border-b border-gray-100 bg-amber-50/40">
+            <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-1">
-                    <span className="text-sm">👥</span>
-                    <span className="font-bold text-gray-800 text-xs">인기 모임</span>
-                    <span className="text-[10px] text-gray-400">· 동아리·모임 팔로우</span>
+                    <span className="text-[11px]">👥</span>
+                    <span className="font-bold text-gray-800 text-[11px]">인기 모임</span>
                 </div>
-                <button onClick={() => router.push("/groups")} className="text-[10px] font-medium text-amber-600 flex items-center gap-0.5">
+                <button onClick={() => router.push("/groups")} className="text-[10px] font-medium text-amber-600 flex items-center">
                     전체 <ChevronRight className="w-3 h-3" />
                 </button>
             </div>
-            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
+            <div className="flex gap-1 overflow-x-auto scrollbar-hide">
                 {items.map((g) => (
-                    <div
+                    <button
                         key={g.community_id}
                         onClick={() => router.push(`/groups/${g.community_id}`)}
-                        className="flex-shrink-0 w-40 bg-white border border-amber-100 rounded-lg px-2 py-1.5 cursor-pointer hover:shadow-sm transition-shadow"
+                        className="flex-shrink-0 flex items-center gap-1 bg-white border border-amber-100 rounded-full px-2 py-1 transition-colors hover:bg-amber-50"
                     >
-                        <div className="flex items-center gap-1.5">
-                            <span className={`text-[10px] font-extrabold ${g.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{g.rank}위</span>
-                            <span className="w-6 h-6 rounded-md bg-amber-100 flex items-center justify-center text-sm flex-shrink-0">{g.icon || "🍽️"}</span>
-                            <div className="min-w-0 flex-1">
-                                <div className="font-bold text-[11px] text-gray-900 truncate">{g.title}</div>
-                                <div className="text-[9px] text-gray-400 truncate">멤버 {g.member_count} · 팔로워 {g.follower_count} · ♥{g.like_count} · 리스트 {g.list_count}</div>
-                            </div>
-                        </div>
-                    </div>
+                        <span className={`text-[10px] font-extrabold ${g.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{g.rank}</span>
+                        <span className="text-[11px] font-bold text-gray-800 truncate max-w-[96px]">{g.title}</span>
+                    </button>
                 ))}
             </div>
         </div>
@@ -238,30 +215,21 @@ function ListRankingStrip() {
     }, []);
     if (items.length === 0) return null;
     return (
-        <div className="px-3 pt-2 pb-1.5 border-b border-gray-100">
-            <div className="flex items-center gap-1 mb-1.5">
-                <span className="text-sm">🏆</span>
-                <span className="font-bold text-gray-800 text-xs">인기 맛집 리스트</span>
-                <span className="text-[10px] text-gray-400">· 추천 랭킹</span>
+        <div className="px-3 py-1.5 border-b border-gray-100">
+            <div className="flex items-center gap-1 mb-1">
+                <span className="text-[11px]">🏆</span>
+                <span className="font-bold text-gray-800 text-[11px]">인기 맛집 리스트</span>
             </div>
-            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
+            <div className="flex gap-1 overflow-x-auto scrollbar-hide">
                 {items.map((l) => (
-                    <div
+                    <button
                         key={l.folder_id}
                         onClick={() => router.push(`/lists/${l.folder_id}`)}
-                        className="flex-shrink-0 w-40 bg-white border border-gray-100 rounded-lg px-2 py-1.5 cursor-pointer hover:shadow-sm transition-shadow"
+                        className="flex-shrink-0 flex items-center gap-1 bg-gray-50 hover:bg-gray-100 rounded-full px-2 py-1 transition-colors"
                     >
-                        <div className="flex items-center gap-1.5">
-                            <span className={`text-[10px] font-extrabold ${l.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{l.rank}위</span>
-                            <span className="text-sm flex-shrink-0">{l.icon || "📁"}</span>
-                            <div className="min-w-0 flex-1">
-                                <div className="font-bold text-[11px] text-gray-900 truncate">{l.name}</div>
-                                <div className="text-[9px] text-gray-400 truncate">
-                                    {l.curator ? `by ${l.curator.name} · ` : ""}♥{l.like_count} · 💬{l.comment_count} · {l.item_count}곳
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                        <span className={`text-[10px] font-extrabold ${l.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{l.rank}</span>
+                        <span className="text-[11px] font-bold text-gray-800 truncate max-w-[96px]">{l.name}</span>
+                    </button>
                 ))}
             </div>
         </div>
