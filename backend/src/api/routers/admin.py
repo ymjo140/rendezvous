@@ -35,6 +35,96 @@ def admin_me(admin: models.User = Depends(require_admin)):
     return {"is_admin": True, "id": admin.id, "name": admin.name}
 
 
+@router.get("/api/admin/metrics")
+def metrics(
+    days: int = 14,
+    admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """운영 지표 — QA/초기 운영용. KST 기준 일별 DAU + 기능별 사용량.
+    DAU = action_logs ∪ user_interaction_logs ∪ messages ∪ user_reservations의 distinct user."""
+    from sqlalchemy import text as _t
+    from datetime import date, timedelta, datetime, timezone
+
+    days = max(1, min(days, 60))
+    KST = timezone(timedelta(hours=9))
+    today_kst = datetime.now(KST).date()
+
+    def scalar(sql, **p):
+        try:
+            return int(db.execute(_t(sql), p).scalar() or 0)
+        except Exception as e:
+            print(f"[metrics] {e}")
+            return 0
+
+    totals = {
+        "total_users": scalar("select count(*) from users"),
+        "push_devices": scalar("select count(*) from user_push_tokens"),
+        "active_today": scalar("select count(*) from users where last_activity_date = :d", d=today_kst.isoformat()),
+        "active_7d": scalar("select count(*) from users where last_activity_date >= :d", d=(today_kst - timedelta(days=6)).isoformat()),
+        "active_30d": scalar("select count(*) from users where last_activity_date >= :d", d=(today_kst - timedelta(days=29)).isoformat()),
+        "reservations_total": scalar("select count(*) from user_reservations"),
+        "polls_total": scalar("select count(*) from chat_polls"),
+        "polls_confirmed": scalar("select count(*) from chat_polls where status = 'confirmed'"),
+        "messages_total": scalar("select count(*) from messages"),
+        "posts_total": scalar("select count(*) from posts"),
+        "reviews_total": scalar("select count(*) from reviews"),
+        "revisit_feedback": scalar("select count(*) from place_visit_feedback"),
+        "friendships": scalar("select count(*) from friendships where status = 'accepted'"),
+    }
+
+    # 일별 DAU (여러 이벤트 소스 union, KST 날짜)
+    daily = {}
+    try:
+        rows = db.execute(_t("""
+            select d, count(distinct uid) from (
+                select user_id as uid, (created_at + interval '9 hours')::date as d
+                  from action_logs where user_id is not null and created_at > now() - (:days || ' days')::interval
+                union all
+                select user_id, (created_at + interval '9 hours')::date
+                  from user_interaction_logs where created_at > now() - (:days || ' days')::interval
+                union all
+                select user_id, (timestamp + interval '9 hours')::date
+                  from messages where user_id is not null and timestamp > now() - (:days || ' days')::interval
+                union all
+                select user_id, (created_at + interval '9 hours')::date
+                  from user_reservations where created_at > now() - (:days || ' days')::interval
+            ) t group by d order by d
+        """), {"days": str(days)}).fetchall()
+        daily = {str(r[0]): int(r[1]) for r in rows}
+    except Exception as e:
+        print(f"[metrics] dau: {e}")
+
+    def daily_count(table, ts_col):
+        try:
+            rows = db.execute(_t(f"""
+                select ({ts_col} + interval '9 hours')::date as d, count(*)
+                from {table} where {ts_col} > now() - (:days || ' days')::interval
+                group by d order by d
+            """), {"days": str(days)}).fetchall()
+            return {str(r[0]): int(r[1]) for r in rows}
+        except Exception as e:
+            print(f"[metrics] {table}: {e}")
+            return {}
+
+    msg_daily = daily_count("messages", "timestamp")
+    res_daily = daily_count("user_reservations", "created_at")
+    poll_daily = daily_count("chat_polls", "created_at")
+
+    series = []
+    for i in range(days - 1, -1, -1):
+        d = (today_kst - timedelta(days=i)).isoformat()
+        series.append({
+            "date": d,
+            "dau": daily.get(d, 0),
+            "messages": msg_daily.get(d, 0),
+            "reservations": res_daily.get(d, 0),
+            "polls": poll_daily.get(d, 0),
+        })
+
+    return {"totals": totals, "series": series}
+
+
 @router.get("/api/admin/reports")
 def list_reports(
     status: str = "pending",
