@@ -510,6 +510,7 @@ def recommend_my_meetings(
     lat: Optional[float] = Query(None),
     lng: Optional[float] = Query(None),
     area: Optional[str] = Query(None),
+    per_room: int = Query(3, ge=1, le=20),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -524,6 +525,7 @@ def recommend_my_meetings(
         current_user.id,
         None if lat is None else round(lat, 3),
         None if lng is None else round(lng, 3),
+        per_room,
     )
     hit = _MY_MEETINGS_CACHE.get(cache_key)
     if hit and hit[0] > _time.time():
@@ -554,6 +556,7 @@ def recommend_my_meetings(
             current_lat=anchor_lat,
             current_lng=anchor_lng,
             users=extra_users,
+            top_k=max(15, per_room),
         )
         try:
             regions = meeting_service.get_recommendations_direct(db, req, user_id=current_user.id)
@@ -562,7 +565,7 @@ def recommend_my_meetings(
             continue
         places = (regions[0].get("places") if regions else []) or []
         room_name = (comm.title or "모임").replace("[모임] ", "").strip()
-        for p in places[:3]:
+        for p in places[:per_room]:
             reason = p.get("reason", "") or ""
             # 지역 앵커면 '중간지점 근처' 대신 그 지역명으로 (예: "강남 근처 · ...")
             if lat is not None and lng is not None:

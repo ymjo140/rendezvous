@@ -353,6 +353,12 @@ export function PlacePicksTab() {
             <Sparkles className="w-4 h-4 text-[#F5A623]" />
             <h3 className="text-sm font-bold text-gray-800">내 취향 추천</h3>
             <span className="text-[10px] font-bold text-[#D97706]">· {areaLabel}</span>
+            <button
+              onClick={() => router.push(`/picks?tab=taste${anchor ? `&lat=${anchor.lat}&lng=${anchor.lng}&area=${encodeURIComponent(anchor.name)}` : ""}`)}
+              className="ml-auto text-[11px] font-bold text-amber-600"
+            >
+              전체 ›
+            </button>
           </div>
           {recsLoading ? (
             <div className="space-y-2">
@@ -395,6 +401,12 @@ export function PlacePicksTab() {
               <Users className="w-4 h-4 text-[#14B8A6]" />
               <h3 className="text-sm font-bold text-gray-800">내 모임 추천</h3>
               <span className="text-[10px] font-bold text-[#D97706]">· {areaLabel}</span>
+              <button
+                onClick={() => router.push(`/picks?tab=meetings${anchor ? `&lat=${anchor.lat}&lng=${anchor.lng}&area=${encodeURIComponent(anchor.name)}` : ""}`)}
+                className="ml-auto text-[11px] font-bold text-amber-600"
+              >
+                전체 ›
+              </button>
             </div>
             {meetingRecsLoading ? (
               <div className="space-y-2">
@@ -430,6 +442,12 @@ export function PlacePicksTab() {
             <Flame className="w-4 h-4 text-rose-500" />
             <h3 className="text-sm font-bold text-gray-800">오늘의 핫딜</h3>
             <span className="text-[10px] font-bold text-[#D97706]">· {areaLabel}</span>
+            <button
+              onClick={() => router.push(`/picks?tab=hotdeals${anchor ? `&lat=${anchor.lat}&lng=${anchor.lng}&area=${encodeURIComponent(anchor.name)}` : ""}`)}
+              className="ml-auto text-[11px] font-bold text-amber-600"
+            >
+              전체 ›
+            </button>
           </div>
           {dealsLoading ? (
             <div className="space-y-2">

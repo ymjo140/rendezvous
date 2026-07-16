@@ -320,6 +320,11 @@ class MeetingService:
         results = []
         raw_prefs = req.user_selected_tags or []
         purpose = (req.purpose or "").strip()
+        # 반환 개수 — 기본 15, 전체 보기는 최대 60
+        try:
+            top_k = max(1, min(int(getattr(req, "top_k", 15) or 15), 60))
+        except Exception:
+            top_k = 15
 
         # 로그인 유저의 개인 취향 벡터(있으면 후보를 코사인 유사도로 재랭킹)
         # 장기취향(preference) 0.7 + 최근관심(recent) 0.3 블렌드 → '요즘 끌리는' 반영
@@ -439,14 +444,18 @@ class MeetingService:
             if facility_clauses:
                 filter_sql = f"({filter_sql}) AND " + " AND ".join(facility_clauses)
 
+            # 전체 보기(top_k>15)면 후보도 넉넉히
+            cand_limit = max(30, top_k * 2)
+            params["cand_limit"] = cand_limit
             db_query = text(f"""
                 SELECT id, name, category, lat, lng, address, tags, wemeet_rating,
-                       (vacancy_until IS NOT NULL AND vacancy_until > NOW()) AS vacancy_now
+                       (vacancy_until IS NOT NULL AND vacancy_until > NOW()) AS vacancy_now,
+                       review_count, price_range
                 FROM places
                 WHERE (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) <= 2.0
                 AND ({filter_sql})
                 ORDER BY wemeet_rating DESC
-                LIMIT 30
+                LIMIT :cand_limit
             """)
 
             try:
@@ -471,6 +480,8 @@ class MeetingService:
                     avg_rating=float(row[7] or 0.0), address=row[5]
                 )
                 poi.vacancy_now = bool(row[8])  # 🔴 지금 빈자리(사장님 신호, TTL)
+                poi.review_count = int(row[9] or 0)   # 정렬용(전체 보기)
+                poi.price_range = row[10]             # 정렬용(전체 보기)
                 place_candidates.append(poi)
 
             if search_queries and len(place_candidates) < 5:
@@ -501,18 +512,37 @@ class MeetingService:
             if place_candidates:
                 if is_group:
                     # 그룹 취향 합성 재랭킹(least-misery) — 모임 전체 만족 우선
-                    ranked_pairs = self._group_rerank(db, place_candidates, member_vecs, user_prefs, top_k=15)
+                    ranked_pairs = self._group_rerank(db, place_candidates, member_vecs, user_prefs, top_k=top_k)
                     # 유사 취향 그룹의 사회적 증거(비슷한 사람들이 좋아한 곳)
                     cand_ids = [p.id for p, _ in ranked_pairs if getattr(p, "id", 0)]
                     social_proof = self._lookalike_social_proof(db, member_vecs, member_ids, cand_ids)
                 elif user_vec is not None:
                     # 개인 취향 벡터 재랭킹: 장기취향(벡터) + 현재의도(선택태그) 결합
-                    ranked_pairs = self._personalized_rerank(db, place_candidates, user_vec, user_prefs, pref_tags, top_k=15)
+                    ranked_pairs = self._personalized_rerank(db, place_candidates, user_vec, user_prefs, pref_tags, top_k=top_k)
                 else:
                     recommender = AdvancedRecommender(place_candidates)
                     # 프론트에서 추천순/평점순/거리순 재정렬할 수 있도록 넉넉히 반환
-                    ranked = recommender.recommend([{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], purpose, top_k=15)
+                    ranked = recommender.recommend([{"tag_weights": {}, "foods": user_prefs, "vibes": user_prefs}], purpose, top_k=top_k)
                     ranked_pairs = [(p, self._build_reason(p, 0.0, [], user_prefs, purpose)) for p in ranked]
+
+                # '또 갈래요' 수(재방문 신호) — 전체 보기 정렬용
+                revisit_counts = {}
+                try:
+                    rids = [p.id for p, _ in ranked_pairs if getattr(p, "id", 0)]
+                    if rids:
+                        from sqlalchemy import func as _f
+                        for pid, cnt in (
+                            db.query(models.PlaceVisitFeedback.place_id, _f.count(models.PlaceVisitFeedback.id))
+                            .filter(
+                                models.PlaceVisitFeedback.place_id.in_(rids),
+                                models.PlaceVisitFeedback.personal_revisit == True,  # noqa: E712
+                            )
+                            .group_by(models.PlaceVisitFeedback.place_id)
+                            .all()
+                        ):
+                            revisit_counts[pid] = int(cnt)
+                except Exception as _exc:
+                    print(f"[Debug] revisit count skip: {_exc}")
 
                 results.append({
                     "region_name": r["name"],
@@ -529,6 +559,9 @@ class MeetingService:
                         "lat": float(p.location[0]),
                         "lng": float(p.location[1]),
                         "wemeet_rating": p.avg_rating,
+                        "review_count": int(getattr(p, "review_count", 0) or 0),
+                        "price_range": getattr(p, "price_range", None),
+                        "revisit_count": revisit_counts.get(getattr(p, "id", 0), 0),
                         "reason": reason,
                         # 유사 취향 그룹 사회적 증거(있을 때만)
                         "social_proof": social_proof.get(p.id),
