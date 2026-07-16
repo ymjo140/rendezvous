@@ -128,6 +128,8 @@ def get_messages(room_id: str, db: Session = Depends(get_db), current_user: mode
 # --- 3. 메시지 전송 ---
 @router.post("/api/chat/message")
 async def send_message_api(req: dict, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     room_id = req.get("room_id")
     content = req.get("content")
 
