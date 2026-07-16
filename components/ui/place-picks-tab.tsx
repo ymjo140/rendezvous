@@ -121,7 +121,7 @@ export function PlacePicksTab() {
   useEffect(() => {
     let active = true
     setMeetingRecsLoading(true)
-    const q = anchor ? `?lat=${anchor.lat}&lng=${anchor.lng}` : ""
+    const q = anchor ? `?lat=${anchor.lat}&lng=${anchor.lng}&area=${encodeURIComponent(anchor.name)}` : ""
     fetchWithAuth(`/api/recommend/my-meetings${q}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (active) setMeetingRecs(d?.places || []) })

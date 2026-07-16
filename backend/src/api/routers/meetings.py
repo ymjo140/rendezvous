@@ -504,6 +504,7 @@ def get_recommendation(
 def recommend_my_meetings(
     lat: Optional[float] = Query(None),
     lng: Optional[float] = Query(None),
+    area: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -547,12 +548,16 @@ def recommend_my_meetings(
         places = (regions[0].get("places") if regions else []) or []
         room_name = (comm.title or "모임").replace("[모임] ", "").strip()
         for p in places[:3]:
+            reason = p.get("reason", "") or ""
+            # 지역 앵커면 '중간지점 근처' 대신 그 지역명으로 (예: "강남 근처 · ...")
+            if lat is not None and lng is not None:
+                reason = reason.replace("중간지점 근처", f"{area or '선택 지역'} 근처")
             out.append({
                 **p,
                 "room_id": comm.id,
                 "room_name": room_name,
                 # 예: "데모모임 장소 추천: 중간지점 근처 · 한식 취향과 잘 맞아요"
-                "meeting_reason": f"{room_name} 모임 장소 추천: {p.get('reason', '')}",
+                "meeting_reason": f"{room_name} 모임 장소 추천: {reason}",
             })
 
     return {"count": len(out), "places": out}
