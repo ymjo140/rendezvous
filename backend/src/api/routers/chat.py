@@ -131,6 +131,15 @@ async def send_message_api(req: dict, db: Session = Depends(get_db), current_use
     if current_user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     room_id = req.get("room_id")
+
+    # 방 멤버만 전송 가능(커뮤니티 멤버십 자가복구 후 확인)
+    _sync_room_members_from_community(db, room_id)
+    is_member = db.query(models.ChatRoomMember).filter(
+        models.ChatRoomMember.room_id == room_id,
+        models.ChatRoomMember.user_id == current_user.id,
+    ).first()
+    if not is_member:
+        raise HTTPException(status_code=403, detail="채팅방 멤버만 메시지를 보낼 수 있어요.")
     content = req.get("content")
 
     # 구조화 메시지(payload: {type: image|video|settlement|...}) 지원 — 사진/영상/정산 카드
