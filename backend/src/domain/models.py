@@ -214,6 +214,43 @@ class Community(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class ChatPoll(Base):
+    """채팅방 투표 카드 — 장소/일정 조율. 만든 사람만 확정 가능."""
+    __tablename__ = "chat_polls"
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(String, ForeignKey("chat_rooms.id"), index=True, nullable=False)
+    creator_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    kind = Column(String, default="place")  # place(장소) | schedule(일정)
+    title = Column(String, nullable=True)
+    meta = Column(JSON, default={})  # {anchor_name, lat, lng, purpose} 등
+    status = Column(String, default="open")  # open | confirmed
+    confirmed_option_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class ChatPollOption(Base):
+    """투표 후보 — AI 시드(added_by=None) 또는 멤버가 실시간 추가."""
+    __tablename__ = "chat_poll_options"
+    id = Column(Integer, primary_key=True, index=True)
+    poll_id = Column(Integer, ForeignKey("chat_polls.id", ondelete="CASCADE"), index=True, nullable=False)
+    added_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # None = AI 추천 시드
+    place_id = Column(Integer, nullable=True)
+    label = Column(String, nullable=False)
+    meta = Column(JSON, default={})  # {category, note} / 일정이면 {date, time}
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class ChatPollVote(Base):
+    """1인 1표(변경 가능) — poll당 유저 유니크."""
+    __tablename__ = "chat_poll_votes"
+    id = Column(Integer, primary_key=True, index=True)
+    poll_id = Column(Integer, ForeignKey("chat_polls.id", ondelete="CASCADE"), index=True, nullable=False)
+    option_id = Column(Integer, ForeignKey("chat_poll_options.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    __table_args__ = (UniqueConstraint("poll_id", "user_id", name="uq_poll_vote_user"),)
+
+
 class CommunityFollow(Base):
     """맛집 모임 팔로우 — 공개 모임을 팔로우(친구/유저 팔로우와 별개)."""
     __tablename__ = "community_follows"
