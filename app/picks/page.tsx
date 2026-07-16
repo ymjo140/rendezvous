@@ -66,6 +66,8 @@ function PicksContent() {
   const anchorLat = parseFloat(sp.get("lat") || "") || null
   const anchorLng = parseFloat(sp.get("lng") || "") || null
   const areaName = sp.get("area") || ""
+  const purpose = sp.get("purpose") || "식사"
+  const filterTags = (sp.get("tags") || "").split(",").map((t) => t.trim()).filter(Boolean)
 
   const [tab, setTab] = useState<Tab>(initTab)
   const [sort, setSort] = useState("reco")
@@ -115,8 +117,8 @@ function PicksContent() {
       fetchWithAuth("/api/recommend", {
         method: "POST",
         body: JSON.stringify({
-          purpose: "식사",
-          user_selected_tags: [],
+          purpose,
+          user_selected_tags: filterTags,
           current_lat: base.lat,
           current_lng: base.lng,
           member_user_ids: [],
@@ -195,6 +197,11 @@ function PicksContent() {
           </button>
           <span className="font-bold text-gray-900">장소 추천 전체</span>
           {base && <span className="text-xs text-gray-400">· {base.label}</span>}
+          {tab === "taste" && (
+            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 rounded-full px-2 py-0.5">
+              {purpose}{filterTags.length > 0 ? ` +${filterTags.length}` : ""}
+            </span>
+          )}
         </div>
         {/* 탭 */}
         <div className="flex px-3 gap-1 pb-0">

@@ -6,7 +6,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useHotDeals } from "@/hooks/use-hot-deals"
 import { fetchWithAuth } from "@/lib/api-client"
 import { logAction } from "@/lib/analytics-client"
-import { MapPin, Flame, Sparkles, Users, Search, X, LocateFixed } from "lucide-react"
+import { MapPin, Flame, Sparkles, Users, Search, X, LocateFixed, SlidersHorizontal } from "lucide-react"
+import { useSystemConfig } from "@/hooks/use-system-config"
+import { FilterDialog } from "@/components/ui/components/home/FilterDialog"
 
 // 장소 추천 탭 — 내 취향/모임 기반 추천 + 핫딜.
 // 기본은 내 위치 기준, 지역 검색(앵커)하면 모든 섹션이 그 지역 기준으로 전환.
@@ -52,6 +54,39 @@ export function PlacePicksTab() {
   const [meetingRecs, setMeetingRecs] = useState<any[]>([])
   const [vacancies, setVacancies] = useState<any[]>([])
 
+  // 🎛️ 목적/취향 필터 — 홈 탭과 동일한 필터 설정(FilterDialog) 재사용
+  const { data: purposeConfig } = useSystemConfig()
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [selectedPurpose, setSelectedPurpose] = useState("식사")
+  const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({
+    PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [],
+  })
+  useEffect(() => {
+    if (!purposeConfig) return
+    if (!selectedPurpose || !purposeConfig[selectedPurpose]) {
+      const first = Object.keys(purposeConfig)[0]
+      if (first) {
+        setSelectedPurpose(first)
+        setSelectedFilters((prev) => ({ ...prev, PURPOSE: [first] }))
+      }
+    }
+  }, [purposeConfig, selectedPurpose])
+  const toggleFilter = (k: string, v: string) => {
+    setSelectedFilters((prev) => {
+      const list = prev[k] || []
+      return list.includes(v) ? { ...prev, [k]: list.filter((i) => i !== v) } : { ...prev, [k]: [...list, v] }
+    })
+  }
+  const handleSelectPurpose = (p: string) => {
+    setSelectedPurpose(p)
+    setSelectedFilters({ PURPOSE: [p], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] })
+  }
+  // PURPOSE는 purpose 파라미터로 이미 전달 — 태그에선 제외
+  const filterTags = Object.entries(selectedFilters)
+    .filter(([k]) => k !== "PURPOSE")
+    .map(([, v]) => v)
+    .reduce((acc: string[], v) => acc.concat(v), [])
+
   // 📍 지역 앵커 — null이면 내 위치 기준
   const [anchor, setAnchor] = useState<Anchor | null>(null)
   const [me, setMe] = useState<{ id: number | null; lat: number; lng: number; name: string } | null>(null)
@@ -83,7 +118,7 @@ export function PlacePicksTab() {
   useEffect(() => {
     if (!me) return
     let active = true
-    const cacheKey = `picks:recs:${baseLat.toFixed(3)},${baseLng.toFixed(3)}`
+    const cacheKey = `picks:recs:${baseLat.toFixed(3)},${baseLng.toFixed(3)}:${selectedPurpose}:${filterTags.join(",")}`
     const cached = sessionStorage.getItem(cacheKey)
     if (cached) {
       try { setRecs(JSON.parse(cached)); setRecsLoading(false) } catch { setRecsLoading(true) }
@@ -93,8 +128,8 @@ export function PlacePicksTab() {
     fetchWithAuth("/api/recommend", {
       method: "POST",
       body: JSON.stringify({
-        purpose: "식사",
-        user_selected_tags: [],
+        purpose: selectedPurpose || "식사",
+        user_selected_tags: filterTags,
         current_lat: baseLat,
         current_lng: baseLng,
         member_user_ids: me.id ? [me.id] : [],
@@ -110,7 +145,7 @@ export function PlacePicksTab() {
       .catch(() => { if (active && !cached) setRecs([]) })
       .finally(() => { if (active) setRecsLoading(false) })
     return () => { active = false }
-  }, [me, anchor])
+  }, [me, anchor, selectedPurpose, selectedFilters])
 
   // 🔴 지금 빈자리 — 앵커/내 위치 기준 (1분 갱신)
   useEffect(() => {
@@ -239,14 +274,23 @@ export function PlacePicksTab() {
                 </span>
               )}
             </div>
-            {anchor && (
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {anchor && (
+                <button
+                  onClick={resetAnchor}
+                  className="flex items-center gap-1 text-[11px] font-bold text-gray-600 bg-white border border-gray-200 rounded-full px-2.5 py-1"
+                >
+                  <LocateFixed className="w-3 h-3" /> 내 위치로
+                </button>
+              )}
               <button
-                onClick={resetAnchor}
-                className="flex items-center gap-1 text-[11px] font-bold text-gray-600 bg-white border border-gray-200 rounded-full px-2.5 py-1 flex-shrink-0"
+                onClick={() => setIsFilterOpen(true)}
+                className="flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1"
               >
-                <LocateFixed className="w-3 h-3" /> 내 위치로
+                <SlidersHorizontal className="w-3 h-3" /> {selectedPurpose}
+                {filterTags.length > 0 && ` +${filterTags.length}`}
               </button>
-            )}
+            </div>
           </div>
 
           <div className="relative mt-2">
@@ -295,6 +339,25 @@ export function PlacePicksTab() {
               </button>
             ))}
           </div>
+
+          {/* 선택된 취향 태그 — 탭하면 제거 */}
+          {filterTags.length > 0 && (
+            <div className="flex gap-1 flex-wrap mt-2">
+              {filterTags.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => {
+                    Object.entries(selectedFilters).forEach(([k, vals]) => {
+                      if (k !== "PURPOSE" && vals.includes(t)) toggleFilter(k, t)
+                    })
+                  }}
+                  className="text-[11px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5"
+                >
+                  #{t} ✕
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* 🔴 지금 빈자리 — 사장님 실시간 신호 (있을 때만 노출) */}
@@ -354,7 +417,7 @@ export function PlacePicksTab() {
             <h3 className="text-sm font-bold text-gray-800">내 취향 추천</h3>
             <span className="text-[10px] font-bold text-[#D97706]">· {areaLabel}</span>
             <button
-              onClick={() => router.push(`/picks?tab=taste${anchor ? `&lat=${anchor.lat}&lng=${anchor.lng}&area=${encodeURIComponent(anchor.name)}` : ""}`)}
+              onClick={() => router.push(`/picks?tab=taste${anchor ? `&lat=${anchor.lat}&lng=${anchor.lng}&area=${encodeURIComponent(anchor.name)}` : ""}&purpose=${encodeURIComponent(selectedPurpose)}${filterTags.length > 0 ? `&tags=${encodeURIComponent(filterTags.join(","))}` : ""}`)}
               className="ml-auto text-[11px] font-bold text-amber-600"
             >
               전체 ›
@@ -481,6 +544,17 @@ export function PlacePicksTab() {
           )}
         </section>
       </div>
+
+      {/* 🎛️ 목적/취향 필터 — 홈 탭과 동일한 다이얼로그 재사용 */}
+      <FilterDialog
+        isOpen={isFilterOpen}
+        onOpenChange={setIsFilterOpen}
+        purposeConfig={purposeConfig || null}
+        selectedPurpose={selectedPurpose}
+        onSelectPurpose={handleSelectPurpose}
+        selectedFilters={selectedFilters}
+        onToggleFilter={toggleFilter}
+      />
     </div>
   )
 }
