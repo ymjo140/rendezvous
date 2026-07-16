@@ -44,6 +44,11 @@ export default function RootLayout({
   strategy="beforeInteractive"
   src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=kcplwdse1o&submodules=gl"
 />
+        {/* 🛰️ Sentry 브라우저 에러 수집 — Vercel env NEXT_PUBLIC_SENTRY_LOADER_URL 설정 시에만 로드 */}
+        {process.env.NEXT_PUBLIC_SENTRY_LOADER_URL && (
+          <Script strategy="afterInteractive" src={process.env.NEXT_PUBLIC_SENTRY_LOADER_URL} crossOrigin="anonymous" />
+        )}
+
         {/* 👇 3. 카카오 JS SDK (카톡 친구 초대 / 추천 공유). 키는 lib/kakao.ts에서 lazy init */}
         <Script
           strategy="afterInteractive"

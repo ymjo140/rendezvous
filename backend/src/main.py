@@ -9,6 +9,21 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
+# 🛰️ Sentry — SENTRY_DSN env가 있을 때만 활성(없으면 no-op). Render env에 등록해 사용.
+try:
+    _sentry_dsn = os.getenv("SENTRY_DSN")
+    if _sentry_dsn:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            environment=os.getenv("SENTRY_ENV", "production" if os.getenv("RENDER") else "local"),
+            traces_sample_rate=0.1,
+            send_default_pii=False,
+        )
+        print("[Sentry] enabled")
+except Exception as _e:
+    print(f"[Sentry] init skipped: {_e}")
+
 app = fastapi.FastAPI()
 
 # --- CORS ?ㅼ젙 ---

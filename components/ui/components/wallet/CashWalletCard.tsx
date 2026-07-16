@@ -97,13 +97,20 @@ export function CashWalletCard() {
                 </div>
               </div>
             </div>
-            <Button
-              size="sm"
-              onClick={() => setChargeOpen(true)}
-              className="bg-[#F5A623] hover:bg-amber-700 rounded-xl h-9"
-            >
-              <Plus className="w-4 h-4 mr-1" /> 충전
-            </Button>
+            {/* 스토어 심사용 스위치: Vercel env NEXT_PUBLIC_HIDE_TOPUP=1 이면 모의 충전 숨김(실 PG 전까지) */}
+            {process.env.NEXT_PUBLIC_HIDE_TOPUP === "1" ? (
+              <span className="text-[10px] text-gray-400 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1.5">
+                충전은 정식 오픈 때 열려요
+              </span>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => setChargeOpen(true)}
+                className="bg-[#F5A623] hover:bg-amber-700 rounded-xl h-9"
+              >
+                <Plus className="w-4 h-4 mr-1" /> 충전
+              </Button>
+            )}
           </div>
           <div className="mt-3 flex items-center justify-between">
             <p className="text-[11px] text-gray-400">예약할 때 캐시로 결제하고, 취소하면 자동 환불돼요.</p>
