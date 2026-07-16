@@ -105,7 +105,11 @@ export const useMapLogic = ({
             if (!mapRef.current) {
                 mapRef.current = new window.naver.maps.Map("map", {
                     center: new window.naver.maps.LatLng(center.lat, center.lng),
-                    zoom: 16
+                    zoom: 16,
+                    // 🎨 랑데부 커스텀 지도 스타일(Map Style Editor) — 가게 POI 라벨 제거,
+                    // 지도 위엔 우리 추천 칩만 표시. 벡터(GL) 렌더링 필요.
+                    gl: true,
+                    customStyleId: "b1a6d9c6-c263-4c30-b603-4f25e47a5a4e",
                 });
                 if (myLocation) centeredRef.current = true;
 

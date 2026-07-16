@@ -42,7 +42,7 @@ export default function RootLayout({
         {/* strategy="beforeInteractive": 페이지 로드 전에 스크립트를 먼저 불러옵니다. */}
         <Script
   strategy="beforeInteractive"
-  src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=kcplwdse1o"
+  src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=kcplwdse1o&submodules=gl"
 />
         {/* 👇 3. 카카오 JS SDK (카톡 친구 초대 / 추천 공유). 키는 lib/kakao.ts에서 lazy init */}
         <Script
