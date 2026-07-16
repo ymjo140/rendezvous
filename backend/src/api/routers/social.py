@@ -1,15 +1,20 @@
 """큐레이터 소셜 — 단방향 팔로우 + 큐레이터 프로필 + 공개 '맛집 리스트'.
 친구(friendships, 양방향)와 별개. 인스타 팔로우 + 큐레이션 리스트 개념.
 프로필/리스트 조회는 공개(비로그인 열람 가능), 팔로우/발행은 로그인 필요."""
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from core.database import get_db
 from domain import models
 from api.dependencies import get_current_user
+from services.gamification_service import GamificationService, week_start_utc_naive, week_key
+
+_game = GamificationService()
 
 router = APIRouter()
 
@@ -31,6 +36,45 @@ def _curator_meta(user: models.User) -> dict:
     }
 
 
+# ✓ 자동 인증 기준: 팔로워 20+ AND 공개 리스트 3+ AND 리스트 좋아요 누적 50+
+VERIFY_FOLLOWERS = 20
+VERIFY_LISTS = 3
+VERIFY_LIST_LIKES = 50
+
+
+def _maybe_auto_verify(db: Session, target: models.User) -> bool:
+    """기준 충족 시 인증 큐레이터 자동 부여(preferences.curator.verified). 부여했으면 True."""
+    meta = _curator_meta(target)
+    if meta["verified"]:
+        return False
+    followers = db.query(models.UserFollow).filter(models.UserFollow.following_id == target.id).count()
+    if followers < VERIFY_FOLLOWERS:
+        return False
+    lists = (
+        db.query(models.SaveFolder)
+        .filter(models.SaveFolder.user_id == target.id, models.SaveFolder.is_public == True)  # noqa: E712
+        .count()
+    )
+    if lists < VERIFY_LISTS:
+        return False
+    likes = (
+        db.query(models.ListLike)
+        .join(models.SaveFolder, models.ListLike.folder_id == models.SaveFolder.id)
+        .filter(models.SaveFolder.user_id == target.id)
+        .count()
+    )
+    if likes < VERIFY_LIST_LIKES:
+        return False
+    prefs = dict(target.preferences or {})
+    cur = dict(prefs.get("curator") or {})
+    cur["verified"] = True
+    cur["verified_at"] = datetime.now().isoformat()
+    prefs["curator"] = cur
+    target.preferences = prefs
+    flag_modified(target, "preferences")
+    return True
+
+
 @router.post("/api/users/{uid}/follow")
 def follow_user(uid: int, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
     if user is None:
@@ -43,6 +87,9 @@ def follow_user(uid: int, user: Optional[models.User] = Depends(get_current_user
     exists = db.query(models.UserFollow).filter_by(follower_id=user.id, following_id=uid).first()
     if not exists:
         db.add(models.UserFollow(follower_id=user.id, following_id=uid))
+        db.commit()
+    # 팔로워가 늘어난 시점에 자동 인증 기준 평가
+    if _maybe_auto_verify(db, target):
         db.commit()
     followers, _ = _follow_counts(db, uid)
     return {"following": True, "follower_count": followers}
@@ -309,6 +356,119 @@ def suggested_curators(limit: int = 8, user: Optional[models.User] = Depends(get
     return {"items": out}
 
 
+@router.get("/api/curators/ranking")
+def curator_ranking(
+    scope: str = "all",
+    limit: int = 10,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """큐레이터 주간 영향력 랭킹(월요일 KST 리셋).
+    점수 = 이번 주 신규 팔로워×5 + 리스트 좋아요×2 + 리스트 댓글×1.
+    scope=all: 공개 리스트 보유 전체(금주의 큐레이터). scope=following: 내가 팔로우한 사람들 + 나."""
+    ws = week_start_utc_naive()
+
+    if scope == "following":
+        if user is None:
+            raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+        ids = {
+            r.following_id
+            for r in db.query(models.UserFollow).filter(models.UserFollow.follower_id == user.id).all()
+        }
+        ids.add(user.id)
+        cand_ids = list(ids)
+    else:
+        rows = (
+            db.query(models.SaveFolder.user_id)
+            .filter(models.SaveFolder.is_public == True)  # noqa: E712
+            .group_by(models.SaveFolder.user_id)
+            .all()
+        )
+        cand_ids = [r[0] for r in rows]
+
+    if not cand_ids:
+        return {"week": week_key(), "items": []}
+
+    # 주간 집계 3종 — 후보 전체를 각각 1쿼리로
+    nf = dict(
+        db.query(models.UserFollow.following_id, func.count(models.UserFollow.id))
+        .filter(models.UserFollow.following_id.in_(cand_ids), models.UserFollow.created_at >= ws)
+        .group_by(models.UserFollow.following_id)
+        .all()
+    )
+    ll = dict(
+        db.query(models.SaveFolder.user_id, func.count(models.ListLike.id))
+        .join(models.ListLike, models.ListLike.folder_id == models.SaveFolder.id)
+        .filter(models.SaveFolder.user_id.in_(cand_ids), models.ListLike.created_at >= ws)
+        .group_by(models.SaveFolder.user_id)
+        .all()
+    )
+    lc = dict(
+        db.query(models.SaveFolder.user_id, func.count(models.ListComment.id))
+        .join(models.ListComment, models.ListComment.folder_id == models.SaveFolder.id)
+        .filter(models.SaveFolder.user_id.in_(cand_ids), models.ListComment.created_at >= ws)
+        .group_by(models.SaveFolder.user_id)
+        .all()
+    )
+    followers_total = dict(
+        db.query(models.UserFollow.following_id, func.count(models.UserFollow.id))
+        .filter(models.UserFollow.following_id.in_(cand_ids))
+        .group_by(models.UserFollow.following_id)
+        .all()
+    )
+    lists_total = dict(
+        db.query(models.SaveFolder.user_id, func.count(models.SaveFolder.id))
+        .filter(models.SaveFolder.user_id.in_(cand_ids), models.SaveFolder.is_public == True)  # noqa: E712
+        .group_by(models.SaveFolder.user_id)
+        .all()
+    )
+
+    my_follow = set()
+    if user:
+        my_follow = {
+            r.following_id
+            for r in db.query(models.UserFollow).filter(models.UserFollow.follower_id == user.id).all()
+        }
+
+    scored = []
+    for uid in cand_ids:
+        score = int(nf.get(uid, 0)) * 5 + int(ll.get(uid, 0)) * 2 + int(lc.get(uid, 0))
+        scored.append((uid, score))
+    # 동점 시 누적 팔로워 순
+    scored.sort(key=lambda x: (x[1], followers_total.get(x[0], 0)), reverse=True)
+    scored = scored[: max(1, min(limit, 50))]
+
+    users_map = {
+        u.id: u for u in db.query(models.User).filter(models.User.id.in_([s[0] for s in scored])).all()
+    }
+    items = []
+    rank = 0
+    for uid, score in scored:
+        u = users_map.get(uid)
+        if not u:
+            continue
+        rank += 1
+        meta = _curator_meta(u)
+        fb = _game.featured_badge_of(u)
+        items.append({
+            "rank": rank,
+            "id": u.id,
+            "name": u.name,
+            "avatar": u.avatar or "🙂",
+            "tagline": meta["tagline"],
+            "verified": meta["verified"],
+            "weekly_score": score,
+            "weekly_new_followers": int(nf.get(uid, 0)),
+            "weekly_list_likes": int(ll.get(uid, 0)),
+            "follower_count": int(followers_total.get(uid, 0)),
+            "list_count": int(lists_total.get(uid, 0)),
+            "featured_badge": {"emoji": fb["emoji"], "title": fb["title"]} if fb else None,
+            "is_following": uid in my_follow,
+            "is_me": bool(user and uid == user.id),
+        })
+    return {"week": week_key(), "items": items}
+
+
 # ===== 맛집 리스트 추천(좋아요) + 댓글 + 인기 랭킹 (#4) =====
 # 라우트 순서 주의: /api/lists/{folder_id}가 그리디하므로 랭킹은 /api/list-ranking,
 # 댓글 삭제는 /api/list-comments/{id}로 분리(충돌 회피).
@@ -329,6 +489,10 @@ def like_list(folder_id: int, user: Optional[models.User] = Depends(get_current_
     ex = db.query(models.ListLike).filter_by(folder_id=folder_id, user_id=user.id).first()
     if not ex:
         db.add(models.ListLike(folder_id=folder_id, user_id=user.id))
+        db.commit()
+    # 좋아요 누적이 인증 기준을 넘었을 수 있음 → 리스트 주인 자동 인증 평가
+    owner = db.query(models.User).filter(models.User.id == f.user_id).first()
+    if owner and _maybe_auto_verify(db, owner):
         db.commit()
     likes, _ = _list_counts(db, folder_id)
     return {"liked": True, "like_count": likes}

@@ -237,6 +237,7 @@ export function HomeTab() {
       return
     }
     recordActivity("recommend") // 게임: 맞춤 추천 받기 퀘스트/XP
+    recordActivity("midpoint") // 게임: 중간지점 찾기(모임 코어 행동, 뱃지/XP)
     // 그룹 취향 맞춤 추천을 맨 앞 지역으로 주입 (Group Vector AI)
     try {
       const memberIds: number[] = []

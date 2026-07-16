@@ -9,7 +9,7 @@ from api.dependencies import get_current_user
 router = APIRouter()
 service = GamificationService()
 
-VALID_ACTIONS = {"daily_login", "explore", "recommend", "review", "reserve", "share"}
+VALID_ACTIONS = {"daily_login", "explore", "recommend", "review", "reserve", "share", "midpoint"}
 
 
 @router.get("/api/game/profile")
@@ -30,6 +30,20 @@ def get_leaderboard(
     if user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     return service.get_leaderboard(db, user)
+
+
+@router.post("/api/game/featured-badge")
+def set_featured_badge(
+    req: dict,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    result = service.set_featured_badge(db, user, str(req.get("badge_key") or ""))
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("detail", "설정 실패"))
+    return result
 
 
 @router.post("/api/game/activity")

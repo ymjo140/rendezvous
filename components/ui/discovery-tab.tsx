@@ -110,12 +110,12 @@ function TrendingStrip() {
     );
 }
 
-// 추천 큐레이터 — 공개 맛집 리스트 보유자, 팔로우 유도(인스타식 발견)
+// 👑 금주의 큐레이터 — 주간 영향력 랭킹(월요일 리셋). 팔로우 유도 + 인증 표시
 function CuratorStrip() {
     const router = useRouter();
     const [items, setItems] = useState<any[]>([]);
     useEffect(() => {
-        fetchWithAuth("/api/curators/suggested?limit=10")
+        fetchWithAuth("/api/curators/ranking?scope=all&limit=10")
             .then((r) => (r.ok ? r.json() : { items: [] }))
             .then((d) => setItems(d.items || []))
             .catch(() => {});
@@ -134,30 +134,40 @@ function CuratorStrip() {
     };
     return (
         <div className="p-4 border-b border-gray-100">
-            <div className="flex items-center gap-1.5 mb-2.5">
-                <span className="text-base">👑</span>
-                <span className="font-bold text-gray-800 text-sm">추천 큐레이터</span>
-                <span className="text-[11px] text-gray-400">· 맛집 리스트 팔로우</span>
+            <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-base">👑</span>
+                    <span className="font-bold text-gray-800 text-sm">금주의 큐레이터</span>
+                    <span className="text-[11px] text-gray-400">· 월요일 리셋</span>
+                </div>
+                <button onClick={() => router.push("/curators")} className="text-[10px] font-medium text-amber-600 flex items-center">
+                    전체 <ChevronRight className="w-3 h-3" />
+                </button>
             </div>
             <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
                 {items.map((c) => (
                     <div
                         key={c.id}
                         onClick={() => router.push(`/users/${c.id}`)}
-                        className="flex-shrink-0 w-40 bg-gradient-to-b from-purple-50 to-white border border-purple-100 rounded-2xl p-3 cursor-pointer hover:shadow-sm transition-shadow"
+                        className="flex-shrink-0 w-40 bg-gradient-to-b from-amber-50 to-white border border-amber-100 rounded-2xl p-3 cursor-pointer hover:shadow-sm transition-shadow"
                     >
                         <div className="flex flex-col items-center text-center">
-                            <div className="w-14 h-14 rounded-full bg-white shadow-sm flex items-center justify-center text-3xl mb-1.5">{c.avatar || "🙂"}</div>
+                            <div className="relative">
+                                <div className="w-14 h-14 rounded-full bg-white shadow-sm flex items-center justify-center text-3xl mb-1.5">{c.avatar || "🙂"}</div>
+                                <span className={`absolute -top-1 -left-1 w-5 h-5 rounded-full text-[10px] font-extrabold flex items-center justify-center ${
+                                    c.rank === 1 ? "bg-amber-400 text-white" : c.rank <= 3 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-400"
+                                }`}>{c.rank}</span>
+                            </div>
                             <div className="flex items-center gap-0.5">
-                                <span className="font-bold text-sm text-gray-900 truncate max-w-[110px]">{c.name}</span>
-                                {c.verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
+                                <span className="font-bold text-sm text-gray-900 truncate max-w-[100px]">{c.name}</span>
+                                {c.verified && <BadgeCheck className="w-3.5 h-3.5 text-[#F5A623] flex-shrink-0" />}
                             </div>
                             <div className="text-[11px] text-gray-500 line-clamp-1 mt-0.5 h-4">{c.tagline}</div>
-                            <div className="text-[11px] text-gray-400 mt-0.5">리스트 {c.list_count} · 팔로워 {c.follower_count}</div>
+                            <div className="text-[11px] text-gray-400 mt-0.5">이번 주 {c.weekly_score}점 · 팔로워 {c.follower_count}</div>
                             <button
                                 onClick={(e) => toggle(e, c)}
                                 className={`mt-2 w-full h-7 rounded-lg text-[12px] font-bold flex items-center justify-center gap-1 transition-colors ${
-                                    c.is_following ? "bg-gray-100 text-gray-600 hover:bg-gray-200" : "bg-purple-600 text-white hover:bg-purple-700"
+                                    c.is_following ? "bg-gray-100 text-gray-600 hover:bg-gray-200" : "bg-[#F5A623] text-white hover:bg-amber-600"
                                 }`}
                             >
                                 {c.is_following ? (<><UserCheck className="w-3 h-3" />팔로잉</>) : (<><UserPlus className="w-3 h-3" />팔로우</>)}
