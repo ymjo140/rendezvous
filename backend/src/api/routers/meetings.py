@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, Query, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from core.database import get_db
 from domain import models
@@ -502,11 +502,14 @@ def get_recommendation(
 
 @router.get("/api/recommend/my-meetings")
 def recommend_my_meetings(
+    lat: Optional[float] = Query(None),
+    lng: Optional[float] = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     """내 채팅방(모임)들을 토대로 장소 추천 + 어느 모임이 근거인지 표시.
-    각 방의 멤버 취향(중간지점+그룹 least-misery)으로 추천, 방 이름을 근거로 부착."""
+    각 방의 멤버 취향(중간지점+그룹 least-misery)으로 추천, 방 이름을 근거로 부착.
+    lat/lng 주면 그 지역 기준으로 앵커(지역 검색 추천) — 멤버 중간지점 대신 해당 좌표 사용."""
     if current_user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
 
@@ -520,15 +523,21 @@ def recommend_my_meetings(
         member_ids = list(dict.fromkeys((comm.member_ids or []) + ([comm.host_id] if comm.host_id else [])))
         if len(member_ids) < 1:
             continue
-        # 멤버 위치 평균(중간지점)
+        # 멤버 위치 평균(중간지점) — 단, 지역 앵커(lat/lng)가 오면 그 좌표 기준
         users = db.query(models.User).filter(models.User.id.in_(member_ids)).all()
         located = [(u.lat, u.lng) for u in users if u.lat and abs(float(u.lat)) > 1]
+        if lat is not None and lng is not None:
+            anchor_lat, anchor_lng, extra_users = lat, lng, []
+        else:
+            anchor_lat = located[0][0] if located else 37.5665
+            anchor_lng = located[0][1] if located else 126.978
+            extra_users = [{"location": {"lat": la, "lng": ln}} for la, ln in located[1:]]
         req = schemas.RecommendRequest(
             purpose=comm.category or "식사",
             member_user_ids=member_ids,
-            current_lat=located[0][0] if located else 37.5665,
-            current_lng=located[0][1] if located else 126.978,
-            users=[{"location": {"lat": la, "lng": ln}} for la, ln in located[1:]],
+            current_lat=anchor_lat,
+            current_lng=anchor_lng,
+            users=extra_users,
         )
         try:
             regions = meeting_service.get_recommendations_direct(db, req, user_id=current_user.id)

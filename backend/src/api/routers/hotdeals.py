@@ -131,7 +131,7 @@ def _active_time_deals(db: Session, now: datetime) -> List[Dict[str, Any]]:
         """
         SELECT td.id AS deal_id, td.title AS title, td.date AS deal_date,
                td.start_time AS start_time, td.end_time AS end_time,
-               p.id AS store_id, p.name AS store_name
+               p.id AS store_id, p.name AS store_name, p.lat AS lat, p.lng AS lng
         FROM time_deals td
         JOIN places p
           ON (td.store_id ~ '^[0-9]+$' AND p.id = CAST(td.store_id AS INTEGER))
@@ -168,6 +168,8 @@ def _active_time_deals(db: Session, now: datetime) -> List[Dict[str, Any]]:
                 "end_time": end,
                 "store_id": r.get("store_id"),
                 "store_name": r.get("store_name"),
+                "lat": r.get("lat"),
+                "lng": r.get("lng"),
                 "image_url": None,
             }
         )
@@ -205,6 +207,8 @@ def get_hot_deals(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
                 "end_time": _rule_end_time(rule),
                 "store_id": place.id,
                 "store_name": place.name,
+                "lat": place.lat,
+                "lng": place.lng,
                 "image_url": _resolve_place_image(place),
                 "remaining": _rule_remaining(rule),  # 남은 수량(무제한이면 None)
             }
