@@ -27,11 +27,18 @@ export default function Page() {
   // 채팅방 직접 열기용
   const [openRoomId, setOpenRoomId] = useState<string | null>(null)
 
-  // 초기 로그인 상태 확인
+  // 초기 로그인 상태 확인 + 마지막 탭 복원(상세 페이지 갔다 와도 보던 탭으로)
   useEffect(() => {
     const token = localStorage.getItem("token")
     setIsLoggedIn(!!token)
+    const saved = sessionStorage.getItem("activeTab")
+    if (saved && (saved === "home" || token)) setActiveTab(saved)
   }, [])
+
+  // 현재 탭 저장 — 장소/모임/리스트 상세에서 뒤로가기로 돌아왔을 때 복원용
+  useEffect(() => {
+    sessionStorage.setItem("activeTab", activeTab)
+  }, [activeTab])
 
   // 🔐 토큰 만료(401) 감지 → 세션 정리 후 로그인 안내 (한 번만)
   useEffect(() => {

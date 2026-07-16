@@ -85,9 +85,14 @@ function TrendingStrip() {
     if (items.length === 0) return null;
     return (
         <div className="px-3 py-1.5 border-b border-gray-100">
-            <div className="flex items-center gap-1 mb-1">
-                <Flame className="w-3 h-3 text-orange-500" />
-                <span className="font-bold text-gray-800 text-[11px]">실시간 급상승</span>
+            <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1">
+                    <Flame className="w-3 h-3 text-orange-500" />
+                    <span className="font-bold text-gray-800 text-[11px]">실시간 급상승</span>
+                </div>
+                <button onClick={() => router.push("/trending")} className="text-[10px] font-medium text-amber-600 flex items-center">
+                    전체 <ChevronRight className="w-3 h-3" />
+                </button>
             </div>
             <div className="flex gap-1 overflow-x-auto scrollbar-hide">
                 {items.map((it) => (
@@ -216,9 +221,14 @@ function ListRankingStrip() {
     if (items.length === 0) return null;
     return (
         <div className="px-3 py-1.5 border-b border-gray-100">
-            <div className="flex items-center gap-1 mb-1">
-                <span className="text-[11px]">🏆</span>
-                <span className="font-bold text-gray-800 text-[11px]">인기 맛집 리스트</span>
+            <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1">
+                    <span className="text-[11px]">🏆</span>
+                    <span className="font-bold text-gray-800 text-[11px]">인기 맛집 리스트</span>
+                </div>
+                <button onClick={() => router.push("/lists")} className="text-[10px] font-medium text-amber-600 flex items-center">
+                    전체 <ChevronRight className="w-3 h-3" />
+                </button>
             </div>
             <div className="flex gap-1 overflow-x-auto scrollbar-hide">
                 {items.map((l) => (
