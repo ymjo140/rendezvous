@@ -500,6 +500,11 @@ def get_recommendation(
     return meeting_service.get_recommendations_direct(db, req, user_id=user_id)
 
 
+# 🚀 my-meetings 응답 인메모리 캐시(프로세스당) — 탭 재진입마다 전체 파이프라인 재계산 방지
+_MY_MEETINGS_CACHE: dict = {}
+_MY_MEETINGS_TTL = 300  # 5분
+
+
 @router.get("/api/recommend/my-meetings")
 def recommend_my_meetings(
     lat: Optional[float] = Query(None),
@@ -513,6 +518,16 @@ def recommend_my_meetings(
     lat/lng 주면 그 지역 기준으로 앵커(지역 검색 추천) — 멤버 중간지점 대신 해당 좌표 사용."""
     if current_user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+
+    import time as _time
+    cache_key = (
+        current_user.id,
+        None if lat is None else round(lat, 3),
+        None if lng is None else round(lng, 3),
+    )
+    hit = _MY_MEETINGS_CACHE.get(cache_key)
+    if hit and hit[0] > _time.time():
+        return hit[1]
 
     # 내가 속한 모임(커뮤니티=채팅방) — 호스트이거나 member_ids에 포함
     comms = db.query(models.Community).all()
@@ -560,7 +575,14 @@ def recommend_my_meetings(
                 "meeting_reason": f"{room_name} 모임 장소 추천: {reason}",
             })
 
-    return {"count": len(out), "places": out}
+    result = {"count": len(out), "places": out}
+    # 만료 엔트리 청소 후 저장(무한 성장 방지)
+    now = _time.time()
+    if len(_MY_MEETINGS_CACHE) > 500:
+        for k in [k for k, v in _MY_MEETINGS_CACHE.items() if v[0] <= now]:
+            _MY_MEETINGS_CACHE.pop(k, None)
+    _MY_MEETINGS_CACHE[cache_key] = (now + _MY_MEETINGS_TTL, result)
+    return result
 
 # --- 회의/모임 흐름 ---
 @router.post("/api/meeting-flow")

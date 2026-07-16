@@ -79,10 +79,17 @@ export function PlacePicksTab() {
   const areaLabel = anchor ? anchor.name : "내 주변"
 
   // ✨ 내 취향 추천 — 앵커/내 위치 기준
+  // 탭 재진입 시 마지막 결과를 즉시 그리고(sessionStorage), 뒤에서 새 데이터로 갱신(SWR)
   useEffect(() => {
     if (!me) return
     let active = true
-    setRecsLoading(true)
+    const cacheKey = `picks:recs:${baseLat.toFixed(3)},${baseLng.toFixed(3)}`
+    const cached = sessionStorage.getItem(cacheKey)
+    if (cached) {
+      try { setRecs(JSON.parse(cached)); setRecsLoading(false) } catch { setRecsLoading(true) }
+    } else {
+      setRecsLoading(true)
+    }
     fetchWithAuth("/api/recommend", {
       method: "POST",
       body: JSON.stringify({
@@ -95,9 +102,12 @@ export function PlacePicksTab() {
     })
       .then((r) => (r.ok ? r.json() : []))
       .then((regions) => {
-        if (active) setRecs(((regions?.[0]?.places || []) as PlaceRec[]).slice(0, 8))
+        if (!active) return
+        const next = ((regions?.[0]?.places || []) as PlaceRec[]).slice(0, 8)
+        setRecs(next)
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(next)) } catch { /* quota */ }
       })
-      .catch(() => { if (active) setRecs([]) })
+      .catch(() => { if (active && !cached) setRecs([]) })
       .finally(() => { if (active) setRecsLoading(false) })
     return () => { active = false }
   }, [me, anchor])
@@ -118,13 +128,24 @@ export function PlacePicksTab() {
   }, [me, anchor])
 
   // 👥 내 모임 추천 — 앵커 시 그 지역 기준(멤버 취향은 유지)
+  // 무거운 파이프라인이라 탭 재진입 시 마지막 결과 즉시 표시 + 백그라운드 갱신(SWR)
   useEffect(() => {
     let active = true
-    setMeetingRecsLoading(true)
+    const cacheKey = `picks:meetings:${anchor ? `${anchor.lat},${anchor.lng}` : "me"}`
+    const cached = sessionStorage.getItem(cacheKey)
+    if (cached) {
+      try { setMeetingRecs(JSON.parse(cached)); setMeetingRecsLoading(false) } catch { setMeetingRecsLoading(true) }
+    } else {
+      setMeetingRecsLoading(true)
+    }
     const q = anchor ? `?lat=${anchor.lat}&lng=${anchor.lng}&area=${encodeURIComponent(anchor.name)}` : ""
     fetchWithAuth(`/api/recommend/my-meetings${q}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (active) setMeetingRecs(d?.places || []) })
+      .then((d) => {
+        if (!active || !d) return
+        setMeetingRecs(d.places || [])
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(d.places || [])) } catch { /* quota */ }
+      })
       .catch(() => {})
       .finally(() => { if (active) setMeetingRecsLoading(false) })
     return () => { active = false }

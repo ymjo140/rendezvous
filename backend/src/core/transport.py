@@ -291,30 +291,67 @@ class TransportEngine:
             pass
         return None
 
+    # 🚀 캐시 일괄 로드 — (핫스팟 191 × 멤버) 개별 SELECT 수백 번 → 쿼리 1번
+    @staticmethod
+    def _load_time_cache_bulk(db: Session, start_names: set) -> dict:
+        if not start_names:
+            return {}
+        try:
+            rows = db.execute(
+                text("SELECT id, total_time FROM travel_time_cache WHERE start_name = ANY(:names) OR end_name = ANY(:names)"),
+                {"names": list(start_names)},
+            ).fetchall()
+            return {r[0]: r[1] for r in rows}
+        except Exception as e:
+            print(f"Cache Bulk Read Error: {e}")
+            return {}
+
     # 🌟 [알고리즘 수정] Sum 대신 Min-Max (최대 소요시간 최소화) 적용
     @staticmethod
     def find_best_midpoints(db: Session, users_locations: list):
         candidates = []
 
+        # 유저별 최근접 허브는 핫스팟 루프와 무관 → 선계산 후 캐시 일괄 로드
+        user_nodes = []
+        for u_loc in users_locations:
+            node, dist = TransportEngine.get_nearest_hotspot(u_loc['lat'], u_loc['lng'])
+            user_nodes.append((u_loc, node, dist))
+        start_names = {n['name'] for (_u, n, d) in user_nodes if n and d < 2000}
+        time_cache = TransportEngine._load_time_cache_bulk(db, start_names)
+        # 캐시 미스 시 ODSAY 실호출은 요청당 상한(각 3초 timeout) — 초과분은 거리 추산으로.
+        # 호출된 결과는 travel_time_cache에 저장되므로 요청이 반복될수록 커버리지가 차오름.
+        odsay_budget = 8
+
         for spot in TransportEngine.SEOUL_HOTSPOTS:
             times = []
-            
-            for u_loc in users_locations:
-                start_node, dist = TransportEngine.get_nearest_hotspot(u_loc['lat'], u_loc['lng'])
-                
+
+            for (u_loc, start_node, dist) in user_nodes:
                 time_cost = None
                 if start_node and dist < 2000:
-                    time_cost = TransportEngine.get_transit_time(
-                        db, start_node['name'], spot['name'], 
-                        start_node['lng'], start_node['lat'], 
-                        spot['lng'], spot['lat']
-                    )
-                
+                    if start_node['name'] == spot['name']:
+                        time_cost = 0
+                    else:
+                        k1 = f"{start_node['name']}_{spot['name']}"
+                        k2 = f"{spot['name']}_{start_node['name']}"
+                        if k1 in time_cache:
+                            time_cost = time_cache[k1]
+                        elif k2 in time_cache:
+                            time_cost = time_cache[k2]
+                        elif odsay_budget > 0:
+                            odsay_budget -= 1
+                            time_cost = TransportEngine.get_transit_time(
+                                db, start_node['name'], spot['name'],
+                                start_node['lng'], start_node['lat'],
+                                spot['lng'], spot['lat']
+                            )
+                            if time_cost is not None:
+                                time_cache[k1] = time_cost
+
                 # 실패 시 거리 기반 추산
                 if time_cost is None:
                     direct_dist = TransportEngine._haversine(u_loc['lat'], u_loc['lng'], spot['lat'], spot['lng'])
-                    time_cost = (direct_dist / 1000) * 15 
-                
+                    time_cost = (direct_dist / 1000) * 15
+
                 times.append(time_cost)
             
             if not times: continue
