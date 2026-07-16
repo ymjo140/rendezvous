@@ -260,13 +260,14 @@ export function PlacePollComposer({
   const [query, setQuery] = useState("")
   const [hits, setHits] = useState<any[]>([])
 
+  // 지역/동/역 검색(지오코딩) — 식당 검색이 아니라 '어디 근처'의 기준점을 잡는 단계
   const search = async () => {
     const q = query.trim()
     if (!q) return
     try {
-      const res = await fetchWithAuth(`/api/places/search?query=${encodeURIComponent(q)}`)
+      const res = await fetchWithAuth(`/api/geocode?query=${encodeURIComponent(q)}`)
       const data = res.ok ? await res.json() : []
-      setHits(Array.isArray(data) ? data.slice(0, 5) : [])
+      setHits(Array.isArray(data) ? data.slice(0, 6) : [])
     } catch { setHits([]) }
   }
 
@@ -349,26 +350,35 @@ export function PlacePollComposer({
       )}
       {step === "search" && (
         <div className="space-y-2">
+          <p className="text-xs text-gray-500">지역·동·지하철역으로 검색하세요. 그 근처에서 추천해요.</p>
           <div className="flex gap-2">
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && search()}
-              placeholder="예: 강남역, 홍대입구"
+              placeholder="예: 강남역, 성수동, 홍대입구"
               className="h-10 text-sm"
             />
             <Button onClick={search} className="bg-[#F5A623] hover:bg-[#D97706] rounded-xl">
               <Search className="w-4 h-4" />
             </Button>
           </div>
+          {hits.length === 0 && query.trim() && (
+            <p className="text-[11px] text-gray-300">검색 버튼이나 Enter를 눌러주세요.</p>
+          )}
           {hits.map((p, i) => (
             <button
               key={i}
-              onClick={() => { setAnchor({ lat: p.lat, lng: p.lng, name: p.name || p.title || query }); setStep("purpose") }}
+              onClick={() => {
+                if (!p?.lat || !p?.lng) return
+                const name = String(p.title || p.name || query).replace(/^서울\S* /, "")
+                setAnchor({ lat: p.lat, lng: p.lng, name })
+                setStep("purpose")
+              }}
               className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 hover:bg-amber-50 text-sm"
             >
-              <div className="font-bold text-gray-800">{p.name || p.title}</div>
-              <div className="text-xs text-gray-400">{p.address}</div>
+              <div className="font-bold text-gray-800">{p.title || p.name}</div>
+              {p.category && <div className="text-xs text-gray-400">{p.category}</div>}
             </button>
           ))}
         </div>
