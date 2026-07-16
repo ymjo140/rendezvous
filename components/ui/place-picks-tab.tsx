@@ -127,6 +127,15 @@ export function PlacePicksTab() {
     return () => { active = false; clearInterval(t) }
   }, [me, anchor])
 
+  // 🗳️ 진행 중인 모임 장소 투표 — 있으면 배너로 담기 유도
+  const [activePolls, setActivePolls] = useState<any[]>([])
+  useEffect(() => {
+    fetchWithAuth("/api/chat/polls/active")
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => setActivePolls(d?.items || []))
+      .catch(() => {})
+  }, [])
+
   // 👥 내 모임 추천 — 앵커 시 그 지역 기준(멤버 취향은 유지)
   // 무거운 파이프라인이라 탭 재진입 시 마지막 결과 즉시 표시 + 백그라운드 갱신(SWR)
   useEffect(() => {
@@ -200,6 +209,21 @@ export function PlacePicksTab() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-8 pt-3 space-y-6">
+        {/* 🗳️ 진행 중 모임 투표 배너 — 장소 상세의 '투표에 담기'로 후보 추가 가능 */}
+        {activePolls.length > 0 && (
+          <section className="rounded-2xl border border-[#F5A623] bg-amber-50 px-3.5 py-2.5 flex items-center gap-2.5 -mb-2">
+            <span className="text-lg">🗳️</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-amber-900 truncate">
+                {activePolls[0].room_title} · 장소 투표 진행 중
+              </p>
+              <p className="text-[11px] text-amber-700">
+                마음에 드는 곳 상세에서 '투표에 담기'를 눌러보세요 (후보 {activePolls[0].option_count}곳)
+              </p>
+            </div>
+          </section>
+        )}
+
         {/* 📍 지역 앵커 — 기본 내 위치, 검색하면 그 지역 기준으로 전체 전환 */}
         <section className={`rounded-2xl border p-3 ${anchor ? "bg-amber-50 border-[#F5A623]" : "bg-gray-50 border-gray-100"}`}>
           <div className="flex items-center justify-between">

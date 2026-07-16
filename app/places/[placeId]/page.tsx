@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { createReservation, getWallet, won } from "@/lib/wallet"
 import { recordActivity } from "@/lib/game"
+import { AddToPollButton } from "@/components/ui/add-to-poll"
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "")
 
@@ -646,6 +647,14 @@ export default function PlaceDetailPage() {
                   <Bookmark className={`h-4 w-4 ${savedPlace ? "fill-amber-600" : ""}`} />
                 </button>
               </div>
+            </div>
+
+            {/* 모임 투표에 담기 — 진행 중 투표에 후보로 추가하거나 새 투표 시작 */}
+            <div className="mt-3">
+              <AddToPollButton
+                place={{ id: Number(place.id), name: place.name, category: place.category, lat: place.lat, lng: place.lng }}
+                className="w-full h-10 rounded-xl border border-amber-200 bg-amber-50/60 text-amber-700 text-sm font-bold flex items-center justify-center gap-1.5 hover:bg-amber-50 transition-colors"
+              />
             </div>
 
             <div className="mt-3 flex items-center gap-2 text-sm text-gray-600">

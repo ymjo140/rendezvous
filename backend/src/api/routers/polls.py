@@ -183,6 +183,38 @@ def my_active_polls(
     return {"items": out}
 
 
+@router.get("/api/chat/rooms/{room_id}/polls")
+def room_polls(
+    room_id: str,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """방의 투표 목록 — status=confirmed면 확정 히스토리(방문 히스토리 카드용)."""
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    _require_member(db, room_id, current_user.id)
+    q = db.query(models.ChatPoll).filter(models.ChatPoll.room_id == room_id)
+    if status:
+        q = q.filter(models.ChatPoll.status == status)
+    polls = q.order_by(models.ChatPoll.created_at.desc()).limit(30).all()
+    out = []
+    for p in polls:
+        item = {
+            "poll_id": p.id,
+            "kind": p.kind,
+            "status": p.status,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "confirmed": None,
+        }
+        if p.confirmed_option_id:
+            opt = db.query(models.ChatPollOption).filter(models.ChatPollOption.id == p.confirmed_option_id).first()
+            if opt:
+                item["confirmed"] = {"label": opt.label, "place_id": opt.place_id, "meta": opt.meta or {}}
+        out.append(item)
+    return {"items": out}
+
+
 @router.get("/api/chat/polls/{poll_id}")
 def get_poll(
     poll_id: int,

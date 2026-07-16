@@ -194,6 +194,28 @@ def set_group_visibility(cid: str, req: dict, user: Optional[models.User] = Depe
     return {"id": c.id, "visibility": c.visibility, "icon": c.icon}
 
 
+@router.patch("/api/groups/{cid}/profile")
+def set_group_profile(cid: str, req: dict, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    """모임 이름/아이콘 변경 — 방장(host)만. 채팅방 제목도 함께 갱신(룸 id == 모임 id)."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    c = db.query(models.Community).filter(models.Community.id == cid).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="모임을 찾을 수 없어요.")
+    if c.host_id != user.id:
+        raise HTTPException(status_code=403, detail="모임장만 변경할 수 있어요.")
+    title = str(req.get("title") or "").strip()
+    if title:
+        c.title = title[:40]
+        room = db.query(models.ChatRoom).filter(models.ChatRoom.id == cid).first()
+        if room:
+            room.title = f"[모임] {title[:40]}" if (room.title or "").startswith("[모임]") else title[:40]
+    if req.get("icon"):
+        c.icon = str(req.get("icon"))[:8]
+    db.commit()
+    return {"id": c.id, "title": c.title, "icon": c.icon}
+
+
 @router.get("/api/me/groups")
 def my_groups(user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
     """내가 방장인 모임(공개 설정 관리용)."""

@@ -7,7 +7,14 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ChevronUp, Clock, ThumbsUp, UserPlus, Globe, Lock, List, Users } from "lucide-react"
+import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ThumbsUp, UserPlus, Globe, Lock, List, Users, Settings, Plus, ImageIcon, Video, History, Calculator, Pencil, Bell, ChevronRight } from "lucide-react"
+import {
+    PollCard, PlacePollComposer, SchedulePollComposer, CandidateSheet,
+    HistorySheet, SettlementComposer, SettlementCard, PollConfirmedCard,
+    fetchPoll, type Poll,
+} from "@/components/ui/chat-poll"
+import { compressImageFile } from "@/lib/image"
+import { validateAndUploadVideo } from "@/lib/video"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -27,27 +34,9 @@ const fetchChatAPI = async (endpoint: string, options: RequestInit = {}) => {
     return fetchWithAuth(endpoint, options);
 };
 
-// --- AI 장소 추천용 필터 데이터 ---
-const AI_FILTER_OPTIONS: Record<string, any> = {
-    "식사": { 
-        label: "🍚 식사", 
-        tabs: { "메뉴": ["한식", "일식", "중식", "양식", "고기", "분식"], "분위기": ["조용한", "가성비", "고급", "혼밥", "웨이팅맛집"] } 
-    },
-    "술/회식": { 
-        label: "🍺 술/회식", 
-        tabs: { "주종": ["소주", "맥주", "와인", "하이볼", "칵테일"], "분위기": ["시끌벅적", "룸", "노포", "헌팅", "회식장소"] } 
-    },
-    "카페": { 
-        label: "☕ 카페", 
-        tabs: { "목적": ["수다", "작업/공부", "디저트", "빙수"], "분위기": ["감성", "대형", "뷰맛집", "조용한"] } 
-    },
-    "데이트": { 
-        label: "💖 데이트", 
-        tabs: { "코스": ["맛집", "카페", "산책", "전시/공연"], "분위기": ["로맨틱", "이색적인", "기념일", "야경"] } 
-    }
-};
+type ChatMember = { id: number; name: string; is_me?: boolean; lat?: number | null; lng?: number | null; location_name?: string | null }
 
-// 🌟 [VoteCard] 투표 및 확정 기능
+// 🌟 [VoteCard] 투표 및 확정 기능 (레거시 meeting-flow 메시지용)
 const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId: number, roomId: string, onRefresh: () => void }) => {
     const [votes, setVotes] = useState(data.vote_count || 0);
     const [voted, setVoted] = useState(false);
@@ -143,435 +132,6 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
     )
 }
 
-// 🤖 [RecommendChatbot] 단계별 대화형 장소 추천 (어디서 → 목적 → 날짜 → 추천)
-type ChatMember = { id: number; name: string; is_me?: boolean; lat?: number | null; lng?: number | null; location_name?: string | null }
-type BotMsg = { role: "bot" | "user"; text: string }
-
-const RecommendChatbot = ({ roomId, members }: { roomId: string; members: ChatMember[] }) => {
-    const router = useRouter()
-    const [log, setLog] = useState<BotMsg[]>([{ role: "bot", text: "어디서 만나시나요?" }])
-    const [step, setStep] = useState<"where" | "place_input" | "purpose" | "date" | "loading" | "result">("where")
-    const [where, setWhere] = useState<"midpoint" | { lat: number; lng: number; name: string } | null>(null)
-    const [purpose, setPurpose] = useState<string>("")
-    const [dateLabel, setDateLabel] = useState<string>("")
-    const [dates, setDates] = useState<any[]>([])
-    const [placeQuery, setPlaceQuery] = useState("")
-    const [placeHits, setPlaceHits] = useState<any[]>([])
-    const [results, setResults] = useState<any[]>([])
-
-    const say = (msgs: BotMsg[]) => setLog((prev) => [...prev, ...msgs])
-
-    useEffect(() => {
-        fetchChatAPI(`/api/chat/rooms/${roomId}/available-dates`)
-            .then((r) => (r.ok ? r.json() : []))
-            .then((d) => setDates(Array.isArray(d) ? d : []))
-            .catch(() => {})
-    }, [roomId])
-
-    const pickWhere = (kind: "midpoint" | "place") => {
-        if (kind === "midpoint") {
-            setWhere("midpoint")
-            say([{ role: "user", text: "중간 지점" }, { role: "bot", text: "목적이 무엇인가요?" }])
-            setStep("purpose")
-        } else {
-            say([{ role: "user", text: "장소 직접 입력" }, { role: "bot", text: "어느 장소 근처인가요? 검색해 주세요." }])
-            setStep("place_input")
-        }
-    }
-
-    const searchPlace = async () => {
-        const q = placeQuery.trim()
-        if (!q) return
-        try {
-            const res = await fetchChatAPI(`/api/places/search?query=${encodeURIComponent(q)}`)
-            const data = res.ok ? await res.json() : []
-            setPlaceHits(Array.isArray(data) ? data.slice(0, 5) : [])
-        } catch {
-            setPlaceHits([])
-        }
-    }
-
-    const pickPlace = (p: any) => {
-        setWhere({ lat: p.lat, lng: p.lng, name: p.name || p.title || placeQuery })
-        setPlaceHits([])
-        say([{ role: "user", text: p.name || p.title || placeQuery }, { role: "bot", text: "목적이 무엇인가요?" }])
-        setStep("purpose")
-    }
-
-    const pickPurpose = (key: string) => {
-        setPurpose(key)
-        say([{ role: "user", text: AI_FILTER_OPTIONS[key]?.label || key }, { role: "bot", text: "정해진 날짜가 있나요?" }])
-        setStep("date")
-    }
-
-    const pickDate = (label: string) => {
-        setDateLabel(label)
-        say([{ role: "user", text: label }])
-        runRecommend()
-    }
-
-    const runRecommend = async () => {
-        setStep("loading")
-        say([{ role: "bot", text: "우리 모임 취향을 합쳐 딱 맞는 곳을 찾고 있어요... 🔎" }])
-        try {
-            const memberIds = members.map((m) => m.id)
-            const located = members.filter((m) => m.lat && m.lng && Math.abs(Number(m.lat)) > 1)
-            let payload: any = {
-                purpose: purpose || "식사",
-                user_selected_tags: [],
-                member_user_ids: memberIds,
-            }
-            if (where === "midpoint" && located.length > 0) {
-                payload.current_lat = located[0].lat
-                payload.current_lng = located[0].lng
-                payload.users = located.slice(1).map((m) => ({ location: { lat: m.lat, lng: m.lng } }))
-            } else if (where && where !== "midpoint") {
-                payload.current_lat = where.lat
-                payload.current_lng = where.lng
-            } else {
-                // 위치 정보 없음 → 멤버 취향만 (백엔드가 내 주변 폴백)
-                payload.current_lat = located[0]?.lat || 37.5665
-                payload.current_lng = located[0]?.lng || 126.978
-            }
-            const res = await fetchChatAPI(`/api/recommend`, { method: "POST", body: JSON.stringify(payload) })
-            const regions = res.ok ? await res.json() : []
-            const places = (regions?.[0]?.places || []).slice(0, 6)
-            setResults(places)
-            const region0 = regions?.[0]
-            say([{ role: "bot", text: places.length
-                ? `${region0?.region_name || "추천 지역"} 근처로 ${places.length}곳 찾았어요!`
-                : "조건에 맞는 곳을 못 찾았어요. 다시 시도해 주세요." }])
-            setStep("result")
-        } catch {
-            say([{ role: "bot", text: "추천 중 오류가 났어요. 잠시 후 다시 시도해 주세요." }])
-            setStep("result")
-        }
-    }
-
-    const reset = () => {
-        setLog([{ role: "bot", text: "어디서 만나시나요?" }])
-        setStep("where"); setWhere(null); setPurpose(""); setDateLabel(""); setResults([]); setPlaceHits([]); setPlaceQuery("")
-    }
-
-    return (
-        <div className="space-y-3">
-            {/* 대화 로그 */}
-            <div className="space-y-2 max-h-[40vh] overflow-y-auto">
-                {log.map((m, i) => (
-                    <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                        <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${m.role === "user" ? "bg-[#F5A623] text-white" : "bg-gray-100 text-gray-800"}`}>
-                            {m.role === "bot" && <span className="mr-1">🤖</span>}{m.text}
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* 단계별 선택지 */}
-            {step === "where" && (
-                <div className="flex gap-2">
-                    <Button onClick={() => pickWhere("midpoint")} className="flex-1 bg-[#F5A623] hover:bg-[#D97706] rounded-xl">📍 중간 지점</Button>
-                    <Button onClick={() => pickWhere("place")} variant="outline" className="flex-1 rounded-xl">🔍 장소 직접 입력</Button>
-                </div>
-            )}
-
-            {step === "place_input" && (
-                <div className="space-y-2">
-                    <div className="flex gap-2">
-                        <Input value={placeQuery} onChange={(e) => setPlaceQuery(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && searchPlace()}
-                            placeholder="예: 강남역, 홍대입구" className="h-10 text-sm" />
-                        <Button onClick={searchPlace} className="bg-[#F5A623] hover:bg-[#D97706] rounded-xl">검색</Button>
-                    </div>
-                    {placeHits.map((p, i) => (
-                        <button key={i} onClick={() => pickPlace(p)} className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 hover:bg-amber-50 text-sm">
-                            <div className="font-bold text-gray-800">{p.name || p.title}</div>
-                            <div className="text-xs text-gray-400">{p.address}</div>
-                        </button>
-                    ))}
-                </div>
-            )}
-
-            {step === "purpose" && (
-                <div className="flex flex-wrap gap-2">
-                    {Object.keys(AI_FILTER_OPTIONS).map((key) => (
-                        <Button key={key} onClick={() => pickPurpose(key)} variant="outline" className="rounded-full text-xs h-8">
-                            {AI_FILTER_OPTIONS[key].label}
-                        </Button>
-                    ))}
-                </div>
-            )}
-
-            {step === "date" && (
-                <div className="flex flex-wrap gap-2">
-                    <Button onClick={() => pickDate("가장 빠른 빈 날")} className="bg-[#14B8A6] hover:bg-[#0D9488] rounded-full text-xs h-8">⚡ 가장 빠른 빈 날</Button>
-                    {dates.slice(0, 4).map((d, i) => (
-                        <Button key={i} onClick={() => pickDate(d.displayDate)} variant="outline" className="rounded-full text-xs h-8">{d.displayDate}</Button>
-                    ))}
-                </div>
-            )}
-
-            {step === "loading" && (
-                <div className="flex justify-center py-2"><Loader2 className="w-5 h-5 animate-spin text-[#F5A623]" /></div>
-            )}
-
-            {/* 추천 결과 카드 */}
-            {step === "result" && results.length > 0 && (
-                <div className="space-y-2">
-                    {results.map((p, i) => (
-                        <div key={p.id ?? i} onClick={() => p.id && router.push(`/places/${p.id}`)}
-                            className="bg-white border border-gray-100 rounded-xl p-3 cursor-pointer hover:border-[#F5A623] transition-colors">
-                            <div className="font-bold text-sm text-gray-800">{p.name}</div>
-                            <div className="text-[11px] text-gray-500">{p.category} · {p.address}</div>
-                            {p.reason && <div className="mt-1 text-[11px] font-bold text-[#F5A623]">✨ {p.reason}</div>}
-                            {p.vacancy_now && (
-                                <div className="mt-1 mr-1 inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-600">
-                                    🔴 지금 입장 가능
-                                </div>
-                            )}
-                            {p.social_proof?.count > 0 && (
-                                <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
-                                    🫂 비슷한 취향 {p.social_proof.count}명이 좋아함
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                    <Button onClick={reset} variant="ghost" className="w-full text-xs text-gray-400">다시 추천받기</Button>
-                </div>
-            )}
-            {step === "result" && results.length === 0 && (
-                <Button onClick={reset} variant="outline" className="w-full rounded-xl text-sm">다시 시도</Button>
-            )}
-        </div>
-    )
-}
-
-// 🌟 [MeetingPlanner] UI + DB 위치 연동
-const MeetingPlanner = ({ roomId, myId, members, onClose, onRefresh }: { roomId: string, myId: number | null, members: ChatMember[], onClose: () => void, onRefresh: () => void }) => {
-    const [activeTab, setActiveTab] = useState("recommend") 
-    
-    // -- 장소 추천 State --
-    const [recLoading, setRecLoading] = useState(false)
-    const [participants, setParticipants] = useState(2)
-    const [budget, setBudget] = useState([3, 10]) 
-    const [selectedPurpose, setSelectedPurpose] = useState("식사");
-    const [selectedTags, setSelectedTags] = useState<string[]>([]);
-
-    // -- 일정 추천 State --
-    const [recommendedDates, setRecommendedDates] = useState<any[]>([]);
-    const [showAllDates, setShowAllDates] = useState(false);
-    const [selectedDateSlot, setSelectedDateSlot] = useState<any>(null);
-
-    // -- 일정 등록 State --
-    const [scheduleInput, setScheduleInput] = useState("");
-    const [scheduleLoading, setScheduleLoading] = useState(false);
-    const [parsedSchedule, setParsedSchedule] = useState<any>(null);
-
-    // -- 🌟 내 위치 State (DB) --
-    const [myLocation, setMyLocation] = useState<{lat: number, lng: number} | null>(null);
-    const [locationLabel, setLocationLabel] = useState("위치 확인 중...");
-
-    // 초기 데이터 로드 (일정 및 내 위치)
-    useEffect(() => {
-        const loadData = async () => {
-            // 1. 내 정보(위치) 불러오기 - DB 연동
-            try {
-                const userRes = await fetchChatAPI("/api/users/me");
-                if (userRes.ok) {
-                    const user = await userRes.json();
-                    if (user.lat && user.lng && Math.abs(user.lat) > 1.0) {
-                        setMyLocation({ lat: user.lat, lng: user.lng });
-                        setLocationLabel(`📍 ${user.location_name || '내 설정 위치'}`);
-                    } else {
-                        setLocationLabel("⚠️ 위치 미설정 (설정 필요)");
-                    }
-                }
-            } catch (e) { console.error("위치 로드 실패:", e); }
-
-            // 2. 가능한 날짜 불러오기
-            try {
-                const dateRes = await fetchChatAPI(`/api/chat/rooms/${roomId}/available-dates`);
-                if (dateRes.ok) {
-                    const candidates = await dateRes.json();
-                    setRecommendedDates(candidates);
-                    if(candidates.length > 0) setSelectedDateSlot(candidates[0]);
-                }
-            } catch (e) { console.error(e); }
-        };
-
-        loadData();
-    }, [roomId]);
-
-    const toggleTag = (tag: string) => {
-        if (selectedTags.includes(tag)) setSelectedTags(prev => prev.filter(t => t !== tag));
-        else setSelectedTags(prev => [...prev, tag]);
-    };
-
-    // 1. 장소 추천 요청 (백그라운드 처리)
-    const handlePlan = async () => {
-        setRecLoading(true)
-        try {
-            const targetDate = selectedDateSlot ? selectedDateSlot.fullDate : "auto";
-            const targetTime = selectedDateSlot ? selectedDateSlot.time : "auto";
-
-            const detailedPrompt = `
-                1. 기본 조건: ${selectedPurpose} 목적, ${budget[0]}~${budget[1]}만원 예산.
-                2. 선호 키워드: ${selectedTags.join(", ")}.
-                3. 일정: ${targetDate} ${targetTime}에 적합한 곳.
-            `.trim();
-
-            const payload = {
-                room_id: String(roomId),
-                purpose: selectedPurpose,
-                // 🌟 DB에서 가져온 내 위치 사용 (없으면 0.0을 보내 백엔드에서 처리)
-                current_lat: myLocation?.lat || 0.0,
-                current_lng: myLocation?.lng || 0.0, 
-                conditions: {
-                    date: targetDate,
-                    time: targetTime,
-                    budget_range: budget,
-                    category: selectedPurpose,
-                    tags: selectedTags,
-                    detail_prompt: detailedPrompt
-                }
-            }
-
-            // 요청만 보내고 결과는 소켓으로 받음 (await 없이)
-            fetchChatAPI(`/api/meeting-flow`, {
-                method: "POST",
-                body: JSON.stringify(payload)
-            });
-
-            // 즉시 닫기
-            onClose();
-
-        } catch (e) { console.error(e); alert("오류 발생"); } 
-        finally { setRecLoading(false) }
-    }
-
-    // 2. 자연어 일정 분석 요청
-    const handleAnalyzeSchedule = async () => {
-        if(!scheduleInput.trim()) return;
-        setScheduleLoading(true);
-        try {
-            const res = await fetchChatAPI(`/api/ai/parse-schedule`, {
-                method: "POST",
-                body: JSON.stringify({ text: scheduleInput })
-            });
-            if(res.ok) {
-                const data = await res.json();
-                setParsedSchedule(data);
-            }
-        } catch(e) { console.error(e); alert("분석 실패"); }
-        finally { setScheduleLoading(false); }
-    }
-
-    // 3. 분석된 일정 등록 (캘린더 저장)
-    const handleRegisterEvent = async () => {
-        if(!parsedSchedule || !myId) return;
-        try {
-            const res = await fetchChatAPI(`/api/events`, {
-                method: "POST",
-                body: JSON.stringify({
-                    user_id: myId,
-                    title: parsedSchedule.title || "새 약속",
-                    date: parsedSchedule.date,
-                    time: parsedSchedule.time,
-                    location_name: parsedSchedule.location_name,
-                    purpose: parsedSchedule.purpose || "기타",
-                    duration_hours: 2.0
-                })
-            });
-
-            if(res.ok) {
-                // 채팅방에도 알림 메시지 보내기
-                await fetchChatAPI(`/api/chat/message`, {
-                    method: "POST",
-                    body: JSON.stringify({ room_id: String(roomId), content: `📅 [일정 등록됨] ${parsedSchedule.title} (${parsedSchedule.date} ${parsedSchedule.time})`, type: "text" })
-                });
-                
-                onRefresh();
-                onClose();
-            }
-        } catch(e) { console.error(e); alert("등록 실패"); }
-    }
-
-    const currentOptions = AI_FILTER_OPTIONS[selectedPurpose];
-    const visibleDates = showAllDates ? recommendedDates : recommendedDates.slice(0, 3);
-
-    return (
-        <div className="w-full bg-white border-2 border-[#F5A623]/20 rounded-3xl p-5 shadow-lg relative overflow-hidden mb-4 animate-in slide-in-from-top-2">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#F5A623] to-[#14B8A6]"></div>
-            
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-sm text-[#F5A623] flex items-center gap-1">
-                    🤖 AI 모임 매니저
-                </h3>
-                <button onClick={onClose}><X className="w-4 h-4 text-gray-400"/></button>
-            </div>
-
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-2 mb-4">
-                    <TabsTrigger value="recommend">📍 장소 추천</TabsTrigger>
-                    <TabsTrigger value="schedule">📅 일정 등록</TabsTrigger>
-                </TabsList>
-
-                {/* --- 탭 1: 장소 추천 (대화형 챗봇) --- */}
-                <TabsContent value="recommend" className="space-y-3">
-                    <RecommendChatbot roomId={roomId} members={members} />
-                </TabsContent>
-
-                {/* --- 탭 2: 일정 등록 (자연어) --- */}
-                <TabsContent value="schedule" className="space-y-4">
-                    {!parsedSchedule ? (
-                        <>
-                            <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
-                                "다음주 금요일 저녁 7시에 강남역에서 회식 잡아줘" 처럼 말해보세요. AI가 자동으로 일정을 등록해줍니다.
-                            </div>
-                            <Textarea 
-                                placeholder="약속 내용을 자유롭게 입력하세요..." 
-                                className="resize-none h-24 text-sm"
-                                value={scheduleInput}
-                                onChange={(e) => setScheduleInput(e.target.value)}
-                            />
-                            <Button className="w-full bg-[#14B8A6] hover:bg-[#0D9488] text-white font-bold h-11 rounded-xl" onClick={handleAnalyzeSchedule} disabled={scheduleLoading}>
-                                {scheduleLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : "🤖 AI 분석 및 등록"}
-                            </Button>
-                        </>
-                    ) : (
-                        <div className="animate-in fade-in zoom-in duration-300">
-                            <Card className="p-4 border-[#14B8A6] bg-teal-50/50 mb-3">
-                                <h4 className="font-bold text-teal-800 mb-2 flex items-center"><Check className="w-4 h-4 mr-1"/> 분석 결과</h4>
-                                <div className="space-y-2 text-sm text-gray-700">
-                                    <div className="flex justify-between border-b border-teal-100 pb-1">
-                                        <span className="text-gray-500">제목</span>
-                                        <span className="font-bold">{parsedSchedule.title}</span>
-                                    </div>
-                                    <div className="flex justify-between border-b border-teal-100 pb-1">
-                                        <span className="text-gray-500 flex items-center"><Calendar className="w-3 h-3 mr-1"/> 날짜</span>
-                                        <span className="font-bold">{parsedSchedule.date} {parsedSchedule.time}</span>
-                                    </div>
-                                    <div className="flex justify-between border-b border-teal-100 pb-1">
-                                        <span className="text-gray-500 flex items-center"><MapPin className="w-3 h-3 mr-1"/> 장소</span>
-                                        <span className="font-bold">{parsedSchedule.location_name || "미정"}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-500">목적</span>
-                                        <Badge variant="outline" className="bg-white">{parsedSchedule.purpose}</Badge>
-                                    </div>
-                                </div>
-                            </Card>
-                            <div className="flex gap-2">
-                                <Button variant="outline" className="flex-1" onClick={() => setParsedSchedule(null)}>다시 입력</Button>
-                                <Button className="flex-[2] bg-teal-600 hover:bg-teal-700 text-white" onClick={handleRegisterEvent}>캘린더에 등록하기</Button>
-                            </div>
-                        </div>
-                    )}
-                </TabsContent>
-            </Tabs>
-        </div>
-    )
-}
-
 // Props 타입 정의
 interface ChatTabProps {
     openRoomId?: string | null;
@@ -588,10 +148,25 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     const { me } = useMe()
     const myId = me?.id ?? null
     const [rootTab, setRootTab] = useState("open")
-    const [showPlanner, setShowPlanner] = useState(false)
     const [isConnected, setIsConnected] = useState(false)
     const scrollRef = useRef<HTMLDivElement>(null)
     const socketRef = useRef<WebSocket | null>(null)
+
+    // ➕ 플러스 메뉴 & 기능 시트
+    const [plusOpen, setPlusOpen] = useState(false)
+    const [composer, setComposer] = useState<null | "place" | "schedule" | "settlement" | "history">(null)
+    const [candidatePoll, setCandidatePoll] = useState<Poll | null>(null)
+    // 투표 카드 상태(poll_id → Poll) — WS poll_update로 실시간 갱신
+    const [pollsById, setPollsById] = useState<Record<number, Poll>>({})
+    const pollsRef = useRef<Record<number, Poll>>({})
+    pollsRef.current = pollsById
+    const upsertPoll = (p: Poll) => setPollsById((prev) => ({ ...prev, [p.id]: p }))
+    // ⚙️ 설정 시트
+    const [settingsOpen, setSettingsOpen] = useState(false)
+    // 미디어 첨부
+    const imageInputRef = useRef<HTMLInputElement>(null)
+    const videoInputRef = useRef<HTMLInputElement>(null)
+    const [mediaSending, setMediaSending] = useState(false)
 
     // 친구 초대
     const [isInviteOpen, setIsInviteOpen] = useState(false)
@@ -604,7 +179,6 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     const [membersOpen, setMembersOpen] = useState(false)
     // 🍽️ 맛집 모임 공개 설정(방장만) — 룸 id == 모임 id
     const [groupInfo, setGroupInfo] = useState<any>(null)
-    const [visOpen, setVisOpen] = useState(false)
     const [visSaving, setVisSaving] = useState(false)
 
     const fetchMembers = async (roomId: string | number) => {
@@ -709,9 +283,11 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     // WebSocket 연결 및 실시간 수신
     useEffect(() => {
         if (view === 'room' && activeRoom) {
-            setShowPlanner(false)
+            setPlusOpen(false)
+            setComposer(null)
+            setCandidatePoll(null)
             setMembersOpen(false)
-            setVisOpen(false)
+            setSettingsOpen(false)
             fetchMembers(activeRoom.id)
             fetchGroupInfo(activeRoom.id)
             fetchMessages();
@@ -727,8 +303,25 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
 
             ws.onopen = () => { setIsConnected(true); console.log("Connected"); };
             ws.onmessage = (event) => {
-                const newMsg = JSON.parse(event.data);
-                setMessages(prev => [...prev, newMsg]);
+                const data = JSON.parse(event.data);
+                // 투표 상태 변경은 메시지가 아니라 카드 갱신
+                // (브로드캐스트엔 내 투표/작성자 플래그가 없어서 기존 상태와 병합)
+                if (data?.type === "poll_update" && data.poll?.id) {
+                    const old = pollsRef.current[data.poll.id];
+                    if (!old) {
+                        fetchPoll(data.poll.id).then((p) => { if (p) upsertPoll(p) });
+                        return;
+                    }
+                    const mine = new Set(old.options.filter((o) => o.voted_by_me).map((o) => o.id));
+                    const merged = {
+                        ...data.poll,
+                        is_creator: old.is_creator,
+                        options: data.poll.options.map((o: any) => ({ ...o, voted_by_me: mine.has(o.id) })),
+                    };
+                    setPollsById(prev => ({ ...prev, [merged.id]: merged }));
+                    return;
+                }
+                setMessages(prev => [...prev, data]);
                 setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
             };
             ws.onclose = () => { setIsConnected(false); setTimeout(() => { if (view === 'room' && activeRoom) ws.close(); }, 3000); };
@@ -739,6 +332,57 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
             };
         }
     }, [view, activeRoom])
+
+    // 메시지에 등장하는 투표 카드 로드(캐시에 없는 것만)
+    useEffect(() => {
+        const ids: number[] = []
+        messages.forEach((m: any) => {
+            try {
+                const c = JSON.parse(m.content)
+                if (c?.type === "poll" && c.poll_id && !pollsRef.current[c.poll_id] && ids.indexOf(c.poll_id) < 0) {
+                    ids.push(c.poll_id)
+                }
+            } catch { /* text */ }
+        })
+        ids.forEach((id) => fetchPoll(id).then((p) => { if (p) upsertPoll(p) }))
+    }, [messages])
+
+    // 구조화 메시지(payload) 전송 — 사진/영상/정산
+    const sendPayload = async (payload: any) => {
+        if (!activeRoom) return false
+        try {
+            const res = await fetchChatAPI(`/api/chat/message`, {
+                method: "POST",
+                body: JSON.stringify({ room_id: String(activeRoom.id), payload }),
+            })
+            if (res.ok && (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN)) fetchMessages()
+            return res.ok
+        } catch { return false }
+    }
+
+    const onPickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const f = e.target.files?.[0]
+        e.target.value = ""
+        if (!f) return
+        setMediaSending(true)
+        setPlusOpen(false)
+        try {
+            const dataUrl = await compressImageFile(f)
+            if (!(await sendPayload({ type: "image", url: dataUrl }))) alert("사진 전송에 실패했어요.")
+        } catch { alert("사진 처리에 실패했어요.") } finally { setMediaSending(false) }
+    }
+
+    const onPickVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const f = e.target.files?.[0]
+        e.target.value = ""
+        if (!f) return
+        setMediaSending(true)
+        setPlusOpen(false)
+        try {
+            const { url } = await validateAndUploadVideo(f)
+            if (!(await sendPayload({ type: "video", url }))) alert("영상 전송에 실패했어요.")
+        } catch (err: any) { alert(err?.message || "영상 처리에 실패했어요.") } finally { setMediaSending(false) }
+    }
 
     const handleLeaveRoom = async () => {
         if (!activeRoom) return;
@@ -777,7 +421,6 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
             if (res.ok) {
                 const d = await res.json()
                 setGroupInfo((p: any) => (p ? { ...p, visibility: d.visibility } : p))
-                setVisOpen(false)
             } else if (res.status === 403) {
                 alert("모임장만 변경할 수 있어요.")
             } else {
@@ -880,78 +523,120 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 </div>
                 
                 <div className="flex items-center gap-2">
-                    <Button 
-                        size="sm"
-                        onClick={() => setShowPlanner(!showPlanner)} 
-                        className={`rounded-full transition-all font-bold shadow-sm h-8 px-3 text-xs ${showPlanner ? "bg-[#2dd4bf] text-white hover:bg-[#25c2af]" : "bg-white text-[#2dd4bf] border border-[#2dd4bf] hover:bg-teal-50"}`}
-                    >
-                        AI 🤖
-                    </Button>
-                    
                     <Button
                         size="icon"
                         variant="ghost"
-                        onClick={openInvite}
-                        className="h-8 w-8 text-gray-400 hover:text-[#F5A623] hover:bg-amber-50"
-                        title="친구 초대"
+                        onClick={() => setSettingsOpen(true)}
+                        className="h-8 w-8 rounded-full bg-amber-50 text-amber-600 hover:bg-amber-100"
+                        title="채팅방 설정"
                     >
-                        <UserPlus className="w-4 h-4" />
-                    </Button>
-
-                    {groupInfo?.is_host && (
-                        <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => setVisOpen(true)}
-                            className="h-8 w-8 text-gray-400 hover:text-amber-500 hover:bg-amber-50"
-                            title="모임 공개 설정"
-                        >
-                            <Globe className="w-4 h-4" />
-                        </Button>
-                    )}
-
-                    <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={handleLeaveRoom}
-                        className="h-8 w-8 text-gray-400 hover:text-red-500 hover:bg-red-50"
-                        title="채팅방 나가기"
-                    >
-                        <LogOut className="w-4 h-4" />
+                        <Settings className="w-4 h-4" />
                     </Button>
                 </div>
                 </div>
 
-                {/* 🍽️ 모임 공개 설정 시트 (방장) */}
-                {visOpen && groupInfo && (
-                    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setVisOpen(false)}>
-                        <div className="w-full max-w-lg bg-white rounded-t-3xl p-5 pb-8" onClick={(e) => e.stopPropagation()}>
+                {/* ⚙️ 채팅방 설정 시트 — 공개 범위 + 초대/이름/멤버/나가기 */}
+                {settingsOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setSettingsOpen(false)}>
+                        <div className="w-full max-w-lg bg-white rounded-t-3xl p-5 pb-8 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                             <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-                            <h3 className="font-bold text-gray-900 mb-1">모임 공개 설정</h3>
-                            <p className="text-xs text-gray-500 mb-4">이 모임을 어디까지 공개할까요?</p>
-                            {[
-                                { v: "private", icon: <Lock className="w-4 h-4" />, t: "비공개", d: "우리끼리만. 아무 노출 없음" },
-                                { v: "list_only", icon: <List className="w-4 h-4" />, t: "리스트만 공개", d: "맛집 리스트만 탐색에. 채팅·멤버는 비공개" },
-                                { v: "public", icon: <Users className="w-4 h-4" />, t: "모임 공개", d: "프로필·팔로우 공개. 채팅은 초대제" },
-                                { v: "open", icon: <Globe className="w-4 h-4" />, t: "오픈채팅", d: "누구나 참여 가능. 완전 개방" },
-                            ].map((o) => {
-                                const on = groupInfo.visibility === o.v
-                                return (
-                                    <button
-                                        key={o.v}
-                                        onClick={() => saveVisibility(o.v)}
-                                        disabled={visSaving}
-                                        className={`w-full flex items-center gap-3 text-left rounded-2xl p-3.5 mb-2 border transition-colors ${on ? "border-2 border-amber-500 bg-amber-50" : "border border-gray-200 hover:bg-gray-50"}`}
-                                    >
-                                        <span className={on ? "text-amber-600" : "text-gray-400"}>{o.icon}</span>
-                                        <span className="flex-1">
-                                            <span className={`block text-sm font-bold ${on ? "text-amber-700" : "text-gray-700"}`}>{o.t}</span>
-                                            <span className={`block text-[11px] mt-0.5 ${on ? "text-amber-600" : "text-gray-400"}`}>{o.d}</span>
+                            <h3 className="font-bold text-gray-900 mb-3">{groupInfo ? "모임 설정" : "채팅방 설정"}</h3>
+
+                            {/* 모임 공개 범위 (모임방만) */}
+                            {groupInfo && (
+                                <div className="rounded-2xl border border-gray-200 p-3.5 mb-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+                                            <Globe className="w-4 h-4 text-gray-400" /> 모임 공개 범위
                                         </span>
-                                        {on && <Check className="w-4 h-4 text-amber-500" />}
+                                        {!groupInfo.is_host && <span className="text-[10px] text-gray-400">모임장만 변경 가능</span>}
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-1.5">
+                                        {[
+                                            { v: "private", t: "비공개", icon: <Lock className="w-3.5 h-3.5" /> },
+                                            { v: "list_only", t: "리스트만", icon: <List className="w-3.5 h-3.5" /> },
+                                            { v: "public", t: "모임 공개", icon: <Users className="w-3.5 h-3.5" /> },
+                                            { v: "open", t: "오픈채팅", icon: <Globe className="w-3.5 h-3.5" /> },
+                                        ].map((o) => {
+                                            const on = groupInfo.visibility === o.v
+                                            return (
+                                                <button
+                                                    key={o.v}
+                                                    onClick={() => groupInfo.is_host && saveVisibility(o.v)}
+                                                    disabled={visSaving || !groupInfo.is_host}
+                                                    className={`rounded-xl px-1 py-2 text-[11px] font-bold flex flex-col items-center gap-1 border transition-colors ${
+                                                        on ? "border-amber-500 bg-amber-50 text-amber-700" : "border-gray-200 text-gray-500"
+                                                    } ${!groupInfo.is_host ? "opacity-60" : ""}`}
+                                                >
+                                                    {o.icon}{o.t}
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-2">
+                                        {groupInfo.visibility === "private" && "우리끼리만 보여요. 아무 데도 노출되지 않아요."}
+                                        {groupInfo.visibility === "list_only" && "맛집 리스트만 탐색에 공개돼요. 채팅·멤버는 비공개."}
+                                        {groupInfo.visibility === "public" && "인기 모임 랭킹·팔로우 대상에 노출돼요. 채팅은 초대제."}
+                                        {groupInfo.visibility === "open" && "누구나 찾아서 참여할 수 있는 완전 개방 모임이에요."}
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="rounded-2xl border border-gray-200 overflow-hidden mb-3">
+                                <button onClick={() => { setSettingsOpen(false); openInvite() }} className="w-full flex items-center gap-2.5 px-3.5 py-3 border-b border-gray-100 hover:bg-gray-50">
+                                    <UserPlus className="w-4 h-4 text-amber-600" />
+                                    <span className="flex-1 text-left text-sm font-bold text-gray-800">친구 초대</span>
+                                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                                </button>
+                                {groupInfo?.is_host && (
+                                    <button
+                                        onClick={async () => {
+                                            const name = prompt("모임 이름을 입력하세요", (groupInfo.title || activeRoom?.title || "").replace("[모임] ", ""))
+                                            if (!name?.trim()) return
+                                            try {
+                                                const res = await fetchChatAPI(`/api/groups/${activeRoom.id}/profile`, {
+                                                    method: "PATCH",
+                                                    body: JSON.stringify({ title: name.trim() }),
+                                                })
+                                                if (res.ok) {
+                                                    const d = await res.json()
+                                                    setGroupInfo((p: any) => (p ? { ...p, title: d.title } : p))
+                                                    setActiveRoom((r: any) => (r ? { ...r, title: `[모임] ${d.title}` } : r))
+                                                    fetchRooms()
+                                                } else alert("변경에 실패했어요.")
+                                            } catch { alert("오류가 발생했어요.") }
+                                        }}
+                                        className="w-full flex items-center gap-2.5 px-3.5 py-3 border-b border-gray-100 hover:bg-gray-50"
+                                    >
+                                        <Pencil className="w-4 h-4 text-gray-400" />
+                                        <span className="flex-1 text-left text-sm text-gray-700">모임 이름 변경</span>
+                                        <ChevronRight className="w-4 h-4 text-gray-300" />
                                     </button>
-                                )
-                            })}
+                                )}
+                                <button onClick={() => { setSettingsOpen(false); setMembersOpen(true) }} className="w-full flex items-center gap-2.5 px-3.5 py-3 border-b border-gray-100 hover:bg-gray-50">
+                                    <Users className="w-4 h-4 text-gray-400" />
+                                    <span className="flex-1 text-left text-sm text-gray-700">멤버 보기 ({members.length})</span>
+                                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                                </button>
+                                <button onClick={() => { setSettingsOpen(false); setComposer("history") }} className="w-full flex items-center gap-2.5 px-3.5 py-3 border-b border-gray-100 hover:bg-gray-50">
+                                    <History className="w-4 h-4 text-gray-400" />
+                                    <span className="flex-1 text-left text-sm text-gray-700">우리 모임 히스토리</span>
+                                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                                </button>
+                                <div className="w-full flex items-center gap-2.5 px-3.5 py-3">
+                                    <Bell className="w-4 h-4 text-gray-400" />
+                                    <span className="flex-1 text-left text-sm text-gray-700">알림</span>
+                                    <span className="text-[11px] text-gray-400">준비 중</span>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => { setSettingsOpen(false); handleLeaveRoom() }}
+                                className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-2xl border border-red-100 bg-red-50/50 hover:bg-red-50"
+                            >
+                                <LogOut className="w-4 h-4 text-red-500" />
+                                <span className="flex-1 text-left text-sm font-bold text-red-500">채팅방 나가기</span>
+                            </button>
                         </div>
                     </div>
                 )}
@@ -978,22 +663,33 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 <div className="flex flex-col gap-3 pb-4">
                     <div className="flex justify-center my-4"><span className="bg-gray-200/60 text-gray-500 text-[10px] px-3 py-1 rounded-full">대화가 시작되었습니다.</span></div>
 
-                    {showPlanner && (
-                        <MeetingPlanner
-                            roomId={activeRoom?.id}
-                            myId={myId}
-                            members={members}
-                            onClose={() => setShowPlanner(false)}
-                            onRefresh={fetchMessages}
-                        />
-                    )}
-
                     {messages.map((msg, i) => {
                         const isMe = msg.user_id === myId;
                         let content = null;
                         try {
                             const jsonContent = JSON.parse(msg.content);
-                            if (jsonContent.type === "vote_card") {
+                            if (jsonContent.type === "poll") {
+                                const poll = pollsById[jsonContent.poll_id]
+                                content = poll ? (
+                                    <PollCard
+                                        poll={poll}
+                                        onUpdate={upsertPoll}
+                                        onAddCandidates={(p) => setCandidatePoll(p)}
+                                    />
+                                ) : (
+                                    <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3 text-xs text-gray-400 flex items-center gap-2">
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> 투표 불러오는 중...
+                                    </div>
+                                )
+                            } else if (jsonContent.type === "poll_confirmed") {
+                                return <PollConfirmedCard key={i} data={jsonContent} />
+                            } else if (jsonContent.type === "settlement") {
+                                content = <SettlementCard data={jsonContent} />
+                            } else if (jsonContent.type === "image") {
+                                content = <img src={jsonContent.url} alt="" className="max-w-[220px] rounded-2xl border border-gray-100 shadow-sm" />
+                            } else if (jsonContent.type === "video") {
+                                content = <video src={jsonContent.url} controls playsInline className="max-w-[220px] rounded-2xl border border-gray-100 shadow-sm" />
+                            } else if (jsonContent.type === "vote_card") {
                                 content = <VoteCard data={jsonContent} messageId={msg.id} roomId={activeRoom.id} onRefresh={fetchMessages} />
                             } else if (jsonContent.type === "system") {
                                 return (
@@ -1092,11 +788,62 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 </ScrollArea>
 
                 <div className="p-3 bg-white border-t safe-area-bottom">
-                <div className="flex gap-2 items-center bg-gray-50 px-3 py-1.5 rounded-3xl border border-gray-200 focus-within:border-[#F5A623] focus-within:ring-1 focus-within:ring-[#F5A623]/20 transition-all">
-                    <Input className="flex-1 border-none shadow-none bg-transparent focus-visible:ring-0 h-9 text-sm" placeholder="메시지 입력..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
-                    <Button size="icon" className="h-8 w-8 rounded-full bg-[#F5A623] hover:bg-[#D97706] shadow-sm" onClick={handleSend}><Send className="w-4 h-4 text-white" /></Button>
+                {/* ➕ 플러스 메뉴 — 사진/동영상/일정/장소/히스토리/정산 */}
+                {plusOpen && (
+                    <div className="grid grid-cols-5 gap-1.5 mb-2.5 animate-in slide-in-from-bottom-2">
+                        {[
+                            { key: "photo", icon: <ImageIcon className="w-5 h-5" />, label: "사진", onClick: () => imageInputRef.current?.click() },
+                            { key: "video", icon: <Video className="w-5 h-5" />, label: "동영상", onClick: () => videoInputRef.current?.click() },
+                            { key: "schedule", icon: <Calendar className="w-5 h-5" />, label: "일정 조율", onClick: () => { setPlusOpen(false); setComposer("schedule") } },
+                            { key: "place", icon: <MapPin className="w-5 h-5" />, label: "장소 추천", onClick: () => { setPlusOpen(false); setComposer("place") }, hot: true },
+                            { key: "settle", icon: <Calculator className="w-5 h-5" />, label: "정산", onClick: () => { setPlusOpen(false); setComposer("settlement") } },
+                        ].map((it: any) => (
+                            <button key={it.key} onClick={it.onClick} className="flex flex-col items-center gap-1 py-1" disabled={mediaSending}>
+                                <span className={`w-11 h-11 rounded-2xl flex items-center justify-center border ${it.hot ? "bg-amber-50 border-amber-200 text-amber-600" : "bg-gray-50 border-gray-100 text-gray-500"}`}>
+                                    {it.icon}
+                                </span>
+                                <span className={`text-[10px] ${it.hot ? "text-amber-600 font-bold" : "text-gray-500"}`}>{it.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+                <div className="flex gap-2 items-center">
+                    <button
+                        onClick={() => setPlusOpen((v) => !v)}
+                        className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${plusOpen ? "bg-gray-200 text-gray-600 rotate-45" : "bg-amber-50 text-amber-600"}`}
+                    >
+                        {mediaSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-5 h-5" />}
+                    </button>
+                    <div className="flex-1 flex gap-2 items-center bg-gray-50 px-3 py-1.5 rounded-3xl border border-gray-200 focus-within:border-[#F5A623] focus-within:ring-1 focus-within:ring-[#F5A623]/20 transition-all">
+                        <Input className="flex-1 border-none shadow-none bg-transparent focus-visible:ring-0 h-9 text-sm" placeholder="메시지 입력..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
+                        <Button size="icon" className="h-8 w-8 rounded-full bg-[#F5A623] hover:bg-[#D97706] shadow-sm" onClick={handleSend}><Send className="w-4 h-4 text-white" /></Button>
+                    </div>
                 </div>
+                <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
+                <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm" className="hidden" onChange={onPickVideo} />
                 </div>
+
+                {/* 기능 시트들 */}
+                {composer === "place" && activeRoom && (
+                    <PlacePollComposer roomId={String(activeRoom.id)} members={members} onClose={() => setComposer(null)} onCreated={(p) => { upsertPoll(p); if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) fetchMessages() }} />
+                )}
+                {composer === "schedule" && activeRoom && (
+                    <SchedulePollComposer roomId={String(activeRoom.id)} onClose={() => setComposer(null)} onCreated={(p) => { upsertPoll(p); if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) fetchMessages() }} />
+                )}
+                {composer === "settlement" && activeRoom && (
+                    <SettlementComposer roomId={String(activeRoom.id)} memberCount={members.length || 2} onClose={() => setComposer(null)} onSent={() => {}} />
+                )}
+                {composer === "history" && activeRoom && (
+                    <HistorySheet roomId={String(activeRoom.id)} onClose={() => setComposer(null)} />
+                )}
+                {candidatePoll && (
+                    <CandidateSheet
+                        poll={pollsById[candidatePoll.id] || candidatePoll}
+                        members={members}
+                        onClose={() => setCandidatePoll(null)}
+                        onUpdate={upsertPoll}
+                    />
+                )}
             </div>
 
             {/* 친구 초대 모달 */}

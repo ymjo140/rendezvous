@@ -130,8 +130,15 @@ def get_messages(room_id: str, db: Session = Depends(get_db), current_user: mode
 async def send_message_api(req: dict, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     room_id = req.get("room_id")
     content = req.get("content")
-    
-    new_msg = models.Message(room_id=room_id, user_id=current_user.id, content=json.dumps({"text": content}))
+
+    # 구조화 메시지(payload: {type: image|video|settlement|...}) 지원 — 사진/영상/정산 카드
+    payload = req.get("payload")
+    if isinstance(payload, dict) and payload.get("type"):
+        content_str = json.dumps(payload, ensure_ascii=False)
+    else:
+        content_str = json.dumps({"text": content})
+
+    new_msg = models.Message(room_id=room_id, user_id=current_user.id, content=content_str)
     db.add(new_msg)
     db.commit()
     
