@@ -114,6 +114,16 @@ export function PollCard({
     } catch {} finally { setBusy(false) }
   }
 
+  const deletePoll = async () => {
+    if (!confirm("이 투표를 삭제할까요? 후보와 표가 모두 사라져요.")) return
+    setBusy(true)
+    try {
+      const res = await fetchWithAuth(`/api/chat/polls/${poll.id}`, { method: "DELETE" })
+      if (!res.ok) alert((await res.json().catch(() => null))?.detail || "삭제에 실패했어요.")
+      // 성공 시 message_deleted 브로드캐스트가 카드 메시지를 제거함
+    } catch { alert("오류가 발생했어요.") } finally { setBusy(false) }
+  }
+
   const confirmed = poll.status === "confirmed"
   const winner = confirmed ? poll.options.find((o) => o.id === poll.confirmed_option_id) : null
   const icon = poll.kind === "place" ? <MapPin className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />
@@ -124,7 +134,14 @@ export function PollCard({
         <span className="flex items-center gap-1 text-xs font-bold text-[#F5A623]">
           {icon} {poll.title}
         </span>
-        <span className="text-[10px] text-gray-400">{poll.creator_name} 만듦</span>
+        <span className="flex items-center gap-1">
+          <span className="text-[10px] text-gray-400">{poll.creator_name} 만듦</span>
+          {poll.is_creator && poll.status === "open" && (
+            <button onClick={deletePoll} disabled={busy} className="p-0.5 text-gray-300 hover:text-red-400" title="투표 삭제">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </span>
       </div>
       {poll.meta?.anchor_name && (
         <div className="text-[11px] text-gray-400 mb-2">

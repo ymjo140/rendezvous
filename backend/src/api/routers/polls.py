@@ -323,6 +323,42 @@ async def remove_option(
     return _serialize_poll(db, poll, current_user.id)
 
 
+@router.delete("/api/chat/polls/{poll_id}")
+async def delete_poll(
+    poll_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """투표 삭제 — 만든 사람만, 진행 중(open)일 때만(확정된 건 기록 유지).
+    카드 메시지도 함께 지우고 message_deleted 브로드캐스트로 전원 화면에서 제거."""
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    poll = db.query(models.ChatPoll).filter(models.ChatPoll.id == poll_id).first()
+    if not poll:
+        raise HTTPException(status_code=404, detail="투표를 찾을 수 없어요.")
+    if poll.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="투표를 만든 사람만 삭제할 수 있어요.")
+    if poll.status != "open":
+        raise HTTPException(status_code=400, detail="확정된 투표는 삭제할 수 없어요.")
+
+    room_id = poll.room_id
+    # 카드 메시지 제거
+    deleted_msg_ids = []
+    for m in db.query(models.Message).filter(models.Message.room_id == room_id).all():
+        content = m.content or ""
+        if '"type": "poll"' in content and f'"poll_id": {poll_id}' in content:
+            deleted_msg_ids.append(m.id)
+            db.delete(m)
+    db.query(models.ChatPollVote).filter(models.ChatPollVote.poll_id == poll_id).delete()
+    db.query(models.ChatPollOption).filter(models.ChatPollOption.poll_id == poll_id).delete()
+    db.delete(poll)
+    db.commit()
+
+    for mid in deleted_msg_ids:
+        await manager.broadcast({"type": "message_deleted", "message_id": mid}, room_id)
+    return {"ok": True, "deleted": True}
+
+
 @router.post("/api/chat/polls/{poll_id}/vote")
 async def vote(
     poll_id: int,

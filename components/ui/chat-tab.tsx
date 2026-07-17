@@ -472,6 +472,11 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                     setSplitsById(prev => ({ ...prev, [data.split.id]: data.split }));
                     return;
                 }
+                // 메시지 삭제(투표 삭제 등) — 전원 화면에서 제거
+                if (data?.type === "message_deleted" && data.message_id) {
+                    setMessages(prev => prev.filter((m: any) => m.id !== data.message_id));
+                    return;
+                }
                 setMessages(prev => [...prev, data]);
                 setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
             };

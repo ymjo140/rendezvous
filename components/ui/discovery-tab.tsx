@@ -2049,8 +2049,8 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                     setIsCreatePostOpen(open);
                 }}
             >
-                <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden rounded-xl">
-                    <DialogHeader className="p-4 border-b flex flex-row items-center justify-between">
+                <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden rounded-xl max-h-[85dvh] flex flex-col">
+                    <DialogHeader className="p-4 border-b flex flex-row items-center justify-between flex-shrink-0">
                         <Button 
                             variant="ghost" 
                             size="sm" 
@@ -2072,8 +2072,9 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
                             {isPosting ? "게시 중..." : "공유"}
                         </Button>
                     </DialogHeader>
-                    
-                    <div className="p-4">
+
+                    {/* 사진 아래 정보 입력까지 모바일에서 스크롤 가능해야 함 */}
+                    <div className="p-4 flex-1 min-h-0 overflow-y-auto overscroll-contain">
                         {/* 사진 ↔ 동영상(숏폼) 전환 — 빈 상태에서만 노출 */}
                         {newPostImages.length === 0 && !isVideoDraft && (
                             <div className="flex rounded-xl bg-gray-100 p-1 mb-4 text-sm font-semibold">
