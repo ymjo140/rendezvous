@@ -192,6 +192,14 @@ export function PollCard({
               {o.meta?.category && !o.meta?.reason && (
                 <div className="text-[10px] text-gray-400 truncate mt-0.5">{o.meta.category}</div>
               )}
+              {o.place_id && (
+                <span
+                  onClick={(e) => { e.stopPropagation(); router.push(`/places/${o.place_id}`) }}
+                  className="mt-1 inline-flex items-center text-[10px] font-bold text-sky-600"
+                >
+                  가게 상세 보기 →
+                </span>
+              )}
             </button>
           )
         })}
@@ -529,6 +537,7 @@ export function CandidateSheet({
   onClose: () => void
   onUpdate: (p: Poll) => void
 }) {
+  const router = useRouter()
   const [tab, setTab] = useState<"reco" | "search">("reco")
   const [recos, setRecos] = useState<any[]>([])
   const [loading, setLoading] = useState(poll.kind === "place")
@@ -647,12 +656,17 @@ export function CandidateSheet({
             const added = p.id && existingPlaceIds.has(p.id)
             return (
               <div key={p.id ?? i} className="flex items-center gap-2 rounded-xl border border-gray-100 px-3 py-2">
-                <div className="flex-1 min-w-0">
+                <button
+                  onClick={() => p.id && router.push(`/places/${p.id}`)}
+                  className="flex-1 min-w-0 text-left"
+                  title="가게 상세 보기"
+                >
                   <div className="text-xs font-bold text-gray-800 truncate">{p.name}</div>
                   <div className="text-[10px] text-gray-400 truncate">
                     {[p.category, p.reason].filter(Boolean).join(" · ")}
                   </div>
-                </div>
+                  {p.id && <span className="text-[9px] font-bold text-sky-600">상세 보기 →</span>}
+                </button>
                 {added ? (
                   <span className="text-[10px] text-gray-400 flex items-center gap-0.5 flex-shrink-0">
                     <Check className="w-3 h-3" /> 담김
@@ -690,10 +704,15 @@ export function CandidateSheet({
             const added = (p.id && existingPlaceIds.has(p.id)) || existingLabels.has(p.name)
             return (
               <div key={i} className="flex items-center gap-2 rounded-xl border border-gray-100 px-3 py-2">
-                <div className="flex-1 min-w-0">
+                <button
+                  onClick={() => p.id && router.push(`/places/${p.id}`)}
+                  className="flex-1 min-w-0 text-left"
+                  title="가게 상세 보기"
+                >
                   <div className="text-xs font-bold text-gray-800 truncate">{p.name || p.title}</div>
                   <div className="text-[10px] text-gray-400 truncate">{p.address}</div>
-                </div>
+                  {p.id && <span className="text-[9px] font-bold text-sky-600">상세 보기 →</span>}
+                </button>
                 {added ? (
                   <span className="text-[10px] text-gray-400 flex-shrink-0">담김</span>
                 ) : (
