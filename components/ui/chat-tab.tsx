@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/chat-poll"
 import { compressImageFile } from "@/lib/image"
 import { validateAndUploadVideo } from "@/lib/video"
+import { useFriends } from "@/hooks/use-friends"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -132,6 +133,124 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
     )
 }
 
+// ➕ 채팅방 만들기 시트 — 친구 목록/검색 → 다중 선택 → 1명=1:1, 2명+=모임(비공개)
+const CreateRoomSheet = ({ onClose, onCreated }: { onClose: () => void; onCreated: (room: any) => void }) => {
+    const { friends, isLoading } = useFriends()
+    const [q, setQ] = useState("")
+    const [selected, setSelected] = useState<number[]>([])
+    const [title, setTitle] = useState("")
+    const [busy, setBusy] = useState(false)
+
+    const list = (friends || []).filter(
+        (f: any) => !q.trim() || String(f.name || "").toLowerCase().includes(q.trim().toLowerCase())
+    )
+    const toggle = (id: number) =>
+        setSelected((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
+
+    const create = async () => {
+        if (selected.length === 0 || busy) return
+        setBusy(true)
+        try {
+            const res = await fetchChatAPI(`/api/chat/rooms`, {
+                method: "POST",
+                body: JSON.stringify({ member_ids: selected, title: title.trim() }),
+            })
+            if (res.ok) {
+                onCreated(await res.json())
+                onClose()
+            } else {
+                const d = await res.json().catch(() => null)
+                alert(d?.detail || "채팅방 생성에 실패했어요.")
+            }
+        } catch {
+            alert("오류가 발생했어요.")
+        } finally {
+            setBusy(false)
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+            <div className="w-full max-w-lg bg-white rounded-t-3xl p-5 pb-7 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+                <h3 className="font-bold text-gray-900 mb-1">새 채팅방</h3>
+                <p className="text-xs text-gray-400 mb-3">친구 1명이면 1:1, 여러 명이면 모임 채팅방이 만들어져요.</p>
+
+                {selected.length >= 2 && (
+                    <Input
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        placeholder="모임 이름 (비우면 자동)"
+                        className="h-10 text-sm mb-2"
+                    />
+                )}
+
+                <div className="flex items-center border rounded-xl px-3 bg-gray-50 mb-2">
+                    <Search className="w-4 h-4 text-gray-400 mr-2" />
+                    <Input
+                        value={q}
+                        onChange={(e) => setQ(e.target.value)}
+                        placeholder="친구 이름 검색"
+                        className="border-none bg-transparent h-10 text-sm focus-visible:ring-0"
+                    />
+                </div>
+
+                {selected.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                        {selected.map((id) => {
+                            const f: any = (friends || []).find((x: any) => x.id === id)
+                            return (
+                                <button key={id} onClick={() => toggle(id)} className="text-[11px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-1">
+                                    {f?.name || id} ✕
+                                </button>
+                            )
+                        })}
+                    </div>
+                )}
+
+                <div className="space-y-0.5 max-h-[38vh] overflow-y-auto mb-3">
+                    {isLoading ? (
+                        <div className="py-8 text-center"><Loader2 className="w-5 h-5 animate-spin text-gray-300 mx-auto" /></div>
+                    ) : list.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-gray-400">
+                            {q.trim() ? "검색 결과가 없어요." : "아직 친구가 없어요. 마이페이지에서 친구를 추가해보세요!"}
+                        </div>
+                    ) : (
+                        list.map((f: any) => {
+                            const on = selected.includes(f.id)
+                            return (
+                                <button
+                                    key={f.id}
+                                    onClick={() => toggle(f.id)}
+                                    className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors ${on ? "bg-amber-50" : "hover:bg-gray-50"}`}
+                                >
+                                    <Avatar className="w-9 h-9">
+                                        <AvatarFallback className="bg-amber-50 text-[#F5A623] text-xs font-bold">{f.name?.[0] || "?"}</AvatarFallback>
+                                    </Avatar>
+                                    <span className="flex-1 text-sm font-medium text-gray-800 truncate">{f.name}</span>
+                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center ${on ? "bg-[#F5A623] text-white" : "border border-gray-200 text-transparent"}`}>
+                                        <Check className="w-3 h-3" />
+                                    </span>
+                                </button>
+                            )
+                        })
+                    )}
+                </div>
+
+                <Button
+                    onClick={create}
+                    disabled={selected.length === 0 || busy}
+                    className="w-full h-11 rounded-xl bg-[#F5A623] hover:bg-[#D97706]"
+                >
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> :
+                        selected.length === 0 ? "친구를 선택하세요" :
+                        selected.length === 1 ? "1:1 채팅 시작" : `모임 만들기 (${selected.length + 1}명)`}
+                </Button>
+            </div>
+        </div>
+    )
+}
+
 // Props 타입 정의
 interface ChatTabProps {
     openRoomId?: string | null;
@@ -167,6 +286,11 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     const imageInputRef = useRef<HTMLInputElement>(null)
     const videoInputRef = useRef<HTMLInputElement>(null)
     const [mediaSending, setMediaSending] = useState(false)
+
+    // 목록 화면: 방 만들기 + 방 검색
+    const [createRoomOpen, setCreateRoomOpen] = useState(false)
+    const [roomSearchOpen, setRoomSearchOpen] = useState(false)
+    const [roomQuery, setRoomQuery] = useState("")
 
     // 친구 초대
     const [isInviteOpen, setIsInviteOpen] = useState(false)
@@ -475,11 +599,55 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 <div className="flex-1 overflow-hidden">
                     <div className="flex flex-col h-full">
                         <div className="bg-white p-5 pb-4 shadow-sm sticky top-0 z-10">
-                            <h1 className="text-xl font-bold text-gray-900">채팅</h1>
+                            <div className="flex items-center justify-between">
+                                <h1 className="text-xl font-bold text-gray-900">채팅</h1>
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        onClick={() => { setRoomSearchOpen((v) => !v); setRoomQuery("") }}
+                                        className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${roomSearchOpen ? "bg-gray-100 text-gray-700" : "text-gray-400 hover:bg-gray-50"}`}
+                                        title="채팅방 검색"
+                                    >
+                                        <Search className="w-5 h-5" />
+                                    </button>
+                                    <button
+                                        onClick={() => setCreateRoomOpen(true)}
+                                        className="w-9 h-9 rounded-full bg-[#F5A623] text-white flex items-center justify-center shadow-sm hover:bg-[#D97706]"
+                                        title="채팅방 만들기"
+                                    >
+                                        <Plus className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </div>
+                            {roomSearchOpen && (
+                                <div className="mt-3 flex items-center border rounded-xl px-3 bg-gray-50">
+                                    <Search className="w-4 h-4 text-gray-400 mr-2" />
+                                    <Input
+                                        autoFocus
+                                        value={roomQuery}
+                                        onChange={(e) => setRoomQuery(e.target.value)}
+                                        placeholder="채팅방 이름 검색"
+                                        className="border-none bg-transparent h-9 text-sm focus-visible:ring-0"
+                                    />
+                                    {roomQuery && (
+                                        <button onClick={() => setRoomQuery("")}>
+                                            <X className="w-4 h-4 text-gray-300" />
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
                         <ScrollArea className="flex-1">
                             <div className="divide-y divide-gray-100 pb-20">
-                                {rooms.length > 0 ? rooms.map(room => (
+                                {(() => {
+                                    const visibleRooms = roomQuery.trim()
+                                        ? rooms.filter((r) => String(r.title || "").toLowerCase().includes(roomQuery.trim().toLowerCase()))
+                                        : rooms
+                                    if (visibleRooms.length === 0 && roomQuery.trim()) {
+                                        return <div className="p-10 text-center text-gray-400 text-sm">'{roomQuery.trim()}' 채팅방이 없어요.</div>
+                                    }
+                                    return null
+                                })()}
+                                {rooms.length > 0 ? rooms.filter((r) => !roomQuery.trim() || String(r.title || "").toLowerCase().includes(roomQuery.trim().toLowerCase())).map(room => (
                                     <div key={room.id} onClick={() => { setActiveRoom(room); setView('room'); }} className="p-4 bg-white hover:bg-gray-50 cursor-pointer flex gap-3 transition-colors">
                                         <Avatar className="w-12 h-12 border border-gray-100"><AvatarFallback className="bg-amber-50 text-[#F5A623] font-bold">{room.title[0]}</AvatarFallback></Avatar>
                                         <div className="flex-1 overflow-hidden py-1">
@@ -492,6 +660,18 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                         </ScrollArea>
                     </div>
                 </div>
+
+                {/* ➕ 채팅방 만들기 시트 */}
+                {createRoomOpen && (
+                    <CreateRoomSheet
+                        onClose={() => setCreateRoomOpen(false)}
+                        onCreated={(d) => {
+                            fetchRooms()
+                            setActiveRoom({ id: d.room_id, title: d.title, is_group: d.is_group })
+                            setView("room")
+                        }}
+                    />
+                )}
             </div>
         )
     }

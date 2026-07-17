@@ -87,6 +87,65 @@ def get_chat_rooms(db: Session = Depends(get_db), current_user: models.User = De
         })
     return result
 
+@router.post("/api/chat/rooms")
+def create_room(
+    req: dict,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """채팅방 만들기 — 친구를 골라 시작.
+    1명 + 제목 없음 = 1:1 방(기존 방 재사용). 그 외 = 모임(Community+ChatRoom, 비공개 시작)."""
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+
+    raw_ids = req.get("member_ids") or []
+    member_ids = []
+    for x in raw_ids:
+        try:
+            v = int(x)
+        except (TypeError, ValueError):
+            continue
+        if v != current_user.id and v not in member_ids:
+            member_ids.append(v)
+    if not member_ids:
+        raise HTTPException(status_code=400, detail="초대할 친구를 선택해주세요.")
+    if len(member_ids) > 20:
+        raise HTTPException(status_code=400, detail="한 번에 최대 20명까지 초대할 수 있어요.")
+
+    title = str(req.get("title") or "").strip()[:40]
+
+    # 1:1 — 기존 방 재사용
+    if len(member_ids) == 1 and not title:
+        room = _find_or_create_dm(db, current_user.id, member_ids[0])
+        db.commit()
+        return {"room_id": room.id, "title": room.title, "is_group": False}
+
+    # 모임 방 — Community(비공개) + ChatRoom(id 동일) + 멤버
+    if not title:
+        users = db.query(models.User).filter(models.User.id.in_(member_ids[:2])).all()
+        names = [u.name for u in users if u.name]
+        title = ", ".join([current_user.name] + names)[:36] or "새 모임"
+        if len(member_ids) > 2:
+            title += " 외"
+
+    all_ids = [current_user.id] + member_ids
+    comm = models.Community(
+        host_id=current_user.id,
+        title=title,
+        category="모임",
+        member_ids=all_ids,
+        max_members=max(len(all_ids), 10),
+        visibility="private",
+    )
+    db.add(comm)
+    db.flush()
+    db.add(models.ChatRoom(id=comm.id, title=f"[모임] {title}", is_group=True))
+    for uid in all_ids:
+        db.add(models.ChatRoomMember(room_id=comm.id, user_id=uid))
+    db.commit()
+    return {"room_id": comm.id, "title": f"[모임] {title}", "is_group": True}
+
+
 @router.get("/api/chat/rooms/{room_id}/members")
 def get_room_members(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """채팅방 참여 멤버 목록 — 이름/위치. 그룹 장소추천의 입력(멤버 user_id)도 됨."""

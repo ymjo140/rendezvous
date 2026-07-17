@@ -683,6 +683,11 @@ export function MyPageTab() {
         );
       })()}
 
+      {/* 1-2-3b. 내 친구 (카톡 초대 / 검색 추가 / 요청 수락) — 잘 보이게 상단 배치 */}
+      <div className="px-5 mb-2">
+        <FriendsPanel myId={user.id} myName={user.name} />
+      </div>
+
       {/* 1-2-4. 게임 진행도 (🔥스트릭 / XP·레벨 / 일일퀘스트 / 뱃지) */}
       <GameProfileCard />
 
@@ -691,11 +696,6 @@ export function MyPageTab() {
 
       {/* 1-2-5. 충전 캐시 + 내 예약 */}
       <CashWalletCard />
-
-      {/* 1-3. 내 친구 (카톡 초대 / 검색 추가 / 요청 수락) */}
-      <div className="px-5 mb-2">
-        <FriendsPanel myId={user.id} myName={user.name} />
-      </div>
 
       {/* 2. 탭 영역 (캘린더 추가됨) */}
       <div className="px-5">
