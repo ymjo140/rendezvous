@@ -689,8 +689,18 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                                     <div key={room.id} onClick={() => { setActiveRoom(room); setView('room'); }} className="p-4 bg-white hover:bg-gray-50 cursor-pointer flex gap-3 transition-colors">
                                         <Avatar className="w-12 h-12 border border-gray-100"><AvatarFallback className="bg-amber-50 text-[#F5A623] font-bold">{room.title[0]}</AvatarFallback></Avatar>
                                         <div className="flex-1 overflow-hidden py-1">
-                                            <div className="flex justify-between items-center mb-1"><h3 className="font-bold text-sm text-gray-900 truncate">{room.title}</h3><span className="text-[10px] text-gray-400">방금 전</span></div>
-                                            <p className="text-xs text-gray-500 truncate">{room.last_message || "대화를 시작해보세요."}</p>
+                                            <div className="flex justify-between items-center mb-1">
+                                                <h3 className="font-bold text-sm text-gray-900 truncate">{room.title}</h3>
+                                                <span className="text-[10px] text-gray-400 flex-shrink-0 ml-2">{room.last_time || ""}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="text-xs text-gray-500 truncate">{room.last_message || "대화를 시작해보세요."}</p>
+                                                {(room.unread ?? 0) > 0 && (
+                                                    <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                                                        {room.unread > 99 ? "99+" : room.unread}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 )) : <div className="p-10 text-center text-gray-400 text-sm">참여 중인 대화방이 없습니다.</div>}
@@ -719,7 +729,13 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
             <div className="flex-1 flex flex-col min-h-0">
                 <div className="bg-white px-4 py-3 flex items-center shadow-sm sticky top-0 z-20 justify-between">
                 <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => { try { sessionStorage.removeItem("chat:openRoom") } catch {} setView('list') }} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => {
+                        try { sessionStorage.removeItem("chat:openRoom") } catch {}
+                        // 나가면서 읽음 처리 → 목록 뱃지 초기화
+                        if (activeRoom) fetchChatAPI(`/api/chat/${activeRoom.id}/read`, { method: "POST" }).catch(() => {})
+                        setView('list')
+                        fetchRooms()
+                    }} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
                     <button className="text-left" onClick={() => setMembersOpen((v) => !v)}>
                         <h2 className="font-bold text-sm text-gray-900 truncate max-w-[160px] flex items-center gap-1">
                             {activeRoom?.title || activeRoom?.name}

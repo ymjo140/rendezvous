@@ -187,6 +187,7 @@ class ChatRoomMember(Base):
     room_id = Column(String, ForeignKey("chat_rooms.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
     joined_at = Column(DateTime, default=datetime.now)
+    last_read_at = Column(DateTime, nullable=True)  # 안읽음 뱃지 기준(마지막으로 방을 본 시각)
 
 class Message(Base):
     __tablename__ = "messages"

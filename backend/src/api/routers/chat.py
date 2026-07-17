@@ -101,13 +101,65 @@ def get_chat_rooms(db: Session = Depends(get_db), current_user: models.User = De
     rooms = db.query(models.ChatRoom).filter(models.ChatRoom.id.in_(list(room_ids))).all()
     result = []
     for r in rooms:
+        # 마지막 메시지 미리보기 + 시각
+        last = (
+            db.query(models.Message)
+            .filter(models.Message.room_id == r.id)
+            .order_by(models.Message.timestamp.desc())
+            .first()
+        )
+        # 안읽음 = 마지막으로 방을 본 시각(last_read_at, 없으면 참여 시각) 이후 '남이 보낸' 메시지 수
+        me_row = (
+            db.query(models.ChatRoomMember)
+            .filter(models.ChatRoomMember.room_id == r.id, models.ChatRoomMember.user_id == current_user.id)
+            .first()
+        )
+        read_since = getattr(me_row, "last_read_at", None) or getattr(me_row, "joined_at", None)
+        unread_q = db.query(models.Message).filter(
+            models.Message.room_id == r.id,
+            models.Message.user_id != current_user.id,
+        )
+        if read_since is not None:
+            unread_q = unread_q.filter(models.Message.timestamp > read_since)
+        unread = unread_q.count()
+
         result.append({
             "id": r.id,
             "title": r.title,
-            "last_message": "새로운 대화를 시작해보세요.",
-            "is_group": r.is_group
+            "last_message": _message_preview(last.content) if last else "새로운 대화를 시작해보세요.",
+            "last_time": kst_hhmm(last.timestamp) if last else "",
+            "last_ts": last.timestamp.isoformat() if last else (r.created_at.isoformat() if r.created_at else ""),
+            "has_message": bool(last),
+            "unread": unread,
+            "is_group": r.is_group,
         })
+    # 최근 메시지 순 정렬(새 채팅 오면 맨 위) — 메시지 없는 방은 아래로
+    result.sort(key=lambda x: (x["has_message"], x["last_ts"]), reverse=True)
     return result
+
+
+def _message_preview(content: str) -> str:
+    """목록 미리보기 — 구조화 메시지는 종류 라벨로."""
+    try:
+        c = json.loads(content or "")
+    except Exception:
+        return (content or "")[:40]
+    t = c.get("type")
+    labels = {
+        "poll": "🗳️ 투표",
+        "poll_confirmed": "📍 장소 확정!",
+        "split": "💳 예약금 분담 요청",
+        "split_completed": "🎉 예약 확정!",
+        "split_cancelled": "분담 요청이 취소됐어요",
+        "settlement": "💸 정산",
+        "image": "📷 사진",
+        "video": "🎬 동영상",
+        "shared_items": "📍 장소 공유",
+        "system": (c.get("text") or "")[:40],
+    }
+    if t in labels:
+        return labels[t]
+    return (c.get("text") or "메시지")[:40]
 
 @router.post("/api/chat/rooms")
 def create_room(
@@ -191,8 +243,32 @@ def get_room_members(room_id: str, db: Session = Depends(get_db), current_user: 
 
 
 # --- 2. 메시지 내역 ---
+def _mark_read(db: Session, room_id: str, user_id: int) -> None:
+    try:
+        db.query(models.ChatRoomMember).filter(
+            models.ChatRoomMember.room_id == room_id,
+            models.ChatRoomMember.user_id == user_id,
+        ).update({"last_read_at": datetime.now()})
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[chat] mark_read skip: {e}")
+
+
+@router.post("/api/chat/{room_id}/read")
+def mark_room_read(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """방 나갈 때 읽음 처리 — 안읽음 뱃지 초기화."""
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    _mark_read(db, room_id, current_user.id)
+    return {"ok": True}
+
+
 @router.get("/api/chat/{room_id}/messages")
 def get_messages(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # 방을 열어 메시지를 불러오는 것 = 읽음
+    if current_user is not None:
+        _mark_read(db, room_id, current_user.id)
     msgs = db.query(models.Message).filter(models.Message.room_id == room_id).order_by(models.Message.timestamp).all()
     result = []
     for m in msgs:
