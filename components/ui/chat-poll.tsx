@@ -1027,19 +1027,37 @@ export function SplitCard({
   )
 }
 
-// 분담 만들기 시트 — 장소(확정 투표 원탭/검색) + 날짜/시간/인원
+// 장소 카테고리 → 타일 이모지 (실사진 없는 크롤링 데이터 대응)
+function placeEmoji(cat?: string | null): string {
+  const c = String(cat || "")
+  if (/카페|커피|디저트|베이커리|빵|CAFE/i.test(c)) return "☕"
+  if (/술|주점|포차|호프|바|이자카야|맥주|PUB/i.test(c)) return "🍺"
+  if (/고기|구이|삼겹/i.test(c)) return "🥩"
+  if (/일식|초밥|스시|라멘/i.test(c)) return "🍣"
+  if (/중식|중국/i.test(c)) return "🥟"
+  if (/양식|피자|파스타|버거/i.test(c)) return "🍕"
+  if (/국밥|한식|찌개|백반/i.test(c)) return "🍲"
+  return "🍽️"
+}
+
+// 분담 만들기 시트 — AI 추천 리스트가 먼저, 각 장소는 상세로 이동 가능
 export function SplitComposer({
   roomId,
   memberCount,
+  members = [],
   onClose,
   onCreated,
 }: {
   roomId: string
   memberCount: number
+  members?: ChatMember[]
   onClose: () => void
   onCreated: (s: Split) => void
 }) {
+  const router = useRouter()
   const [confirmedPolls, setConfirmedPolls] = useState<any[]>([])
+  const [recos, setRecos] = useState<any[]>([])
+  const [recosLoading, setRecosLoading] = useState(true)
   const [place, setPlace] = useState<{ id: number | null; name: string } | null>(null)
   const [query, setQuery] = useState("")
   const [hits, setHits] = useState<any[]>([])
@@ -1057,6 +1075,27 @@ export function SplitComposer({
       .then((r) => (r.ok ? r.json() : { items: [] }))
       .then((d) => setConfirmedPolls((d.items || []).filter((x: any) => x.kind === "place" && x.confirmed?.place_id)))
       .catch(() => {})
+  }, [roomId])
+
+  // 모임 취향 기반 AI 추천 — 시트 열자마자 주르륵
+  useEffect(() => {
+    const located = members.filter((m) => m.lat && m.lng && Math.abs(Number(m.lat)) > 1)
+    fetchWithAuth(`/api/recommend`, {
+      method: "POST",
+      body: JSON.stringify({
+        purpose: "식사",
+        user_selected_tags: [],
+        member_user_ids: members.map((m) => m.id),
+        current_lat: located[0]?.lat ?? 37.5665,
+        current_lng: located[0]?.lng ?? 126.978,
+        users: located.slice(1).map((m) => ({ location: { lat: m.lat, lng: m.lng } })),
+        top_k: 15,
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((regions) => setRecos(regions?.[0]?.places || []))
+      .catch(() => {})
+      .finally(() => setRecosLoading(false))
   }, [roomId])
 
   const search = async () => {
@@ -1092,20 +1131,21 @@ export function SplitComposer({
     <Sheet title="💳 모임 예약 (예약금 분담)" onClose={onClose}>
       {!place ? (
         <div className="space-y-2">
-          <p className="text-xs text-gray-500">어디를 예약할까요?</p>
+          <p className="text-xs text-gray-500">어디를 예약할까요? 장소를 누르면 상세 정보를 볼 수 있어요.</p>
           {confirmedPolls.map((p: any) => (
             <button
               key={p.poll_id}
               onClick={() => setPlace({ id: p.confirmed.place_id, name: p.confirmed.label })}
               className="w-full flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50/50 px-3 py-2.5 text-left"
             >
-              <span>📍</span>
+              <span>🗳️</span>
               <span className="flex-1 min-w-0">
                 <span className="block text-xs font-bold text-gray-900 truncate">{p.confirmed.label}</span>
-                <span className="block text-[10px] text-teal-700">투표로 확정된 장소</span>
+                <span className="block text-[10px] text-teal-700">투표로 확정된 장소 — 탭하면 바로 선택</span>
               </span>
             </button>
           ))}
+
           <div className="flex gap-2">
             <Input
               value={query}
@@ -1119,14 +1159,57 @@ export function SplitComposer({
             </Button>
           </div>
           {hits.map((p: any, i: number) => (
-            <button
-              key={i}
-              onClick={() => setPlace({ id: p.id ?? null, name: p.name || p.title })}
-              className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 hover:bg-amber-50 text-sm"
-            >
-              <div className="font-bold text-gray-800">{p.name || p.title}</div>
-              <div className="text-xs text-gray-400">{p.address}</div>
-            </button>
+            <div key={`h${i}`} className="flex items-center gap-2.5 rounded-xl border border-gray-100 bg-white px-3 py-2">
+              <button
+                onClick={() => p.id && router.push(`/places/${p.id}`)}
+                className="flex flex-1 items-center gap-2.5 min-w-0 text-left"
+              >
+                <span className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">{placeEmoji(p.category)}</span>
+                <span className="min-w-0">
+                  <span className="block text-xs font-bold text-gray-800 truncate">{p.name || p.title}</span>
+                  <span className="block text-[10px] text-gray-400 truncate">{p.address}</span>
+                </span>
+              </button>
+              <button
+                onClick={() => setPlace({ id: p.id ?? null, name: p.name || p.title })}
+                className="text-[11px] font-bold text-white bg-[#F5A623] rounded-full px-3 py-1.5 flex-shrink-0"
+              >
+                선택
+              </button>
+            </div>
+          ))}
+
+          {/* ✨ 모임 취향 AI 추천 — 열자마자 주르륵 */}
+          <div className="flex items-center gap-1 pt-1">
+            <span className="text-[11px] font-bold text-gray-600">✨ 우리 모임 취향 추천</span>
+            {recosLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-300" />}
+          </div>
+          {!recosLoading && recos.length === 0 && (
+            <p className="text-[11px] text-gray-400">추천을 불러오지 못했어요. 검색으로 골라주세요.</p>
+          )}
+          {recos.map((p: any, i: number) => (
+            <div key={p.id ?? `r${i}`} className="flex items-center gap-2.5 rounded-xl border border-gray-100 bg-white px-3 py-2">
+              <button
+                onClick={() => p.id && router.push(`/places/${p.id}`)}
+                className="flex flex-1 items-center gap-2.5 min-w-0 text-left"
+                title="상세 정보 보기"
+              >
+                <span className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">{placeEmoji(p.category)}</span>
+                <span className="min-w-0">
+                  <span className="block text-xs font-bold text-gray-800 truncate">{p.name}</span>
+                  <span className="block text-[10px] text-gray-400 truncate">
+                    {[p.category, (p.wemeet_rating || 0) > 0 ? `⭐${Number(p.wemeet_rating).toFixed(1)}` : null, (p.revisit_count || 0) > 0 ? `💛또갈래요 ${p.revisit_count}` : null].filter(Boolean).join(" · ")}
+                  </span>
+                  {p.reason && <span className="block text-[10px] text-[#D97706] truncate">✨ {p.reason}</span>}
+                </span>
+              </button>
+              <button
+                onClick={() => setPlace({ id: p.id ?? null, name: p.name })}
+                className="text-[11px] font-bold text-white bg-[#F5A623] rounded-full px-3 py-1.5 flex-shrink-0"
+              >
+                선택
+              </button>
+            </div>
           ))}
         </div>
       ) : (

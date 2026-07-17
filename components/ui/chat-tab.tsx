@@ -1066,6 +1066,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                     <SplitComposer
                         roomId={String(activeRoom.id)}
                         memberCount={members.length || 2}
+                        members={members}
                         onClose={() => setComposer(null)}
                         onCreated={(s) => { upsertSplit(s); if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) fetchMessages() }}
                     />
