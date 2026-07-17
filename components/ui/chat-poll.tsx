@@ -837,6 +837,348 @@ export function SettlementCard({ data }: { data: any }) {
   )
 }
 
+// ─────────────────────────────────────────────────────────────
+// 💳 모임 예약금 분담 — 요청 카드(각자 수락 시 차감) + 만들기 시트
+export type SplitShare = {
+  user_id: number
+  name: string
+  amount: number
+  paid: boolean
+  paid_by: number | null
+  paid_by_name: string | null
+}
+
+export type Split = {
+  id: number
+  room_id: string
+  place_id: number | null
+  place_name: string
+  date: string
+  time: string
+  party_size: number
+  total_amount: number
+  per_amount: number
+  status: "open" | "completed" | "cancelled" | "expired" | "refunded"
+  reservation_id: string | null
+  creator_id: number
+  creator_name: string
+  expires_at: string | null
+  paid_count: number
+  share_count: number
+  shares: SplitShare[]
+}
+
+export async function fetchSplit(splitId: number): Promise<Split | null> {
+  try {
+    const res = await fetchWithAuth(`/api/chat/splits/${splitId}`)
+    return res.ok ? await res.json() : null
+  } catch {
+    return null
+  }
+}
+
+export function SplitCard({
+  split,
+  myId,
+  onUpdate,
+}: {
+  split: Split
+  myId: number | null
+  onUpdate: (s: Split) => void
+}) {
+  const router = useRouter()
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const call = async (key: string, path: string, body: any = {}) => {
+    setBusy(key)
+    try {
+      const res = await fetchWithAuth(path, { method: "POST", body: JSON.stringify(body) })
+      const d = await res.json().catch(() => null)
+      if (res.ok) {
+        if (d?.id) onUpdate(d)
+        return true
+      }
+      alert(d?.detail || "처리에 실패했어요.")
+      return false
+    } catch {
+      alert("오류가 발생했어요.")
+      return false
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const isCreator = myId === split.creator_id
+  const open = split.status === "open"
+  const done = split.status === "completed"
+  const myShare = split.shares.find((s) => s.user_id === myId)
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3.5 w-[270px]">
+      <div className="flex items-center justify-between mb-0.5">
+        <span className="flex items-center gap-1 text-xs font-bold text-[#F5A623]">
+          <Calculator className="w-3.5 h-3.5" /> 예약금 분담
+        </span>
+        <span className="text-[10px] text-gray-400">{split.creator_name} 요청</span>
+      </div>
+      <div className="text-sm font-bold text-gray-900 truncate">{split.place_name}</div>
+      <div className="text-[11px] text-gray-400 mb-2">
+        {split.date} {split.time} · {split.party_size}명 · 총 {split.total_amount.toLocaleString()}원
+      </div>
+
+      <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-center mb-2">
+        <span className="text-xs text-amber-700">1인당 </span>
+        <span className="text-base font-extrabold text-amber-800">{split.per_amount.toLocaleString()}원</span>
+        <span className="text-[10px] text-amber-600 ml-1.5">{split.paid_count}/{split.share_count} 완료</span>
+      </div>
+
+      <div className="space-y-1 mb-2">
+        {split.shares.map((s) => {
+          const mine = s.user_id === myId
+          return (
+            <div key={s.user_id} className="flex items-center gap-2 text-xs">
+              <span className={`flex-1 truncate ${mine ? "font-bold text-gray-900" : "text-gray-600"}`}>
+                {s.name}{mine && " (나)"}
+              </span>
+              {s.paid ? (
+                <span className="text-[10px] font-bold text-teal-600 flex items-center gap-0.5">
+                  <Check className="w-3 h-3" />
+                  {s.paid_by && s.paid_by !== s.user_id ? `${s.paid_by_name}이(가) 대신` : "완료"}
+                </span>
+              ) : open ? (
+                mine ? (
+                  <button
+                    onClick={() => call("pay", `/api/chat/splits/${split.id}/pay`)}
+                    disabled={busy !== null}
+                    className="text-[10px] font-bold text-white bg-[#F5A623] rounded-full px-2.5 py-1"
+                  >
+                    {busy === "pay" ? "..." : `내 몫 내기`}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (confirm(`${s.name}님 몫 ${s.amount.toLocaleString()}원을 대신 낼까요?`))
+                        call(`p${s.user_id}`, `/api/chat/splits/${split.id}/pay`, { target_user_id: s.user_id })
+                    }}
+                    disabled={busy !== null}
+                    className="text-[10px] font-bold text-amber-700 border border-amber-200 rounded-full px-2 py-1"
+                  >
+                    대신 내기
+                  </button>
+                )
+              ) : (
+                <span className="text-[10px] text-gray-300">미납</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {done ? (
+        <div>
+          <div className="text-[11px] font-bold text-teal-700 flex items-center gap-1">
+            <Check className="w-3.5 h-3.5" /> 전원 완료 — 예약 확정!
+          </div>
+          {split.place_id && (
+            <Button
+              onClick={() => router.push(`/places/${split.place_id}`)}
+              className="w-full h-8 mt-1.5 text-xs bg-[#14B8A6] hover:bg-[#0D9488] rounded-lg"
+            >
+              장소 보기
+            </Button>
+          )}
+        </div>
+      ) : !open ? (
+        <div className="text-[11px] text-gray-400">
+          {split.status === "cancelled" && "요청이 취소됐어요 (낸 금액은 환불됨)"}
+          {split.status === "expired" && "기한이 지나 만료됐어요 (낸 금액은 환불됨)"}
+          {split.status === "refunded" && "예약이 취소돼 각자 환불됐어요"}
+        </div>
+      ) : isCreator ? (
+        <div className="flex gap-1.5">
+          <Button
+            variant="outline"
+            onClick={() => call("remind", `/api/chat/splits/${split.id}/remind`)}
+            disabled={busy !== null}
+            className="flex-1 h-8 text-[11px] rounded-lg border-gray-200 text-gray-600"
+          >
+            ⏰ 리마인드
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (confirm("분담 요청을 취소할까요? 낸 금액은 각자 환불됩니다."))
+                call("cancel", `/api/chat/splits/${split.id}/cancel`).then((ok) => {
+                  if (ok) fetchSplit(split.id).then((s) => s && onUpdate(s))
+                })
+            }}
+            disabled={busy !== null}
+            className="flex-1 h-8 text-[11px] rounded-lg border-red-100 text-red-500"
+          >
+            요청 취소
+          </Button>
+        </div>
+      ) : (
+        !myShare?.paid && (
+          <div className="text-[10px] text-gray-400">캐시가 부족하면 마이페이지에서 충전 후 눌러주세요</div>
+        )
+      )}
+    </div>
+  )
+}
+
+// 분담 만들기 시트 — 장소(확정 투표 원탭/검색) + 날짜/시간/인원
+export function SplitComposer({
+  roomId,
+  memberCount,
+  onClose,
+  onCreated,
+}: {
+  roomId: string
+  memberCount: number
+  onClose: () => void
+  onCreated: (s: Split) => void
+}) {
+  const [confirmedPolls, setConfirmedPolls] = useState<any[]>([])
+  const [place, setPlace] = useState<{ id: number | null; name: string } | null>(null)
+  const [query, setQuery] = useState("")
+  const [hits, setHits] = useState<any[]>([])
+  const [date, setDate] = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+  })
+  const [time, setTime] = useState("19:00")
+  const [party, setParty] = useState(Math.max(memberCount, 2))
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    fetchWithAuth(`/api/chat/rooms/${roomId}/polls?status=confirmed`)
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => setConfirmedPolls((d.items || []).filter((x: any) => x.kind === "place" && x.confirmed?.place_id)))
+      .catch(() => {})
+  }, [roomId])
+
+  const search = async () => {
+    const q = query.trim()
+    if (!q) return
+    try {
+      const res = await fetchWithAuth(`/api/places/search?query=${encodeURIComponent(q)}`)
+      const data = res.ok ? await res.json() : []
+      setHits(Array.isArray(data) ? data.slice(0, 5) : [])
+    } catch { setHits([]) }
+  }
+
+  const total = party * 5000
+  const per = Math.ceil(total / Math.max(memberCount, 1) / 100) * 100
+
+  const create = async () => {
+    if (!place || busy) return
+    setBusy(true)
+    try {
+      const res = await fetchWithAuth(`/api/chat/rooms/${roomId}/splits`, {
+        method: "POST",
+        body: JSON.stringify({ place_id: place.id, place_name: place.name, date, time, party_size: party }),
+      })
+      const d = await res.json().catch(() => null)
+      if (res.ok) {
+        onCreated(d)
+        onClose()
+      } else alert(d?.detail || "요청 생성에 실패했어요.")
+    } catch { alert("오류가 발생했어요.") } finally { setBusy(false) }
+  }
+
+  return (
+    <Sheet title="💳 모임 예약 (예약금 분담)" onClose={onClose}>
+      {!place ? (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">어디를 예약할까요?</p>
+          {confirmedPolls.map((p: any) => (
+            <button
+              key={p.poll_id}
+              onClick={() => setPlace({ id: p.confirmed.place_id, name: p.confirmed.label })}
+              className="w-full flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50/50 px-3 py-2.5 text-left"
+            >
+              <span>📍</span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-xs font-bold text-gray-900 truncate">{p.confirmed.label}</span>
+                <span className="block text-[10px] text-teal-700">투표로 확정된 장소</span>
+              </span>
+            </button>
+          ))}
+          <div className="flex gap-2">
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && search()}
+              placeholder="가게 이름 검색"
+              className="h-10 text-sm"
+            />
+            <Button onClick={search} className="bg-[#F5A623] hover:bg-[#D97706] rounded-xl">
+              <Search className="w-4 h-4" />
+            </Button>
+          </div>
+          {hits.map((p: any, i: number) => (
+            <button
+              key={i}
+              onClick={() => setPlace({ id: p.id ?? null, name: p.name || p.title })}
+              className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 hover:bg-amber-50 text-sm"
+            >
+              <div className="font-bold text-gray-800">{p.name || p.title}</div>
+              <div className="text-xs text-gray-400">{p.address}</div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="rounded-xl bg-gray-50 px-3 py-2 flex items-center justify-between">
+            <span className="text-sm font-bold text-gray-800 truncate">📍 {place.name}</span>
+            <button onClick={() => setPlace(null)} className="text-[11px] text-gray-400">변경</button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="flex-1 h-10 rounded-lg border border-gray-200 px-2 text-sm" />
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="h-10 rounded-lg border border-gray-200 px-2 text-sm" />
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500">인원</span>
+            <button onClick={() => setParty((c) => Math.max(1, c - 1))} className="w-8 h-8 rounded-lg border border-gray-200 text-gray-600">-</button>
+            <span className="text-sm font-bold w-8 text-center">{party}</span>
+            <button onClick={() => setParty((c) => Math.min(50, c + 1))} className="w-8 h-8 rounded-lg border border-gray-200 text-gray-600">+</button>
+          </div>
+          <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5 text-center">
+            <div className="text-xs text-amber-700">예약금 {total.toLocaleString()}원 · 멤버 {memberCount}명</div>
+            <div className="text-lg font-extrabold text-amber-800">1인당 {per.toLocaleString()}원</div>
+            <div className="text-[10px] text-amber-600 mt-0.5">각자 카드에서 수락하면 본인 캐시에서 빠져나가요</div>
+          </div>
+          <Button onClick={create} disabled={busy} className="w-full h-11 rounded-xl bg-[#F5A623] hover:bg-[#D97706]">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "분담 요청 보내기"}
+          </Button>
+        </div>
+      )}
+    </Sheet>
+  )
+}
+
+// 분담 완료/취소 배너(메시지)
+export function SplitBanner({ data }: { data: any }) {
+  const router = useRouter()
+  const done = data.type === "split_completed"
+  return (
+    <div className="flex justify-center my-2">
+      <button
+        onClick={() => done && data.place_id && router.push(`/places/${data.place_id}`)}
+        className={`text-[11px] font-bold px-3.5 py-1.5 rounded-full flex items-center gap-1 border ${
+          done ? "bg-teal-50 border-teal-100 text-teal-700" : "bg-gray-50 border-gray-100 text-gray-500"
+        }`}
+      >
+        {done
+          ? <>🎉 {data.place_name} 예약 확정! ({data.date} {data.time})</>
+          : <>분담 요청이 취소됐어요 (낸 금액 환불)</>}
+      </button>
+    </div>
+  )
+}
+
 // 확정 알림 카드 렌더러(메시지)
 export function PollConfirmedCard({ data }: { data: any }) {
   const router = useRouter()

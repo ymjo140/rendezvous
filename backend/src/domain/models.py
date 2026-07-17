@@ -214,6 +214,37 @@ class Community(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class ChatSplitRequest(Base):
+    """모임 예약금 분담 요청 — 각자 수락(탭)해야 본인 캐시에서 차감. 전원 완료 시 예약 생성."""
+    __tablename__ = "chat_split_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(String, ForeignKey("chat_rooms.id"), index=True, nullable=False)
+    creator_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    place_id = Column(Integer, nullable=True)
+    place_name = Column(String, nullable=False)
+    date = Column(String)   # YYYY-MM-DD
+    time = Column(String)   # HH:MM
+    party_size = Column(Integer, default=2)
+    total_amount = Column(Integer, default=0)  # 걷는 총액(per*멤버수)
+    per_amount = Column(Integer, default=0)    # 1인당
+    status = Column(String, default="open")    # open|completed|cancelled|expired|refunded
+    reservation_id = Column(String, nullable=True)  # 완료 시 user_reservations.id
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class ChatSplitShare(Base):
+    """분담 몫 — user_id의 몫을 paid_by가 납부(본인 또는 대신)."""
+    __tablename__ = "chat_split_shares"
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(Integer, ForeignKey("chat_split_requests.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    amount = Column(Integer, default=0)
+    paid_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint("request_id", "user_id", name="uq_split_share_user"),)
+
+
 class UserPushToken(Base):
     """FCM 디바이스 토큰 — 유저당 여러 기기 가능, 토큰은 전역 유니크."""
     __tablename__ = "user_push_tokens"

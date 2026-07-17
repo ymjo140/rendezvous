@@ -114,12 +114,16 @@ class ReservationService:
         try:
             # 취소(또는 노쇼) 전환 시 환불 — 이미 취소/노쇼였으면 중복 환불 안 함
             if new_status in ("cancelled", "no_show") and prev not in ("cancelled", "no_show"):
-                refund = int(resv.deposit_amount or 0)
-                if refund > 0 and resv.user_id:
-                    u = db.query(models.User).filter(models.User.id == resv.user_id).first()
-                    if u is not None:
-                        u.wallet_balance = (u.wallet_balance or 0) + refund
-                        self.coins.create_history(db, u.id, refund, "refund", f"예약 취소 환불 · {resv.place_name}")
+                # 분담 결제 예약이면 납부자별 환불(담당자 전액 환불 방지)
+                if self._refund_split_if_any(db, resv):
+                    pass
+                else:
+                    refund = int(resv.deposit_amount or 0)
+                    if refund > 0 and resv.user_id:
+                        u = db.query(models.User).filter(models.User.id == resv.user_id).first()
+                        if u is not None:
+                            u.wallet_balance = (u.wallet_balance or 0) + refund
+                            self.coins.create_history(db, u.id, refund, "refund", f"예약 취소 환불 · {resv.place_name}")
                 # 핫딜 수량 복구
                 if resv.offer_rule_id:
                     self._adjust_inventory(db, resv.offer_rule_id, -1)
@@ -140,6 +144,35 @@ class ReservationService:
             .all()
         )
 
+    def _refund_split_if_any(self, db: Session, resv) -> bool:
+        """분담 결제로 만들어진 예약이면 낸 사람(paid_by)별로 환불. True면 분담 예약이었음."""
+        try:
+            split = (
+                db.query(models.ChatSplitRequest)
+                .filter(
+                    models.ChatSplitRequest.reservation_id == resv.id,
+                    models.ChatSplitRequest.status == "completed",
+                )
+                .first()
+            )
+            if not split:
+                return False
+            shares = db.query(models.ChatSplitShare).filter(
+                models.ChatSplitShare.request_id == split.id,
+                models.ChatSplitShare.paid_at.isnot(None),
+            ).all()
+            for s in shares:
+                payer = db.query(models.User).filter(models.User.id == (s.paid_by or s.user_id)).first()
+                if payer is None:
+                    continue
+                payer.wallet_balance = (payer.wallet_balance or 0) + int(s.amount or 0)
+                self.coins.create_history(db, payer.id, int(s.amount or 0), "refund", f"모임 예약 취소 환불 · {resv.place_name}")
+            split.status = "refunded"
+            return True
+        except Exception as e:
+            print(f"[reservation] split refund skip: {e}")
+            return False
+
     def cancel(self, db: Session, user: models.User, reservation_id: str):
         resv = (
             db.query(models.Reservation)
@@ -155,11 +188,16 @@ class ReservationService:
             return {"status": "already_cancelled", "balance": user.wallet_balance}
 
         try:
-            refund = int(resv.deposit_amount or 0)
             resv.status = "cancelled"
-            if refund > 0:
-                user.wallet_balance = (user.wallet_balance or 0) + refund
-                self.coins.create_history(db, user.id, refund, "refund", f"예약 취소 환불 · {resv.place_name}")
+            # 분담 결제 예약이면 납부자별 환불, 아니면 기존대로 본인 전액 환불
+            refund = 0
+            if self._refund_split_if_any(db, resv):
+                refund = int(resv.deposit_amount or 0)  # 표시용(각자에게 나눠 환불됨)
+            else:
+                refund = int(resv.deposit_amount or 0)
+                if refund > 0:
+                    user.wallet_balance = (user.wallet_balance or 0) + refund
+                    self.coins.create_history(db, user.id, refund, "refund", f"예약 취소 환불 · {resv.place_name}")
             # 핫딜 수량 복구
             if resv.offer_rule_id:
                 self._adjust_inventory(db, resv.offer_rule_id, -1)

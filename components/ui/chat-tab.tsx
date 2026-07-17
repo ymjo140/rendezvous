@@ -7,11 +7,12 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ThumbsUp, UserPlus, Globe, Lock, List, Users, Settings, Plus, ImageIcon, Video, History, Calculator, Pencil, Bell, ChevronRight, Search } from "lucide-react"
+import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, CalendarCheck, MapPin, Check, ChevronDown, ThumbsUp, UserPlus, Globe, Lock, List, Users, Settings, Plus, ImageIcon, Video, History, Calculator, Pencil, Bell, ChevronRight, Search } from "lucide-react"
 import {
     PollCard, PlacePollComposer, SchedulePollComposer, CandidateSheet,
     HistorySheet, SettlementComposer, SettlementCard, PollConfirmedCard,
     fetchPoll, type Poll,
+    SplitCard, SplitComposer, SplitBanner, fetchSplit, type Split,
 } from "@/components/ui/chat-poll"
 import { compressImageFile } from "@/lib/image"
 import { validateAndUploadVideo } from "@/lib/video"
@@ -273,13 +274,18 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
 
     // ➕ 플러스 메뉴 & 기능 시트
     const [plusOpen, setPlusOpen] = useState(false)
-    const [composer, setComposer] = useState<null | "place" | "schedule" | "settlement" | "history">(null)
+    const [composer, setComposer] = useState<null | "place" | "schedule" | "settlement" | "history" | "split">(null)
     const [candidatePoll, setCandidatePoll] = useState<Poll | null>(null)
     // 투표 카드 상태(poll_id → Poll) — WS poll_update로 실시간 갱신
     const [pollsById, setPollsById] = useState<Record<number, Poll>>({})
     const pollsRef = useRef<Record<number, Poll>>({})
     pollsRef.current = pollsById
     const upsertPoll = (p: Poll) => setPollsById((prev) => ({ ...prev, [p.id]: p }))
+    // 💳 분담 카드 상태(split_id → Split)
+    const [splitsById, setSplitsById] = useState<Record<number, Split>>({})
+    const splitsRef = useRef<Record<number, Split>>({})
+    splitsRef.current = splitsById
+    const upsertSplit = (s: Split) => setSplitsById((prev) => ({ ...prev, [s.id]: s }))
     // ⚙️ 설정 시트
     const [settingsOpen, setSettingsOpen] = useState(false)
     // 미디어 첨부
@@ -445,6 +451,11 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                     setPollsById(prev => ({ ...prev, [merged.id]: merged }));
                     return;
                 }
+                // 분담 카드 갱신(개인 플래그 없음 — 그대로 교체)
+                if (data?.type === "split_update" && data.split?.id) {
+                    setSplitsById(prev => ({ ...prev, [data.split.id]: data.split }));
+                    return;
+                }
                 setMessages(prev => [...prev, data]);
                 setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
             };
@@ -457,18 +468,23 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
         }
     }, [view, activeRoom])
 
-    // 메시지에 등장하는 투표 카드 로드(캐시에 없는 것만)
+    // 메시지에 등장하는 투표/분담 카드 로드(캐시에 없는 것만)
     useEffect(() => {
         const ids: number[] = []
+        const sids: number[] = []
         messages.forEach((m: any) => {
             try {
                 const c = JSON.parse(m.content)
                 if (c?.type === "poll" && c.poll_id && !pollsRef.current[c.poll_id] && ids.indexOf(c.poll_id) < 0) {
                     ids.push(c.poll_id)
                 }
+                if (c?.type === "split" && c.split_id && !splitsRef.current[c.split_id] && sids.indexOf(c.split_id) < 0) {
+                    sids.push(c.split_id)
+                }
             } catch { /* text */ }
         })
         ids.forEach((id) => fetchPoll(id).then((p) => { if (p) upsertPoll(p) }))
+        sids.forEach((id) => fetchSplit(id).then((s) => { if (s) upsertSplit(s) }))
     }, [messages])
 
     // 구조화 메시지(payload) 전송 — 사진/영상/정산
@@ -863,6 +879,17 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                                 )
                             } else if (jsonContent.type === "poll_confirmed") {
                                 return <PollConfirmedCard key={i} data={jsonContent} />
+                            } else if (jsonContent.type === "split") {
+                                const split = splitsById[jsonContent.split_id]
+                                content = split ? (
+                                    <SplitCard split={split} myId={myId} onUpdate={upsertSplit} />
+                                ) : (
+                                    <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3 text-xs text-gray-400 flex items-center gap-2">
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> 분담 요청 불러오는 중...
+                                    </div>
+                                )
+                            } else if (jsonContent.type === "split_completed" || jsonContent.type === "split_cancelled") {
+                                return <SplitBanner key={i} data={jsonContent} />
                             } else if (jsonContent.type === "settlement") {
                                 content = <SettlementCard data={jsonContent} />
                             } else if (jsonContent.type === "image") {
@@ -970,12 +997,13 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 <div className="p-3 bg-white border-t safe-area-bottom">
                 {/* ➕ 플러스 메뉴 — 사진/동영상/일정/장소/히스토리/정산 */}
                 {plusOpen && (
-                    <div className="grid grid-cols-5 gap-1.5 mb-2.5 animate-in slide-in-from-bottom-2">
+                    <div className="grid grid-cols-6 gap-1 mb-2.5 animate-in slide-in-from-bottom-2">
                         {[
                             { key: "photo", icon: <ImageIcon className="w-5 h-5" />, label: "사진", onClick: () => imageInputRef.current?.click() },
                             { key: "video", icon: <Video className="w-5 h-5" />, label: "동영상", onClick: () => videoInputRef.current?.click() },
-                            { key: "schedule", icon: <Calendar className="w-5 h-5" />, label: "일정 조율", onClick: () => { setPlusOpen(false); setComposer("schedule") } },
-                            { key: "place", icon: <MapPin className="w-5 h-5" />, label: "장소 추천", onClick: () => { setPlusOpen(false); setComposer("place") }, hot: true },
+                            { key: "schedule", icon: <Calendar className="w-5 h-5" />, label: "일정", onClick: () => { setPlusOpen(false); setComposer("schedule") } },
+                            { key: "place", icon: <MapPin className="w-5 h-5" />, label: "장소", onClick: () => { setPlusOpen(false); setComposer("place") }, hot: true },
+                            { key: "split", icon: <CalendarCheck className="w-5 h-5" />, label: "예약", onClick: () => { setPlusOpen(false); setComposer("split") }, hot: true },
                             { key: "settle", icon: <Calculator className="w-5 h-5" />, label: "정산", onClick: () => { setPlusOpen(false); setComposer("settlement") } },
                         ].map((it: any) => (
                             <button key={it.key} onClick={it.onClick} className="flex flex-col items-center gap-1 py-1" disabled={mediaSending}>
@@ -1015,6 +1043,14 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 )}
                 {composer === "history" && activeRoom && (
                     <HistorySheet roomId={String(activeRoom.id)} onClose={() => setComposer(null)} />
+                )}
+                {composer === "split" && activeRoom && (
+                    <SplitComposer
+                        roomId={String(activeRoom.id)}
+                        memberCount={members.length || 2}
+                        onClose={() => setComposer(null)}
+                        onCreated={(s) => { upsertSplit(s); if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) fetchMessages() }}
+                    />
                 )}
                 {candidatePoll && (
                     <CandidateSheet

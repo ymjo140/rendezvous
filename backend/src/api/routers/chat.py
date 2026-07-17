@@ -60,6 +60,17 @@ def _sync_room_members_from_community(db: Session, room_id: str) -> None:
         db.commit()
 
 
+def _require_member_helper(db: Session, room_id: str, user_id: int):
+    """방 멤버 검증(멤버십 자가복구 포함) — polls/splits 등에서 공용."""
+    _sync_room_members_from_community(db, room_id)
+    ok = db.query(models.ChatRoomMember).filter(
+        models.ChatRoomMember.room_id == room_id,
+        models.ChatRoomMember.user_id == user_id,
+    ).first()
+    if not ok:
+        raise HTTPException(status_code=403, detail="채팅방 멤버만 가능합니다.")
+
+
 @router.get("/api/chat/rooms")
 def get_chat_rooms(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # 1) ChatRoomMember 기준 내 방
