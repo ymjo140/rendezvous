@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
 import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, CalendarCheck, MapPin, Check, ChevronDown, ThumbsUp, UserPlus, Globe, Lock, List, Users, Settings, Plus, ImageIcon, Video, History, Calculator, Pencil, Bell, ChevronRight, Search } from "lucide-react"
@@ -652,7 +651,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                                 </div>
                             )}
                         </div>
-                        <ScrollArea className="flex-1">
+                        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
                             <div className="divide-y divide-gray-100 pb-20">
                                 {(() => {
                                     const visibleRooms = roomQuery.trim()
@@ -673,7 +672,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                                     </div>
                                 )) : <div className="p-10 text-center text-gray-400 text-sm">참여 중인 대화방이 없습니다.</div>}
                             </div>
-                        </ScrollArea>
+                        </div>
                     </div>
                 </div>
 
@@ -694,7 +693,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
 
     return (
         <div className="flex flex-col h-full bg-[#f8fafc] font-['Pretendard']">
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex flex-col min-h-0">
                 <div className="bg-white px-4 py-3 flex items-center shadow-sm sticky top-0 z-20 justify-between">
                 <div className="flex items-center gap-2">
                     <Button variant="ghost" size="icon" onClick={() => setView('list')} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
@@ -855,7 +854,8 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                     </div>
                 )}
 
-                <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+                {/* 메시지 영역 — Radix ScrollArea는 flex/터치에서 스크롤이 죽어 일반 div로(min-h-0 필수) */}
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4" ref={scrollRef}>
                 <div className="flex flex-col gap-3 pb-4">
                     <div className="flex justify-center my-4"><span className="bg-gray-200/60 text-gray-500 text-[10px] px-3 py-1 rounded-full">대화가 시작되었습니다.</span></div>
 
@@ -992,7 +992,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                         )
                     })}
                 </div>
-                </ScrollArea>
+                </div>
 
                 <div className="p-3 bg-white border-t safe-area-bottom">
                 {/* ➕ 플러스 메뉴 — 사진/동영상/일정/장소/히스토리/정산 */}
