@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from domain import models
 from api.dependencies import get_current_user
-from api.routers.chat import manager, _require_member_helper
+from api.routers.chat import manager, _require_member_helper, kst_hhmm
 
 router = APIRouter()
 
@@ -178,7 +178,7 @@ async def create_split(
 
     await manager.broadcast(
         {"id": msg.id, "user_id": current_user.id, "name": current_user.name,
-         "content": content, "timestamp": datetime.now().strftime("%H:%M")},
+         "content": content, "timestamp": kst_hhmm()},
         room_id,
     )
     _push_members(
@@ -285,7 +285,7 @@ async def pay_split(
         db.commit()
         await manager.broadcast(
             {"id": msg.id, "user_id": current_user.id, "name": current_user.name,
-             "content": content, "timestamp": datetime.now().strftime("%H:%M")},
+             "content": content, "timestamp": kst_hhmm()},
             split.room_id,
         )
         _push_members(db, split.room_id, _room_title(db, split.room_id),
@@ -347,7 +347,7 @@ async def cancel_split(
     db.commit()
     await manager.broadcast(
         {"id": msg.id, "user_id": current_user.id, "name": current_user.name,
-         "content": content, "timestamp": datetime.now().strftime("%H:%M")},
+         "content": content, "timestamp": kst_hhmm()},
         split.room_id,
     )
     await _broadcast_split(db, split)

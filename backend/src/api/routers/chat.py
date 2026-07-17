@@ -2,7 +2,18 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPExce
 from sqlalchemy.orm import Session
 from typing import List, Dict
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+KST = timezone(timedelta(hours=9))
+
+
+def kst_hhmm(dt: datetime = None) -> str:
+    """채팅 표시 시각(HH:MM, KST). 서버(Render)가 UTC라 저장분은 +9h 보정."""
+    if dt is None:
+        return datetime.now(KST).strftime("%H:%M")
+    if dt.tzinfo is not None:
+        return dt.astimezone(KST).strftime("%H:%M")
+    return (dt + timedelta(hours=9)).strftime("%H:%M")
 
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -191,7 +202,7 @@ def get_messages(room_id: str, db: Session = Depends(get_db), current_user: mode
             "user_id": m.user_id,
             "name": sender.name if sender else "알 수 없음", # 유저 이름은 name 유지
             "content": m.content,
-            "timestamp": m.timestamp.strftime("%H:%M")
+            "timestamp": kst_hhmm(m.timestamp)
         })
     return result
 
@@ -228,7 +239,7 @@ async def send_message_api(req: dict, db: Session = Depends(get_db), current_use
         "user_id": current_user.id,
         "name": current_user.name,
         "content": new_msg.content,
-        "timestamp": datetime.now().strftime("%H:%M")
+        "timestamp": kst_hhmm()
     }
     await manager.broadcast(msg_data, room_id)
 
@@ -390,7 +401,7 @@ async def share_to_friends(
                 "user_id": current_user.id,
                 "name": current_user.name,
                 "content": content,
-                "timestamp": datetime.now().strftime("%H:%M"),
+                "timestamp": kst_hhmm(),
             },
             rid,
         )

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from domain import models
 from api.dependencies import get_current_user
-from api.routers.chat import manager, _sync_room_members_from_community
+from api.routers.chat import manager, _sync_room_members_from_community, kst_hhmm
 
 router = APIRouter()
 
@@ -134,7 +134,7 @@ async def create_poll(
             "user_id": current_user.id,
             "name": current_user.name,
             "content": content,
-            "timestamp": datetime.now().strftime("%H:%M"),
+            "timestamp": kst_hhmm(),
         },
         room_id,
     )
@@ -451,7 +451,7 @@ async def confirm_poll(
             "user_id": current_user.id,
             "name": current_user.name,
             "content": content,
-            "timestamp": datetime.now().strftime("%H:%M"),
+            "timestamp": kst_hhmm(),
         },
         poll.room_id,
     )
