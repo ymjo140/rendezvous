@@ -337,6 +337,17 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
 
     useEffect(() => {
         fetchRooms()
+        // 장소 상세 등 다녀와도 보던 채팅방으로 복원(뒤로가기 시 방 유지)
+        try {
+            const saved = sessionStorage.getItem("chat:openRoom")
+            if (saved) {
+                const r = JSON.parse(saved)
+                if (r?.id) {
+                    setActiveRoom(r)
+                    setView("room")
+                }
+            }
+        } catch { /* ignore */ }
     }, [])
     
     // 📤 특정 채팅방 직접 열기 (공유 게시물에서 돌아올 때)
@@ -412,6 +423,12 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     // WebSocket 연결 및 실시간 수신
     useEffect(() => {
         if (view === 'room' && activeRoom) {
+            // 현재 방 저장 — 상세 페이지 갔다 와도 이 방으로 복원
+            try {
+                sessionStorage.setItem("chat:openRoom", JSON.stringify({
+                    id: activeRoom.id, title: activeRoom.title, is_group: activeRoom.is_group,
+                }))
+            } catch { /* ignore */ }
             setPlusOpen(false)
             setComposer(null)
             setCandidatePoll(null)
@@ -532,8 +549,9 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
 
             if (res.ok) {
                 alert("채팅방을 나갔습니다.");
-                setView('list'); 
-                fetchRooms(); 
+                try { sessionStorage.removeItem("chat:openRoom") } catch {}
+                setView('list');
+                fetchRooms();
             } else {
                 alert("나가기 실패: 잠시 후 다시 시도해주세요.");
             }
@@ -696,7 +714,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
             <div className="flex-1 flex flex-col min-h-0">
                 <div className="bg-white px-4 py-3 flex items-center shadow-sm sticky top-0 z-20 justify-between">
                 <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => setView('list')} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => { try { sessionStorage.removeItem("chat:openRoom") } catch {} setView('list') }} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
                     <button className="text-left" onClick={() => setMembersOpen((v) => !v)}>
                         <h2 className="font-bold text-sm text-gray-900 truncate max-w-[160px] flex items-center gap-1">
                             {activeRoom?.title || activeRoom?.name}
