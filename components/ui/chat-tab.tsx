@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ThumbsUp, UserPlus, Globe, Lock, List, Users, Settings, Plus, ImageIcon, Video, History, Calculator, Pencil, Bell, ChevronRight } from "lucide-react"
+import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ThumbsUp, UserPlus, Globe, Lock, List, Users, Settings, Plus, ImageIcon, Video, History, Calculator, Pencil, Bell, ChevronRight, Search } from "lucide-react"
 import {
     PollCard, PlacePollComposer, SchedulePollComposer, CandidateSheet,
     HistorySheet, SettlementComposer, SettlementCard, PollConfirmedCard,
