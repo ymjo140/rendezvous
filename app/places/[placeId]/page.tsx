@@ -624,6 +624,17 @@ export default function PlaceDetailPage() {
             돌아가기
           </button>
 
+          {/* 대표 이미지(사장님이 손님 사진 중 지정) */}
+          {(place as any).hero_image && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={(place as any).hero_image}
+              alt={place.name}
+              className="mt-4 h-52 w-full rounded-2xl object-cover bg-gray-100"
+              loading="lazy"
+            />
+          )}
+
           <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>

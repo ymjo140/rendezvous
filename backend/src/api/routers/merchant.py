@@ -568,3 +568,290 @@ async def delete_resource(
     db.execute(sql, {"_rid": row_id, "_sid": str(store_id)})
     db.commit()
     return {"ok": True}
+
+
+# ─────────────────── 단골 관리(#1) ───────────────────
+
+def _persona_label(party_size):
+    n = int(party_size or 0)
+    if n == 2:
+        return ("커플·데이트", "💑")
+    if 3 <= n <= 4:
+        return ("소규모 모임", "👪")
+    if n >= 5:
+        return ("단체·회식", "🍻")
+    return ("모임", "👥")
+
+
+def _ago_text(dt):
+    from datetime import datetime
+    if not dt:
+        return ""
+    try:
+        days = (datetime.utcnow() - dt).days
+    except Exception:
+        return ""
+    if days <= 0:
+        return "오늘"
+    if days < 7:
+        return f"{days}일 전"
+    if days < 30:
+        return f"{days // 7}주 전"
+    return f"{days // 30}개월 전"
+
+
+@router.get("/stores/{store_id}/regulars")
+def store_regulars(store_id: int, db: Session = Depends(get_db)):
+    """단골/재방문 관리 — 재방문 의사 손님, 재방문율, 뜸해진 단골, 4축 진단.
+    데모 정책: 읽기 전용 집계(소유권 검증 보류)."""
+    pid = store_id
+    place = db.query(models.Place).filter(models.Place.id == pid).first()
+    pname = place.name if place else ""
+
+    # 재방문 의사(또갈래요) 손님 — 개인정보 없이 모임 유형으로
+    intent = []
+    intent_count = 0
+    try:
+        rows = db.execute(text(
+            """
+            SELECT f.user_id, MAX(f.created_at) AS last_at,
+                   MAX(r.party_size) AS party
+            FROM place_visit_feedback f
+            LEFT JOIN user_reservations r ON r.id = f.reservation_id
+            WHERE f.place_id = :pid AND (f.personal_revisit = TRUE OR f.group_revisit = TRUE)
+            GROUP BY f.user_id
+            ORDER BY last_at DESC
+            """
+        ), {"pid": pid}).fetchall()
+        intent_count = len(rows)
+        for uid, last_at, party in rows[:50]:
+            label, emoji = _persona_label(party)
+            intent.append({"persona": label, "emoji": emoji, "ago": _ago_text(last_at)})
+    except Exception as exc:
+        print(f"[regulars] intent skip: {exc}"); db.rollback()
+
+    # 재방문율 + 단골 후보(2회+) + 뜸해진 단골(2회+, 21일 무방문)
+    revisit_rate = None
+    repeat_count = 0
+    dormant_count = 0
+    try:
+        vr = db.execute(text(
+            """
+            WITH visits AS (
+              SELECT user_id, COUNT(*) AS c, MAX(date) AS last_date
+              FROM user_reservations
+              WHERE place_id = :pid AND status IN ('confirmed','completed') AND user_id IS NOT NULL
+              GROUP BY user_id
+            )
+            SELECT
+              COUNT(*) AS total_visitors,
+              COUNT(*) FILTER (WHERE c >= 2) AS repeat_visitors,
+              COUNT(*) FILTER (WHERE c >= 2 AND last_date < to_char(NOW() - interval '21 days','YYYY-MM-DD')) AS dormant
+            FROM visits
+            """
+        ), {"pid": pid}).fetchone()
+        if vr and int(vr[0] or 0) > 0:
+            total = int(vr[0]); repeat_count = int(vr[1] or 0); dormant_count = int(vr[2] or 0)
+            revisit_rate = round(repeat_count / total * 100)
+    except Exception as exc:
+        print(f"[regulars] rate skip: {exc}"); db.rollback()
+
+    # 4축 진단 — 리뷰 평균 중 가장 낮은 축
+    diagnosis = None
+    try:
+        dr = db.execute(text(
+            """
+            SELECT AVG(score_taste), AVG(score_service), AVG(score_price), AVG(score_vibe), COUNT(*)
+            FROM reviews WHERE place_name = :pn
+              AND (score_taste IS NOT NULL OR score_price IS NOT NULL)
+            """
+        ), {"pn": pname}).fetchone()
+        if dr and int(dr[4] or 0) >= 1:
+            axes = {"맛": dr[0], "서비스": dr[1], "가격": dr[2], "분위기": dr[3]}
+            axes = {k: float(v) for k, v in axes.items() if v is not None}
+            if axes:
+                low = min(axes, key=axes.get)
+                diagnosis = {
+                    "axes": {k: round(v, 1) for k, v in axes.items()},
+                    "weak": low,
+                    "hint": {
+                        "가격": "런치 세트·재방문 할인으로 가격 부담 낮추기",
+                        "맛": "대표 메뉴 강화 or 시그니처 개발",
+                        "서비스": "응대·속도 점검",
+                        "분위기": "좌석·조명·음악 손보기",
+                    }.get(low, ""),
+                    "review_count": int(dr[4]),
+                }
+    except Exception as exc:
+        print(f"[regulars] diag skip: {exc}"); db.rollback()
+
+    return {
+        "store_id": pid,
+        "revisit_intent_count": intent_count,
+        "revisit_intent": intent,
+        "revisit_rate": revisit_rate,
+        "repeat_count": repeat_count,
+        "dormant_count": dormant_count,
+        "diagnosis": diagnosis,
+    }
+
+
+class ReengageBody(BaseModel):
+    kind: str = "thanks"   # thanks | reminder
+    message: Optional[str] = None
+    discount_pct: Optional[int] = None
+
+
+@router.post("/stores/{store_id}/regulars/reengage")
+def reengage_regulars(store_id: int, body: ReengageBody, db: Session = Depends(get_db),
+                      current_user: models.User = Depends(get_current_user)):
+    """재방문 의사/뜸해진 단골에게 재초대 알림(푸시). 소유주만."""
+    place = _assert_store_owner(db, store_id, current_user)
+    # 대상 user_id 수집
+    if body.kind == "reminder":
+        rows = db.execute(text(
+            """
+            WITH visits AS (
+              SELECT user_id, COUNT(*) c, MAX(date) last_date FROM user_reservations
+              WHERE place_id=:pid AND status IN ('confirmed','completed') AND user_id IS NOT NULL
+              GROUP BY user_id)
+            SELECT user_id FROM visits
+            WHERE c >= 2 AND last_date < to_char(NOW() - interval '21 days','YYYY-MM-DD')
+            """
+        ), {"pid": store_id}).fetchall()
+    else:
+        rows = db.execute(text(
+            "SELECT DISTINCT user_id FROM place_visit_feedback "
+            "WHERE place_id=:pid AND (personal_revisit=TRUE OR group_revisit=TRUE) AND user_id IS NOT NULL"
+        ), {"pid": store_id}).fetchall()
+    uids = [int(r[0]) for r in rows if r[0]]
+    if not uids:
+        return {"sent": 0, "message": "아직 대상 손님이 없어요."}
+    title = f"{place.name}에서 초대해요"
+    dc = f" · {body.discount_pct}% 할인" if body.discount_pct else ""
+    msg = body.message or ("보고 싶어요! 다시 방문해주시면 감사하겠습니다" if body.kind == "reminder" else "또 찾아주셔서 감사해요")
+    try:
+        from services import push_service
+        push_service.notify_users_async(uids, title, msg + dc, data={"type": "reengage", "place_id": str(store_id)})
+    except Exception as exc:
+        print(f"[reengage] push skip: {exc}")
+    return {"sent": len(uids), "kind": body.kind}
+
+
+# ─────────────────── 손님 콘텐츠(#3) ───────────────────
+
+def _first_img(image_urls):
+    import json as _j
+    if not image_urls:
+        return None
+    arr = image_urls if isinstance(image_urls, list) else (_j.loads(image_urls) if isinstance(image_urls, str) else [])
+    for u in arr:
+        if isinstance(u, str) and (u.startswith("http") or u.startswith("data:")):
+            return u
+    return None
+
+
+@router.get("/stores/{store_id}/content")
+def store_content(store_id: int, db: Session = Depends(get_db)):
+    """손님이 만든 콘텐츠 집계 — 사진(게시물), 후기, 큐레이터 리스트 편입. 읽기 전용."""
+    pid = store_id
+    place = db.query(models.Place).filter(models.Place.id == pid).first()
+    pname = place.name if place else ""
+    hero = getattr(place, "hero_image", None) if place else None
+
+    # 손님 사진(게시물)
+    photos = []
+    try:
+        prows = (db.query(models.Post)
+                 .filter(models.Post.place_id == pid, models.Post.image_urls.isnot(None))
+                 .order_by(models.Post.created_at.desc()).limit(30).all())
+        uids = {p.user_id for p in prows if getattr(p, "user_id", None)}
+        umap = {u.id: u.name for u in db.query(models.User).filter(models.User.id.in_(uids)).all()} if uids else {}
+        for p in prows:
+            img = _first_img(p.image_urls)
+            if img:
+                photos.append({
+                    "post_id": p.id, "image": img,
+                    "user_name": umap.get(getattr(p, "user_id", None), "손님"),
+                    "content": (p.content or "")[:40],
+                })
+    except Exception as exc:
+        print(f"[content] photos skip: {exc}"); db.rollback()
+
+    # 후기(사진/코멘트) + 베스트 후기
+    reviews = []
+    best = None
+    try:
+        rrows = (db.query(models.Review)
+                 .filter(models.Review.place_name == pname)
+                 .order_by(models.Review.rating.desc().nullslast(), models.Review.created_at.desc())
+                 .limit(20).all())
+        for r in rrows:
+            item = {
+                "id": r.id, "rating": r.rating,
+                "comment": (r.comment or "")[:80],
+                "image": _first_img(r.image_urls),
+            }
+            reviews.append(item)
+            if best is None and r.comment:
+                best = item
+    except Exception as exc:
+        print(f"[content] reviews skip: {exc}"); db.rollback()
+
+    # 큐레이터 공개 리스트 편입
+    curators = []
+    try:
+        crows = db.execute(text(
+            """
+            SELECT sf.id, sf.name, u.name AS owner,
+                   (SELECT COUNT(*) FROM list_likes ll WHERE ll.folder_id = sf.id) AS likes
+            FROM saved_items si
+            JOIN save_folders sf ON sf.id = si.folder_id AND sf.is_public = TRUE
+            JOIN users u ON u.id = sf.user_id
+            WHERE si.place_id = :pid
+            GROUP BY sf.id, sf.name, u.name
+            ORDER BY likes DESC LIMIT 10
+            """
+        ), {"pid": pid}).fetchall()
+        for cid, cname, owner, likes in crows:
+            curators.append({"folder_id": cid, "name": cname, "owner": owner, "likes": int(likes or 0)})
+    except Exception as exc:
+        print(f"[content] curators skip: {exc}"); db.rollback()
+
+    # 방문 인증(게시물로 방문 언급한 사람) 수
+    visitor_count = 0
+    try:
+        visitor_count = db.execute(text(
+            "SELECT COUNT(DISTINCT user_id) FROM posts WHERE place_id = :pid"
+        ), {"pid": pid}).scalar() or 0
+    except Exception:
+        db.rollback()
+
+    return {
+        "store_id": pid,
+        "hero_image": hero,
+        "counts": {
+            "photos": len(photos),
+            "reviews": len(reviews),
+            "curators": len(curators),
+            "visitors": int(visitor_count),
+        },
+        "photos": photos,
+        "reviews": reviews,
+        "best_review": best,
+        "curators": curators,
+    }
+
+
+class HeroBody(BaseModel):
+    image: str
+
+
+@router.post("/stores/{store_id}/hero-image")
+def set_hero_image(store_id: int, body: HeroBody, db: Session = Depends(get_db),
+                   current_user: models.User = Depends(get_current_user)):
+    """가게 대표 이미지 지정 — 손님 사진을 가게 얼굴로. 소유주만."""
+    place = _assert_store_owner(db, store_id, current_user)
+    place.hero_image = body.image or None
+    db.commit()
+    return {"ok": True, "hero_image": place.hero_image}

@@ -491,6 +491,7 @@ def get_place_detail(
         "external_link": place.external_link or "",
         "tags": tags,
         "menus": menus,
+        "hero_image": getattr(place, "hero_image", None),  # 대표 이미지(사장님 지정)
         "vacancy": vacancy,   # 🔴 실시간 빈자리(없으면 null)
         "offers": offers_out, # 💸 진행 중 할인
         "reviews": review_items

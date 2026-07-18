@@ -141,6 +141,8 @@ class Place(Base):
     # 외부 지도 장소 id — 저장 리스트 임포트 시 같은 가게를 같은 place로 수렴시키는 키
     naver_sid = Column(String, nullable=True, index=True)
     kakao_cid = Column(String, nullable=True, index=True)
+    # 대표 이미지(사장님이 손님 사진 중 지정) — B2C 상세/카드 얼굴
+    hero_image = Column(String, nullable=True)
 
 class MeetingLog(Base):
     __tablename__ = "meeting_logs"
