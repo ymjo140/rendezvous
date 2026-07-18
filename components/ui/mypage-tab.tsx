@@ -1047,12 +1047,18 @@ export function MyPageTab() {
                                         className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:border-[#14B8A6] transition-colors cursor-pointer"
                                     >
                                         <div className="flex items-center gap-3">
-                                            <div 
-                                                className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                                            <button
+                                                onClick={(e) => {
+                                                    if (folder.is_default) return; // 기본 폴더는 행 클릭과 동일(열기)
+                                                    e.stopPropagation();
+                                                    openFolderDialog(folder);
+                                                }}
+                                                className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 active:scale-95 transition-transform"
                                                 style={{ backgroundColor: `${folder.color}20` }}
+                                                title={folder.is_default ? undefined : "탭해서 아이콘/색 바꾸기"}
                                             >
                                                 {folder.icon}
-                                            </div>
+                                            </button>
                                             <div className="min-w-0">
                                                 <div className="font-bold text-gray-800 truncate">{folder.name}</div>
                                                 <div className="text-xs text-gray-400">
