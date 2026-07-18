@@ -137,6 +137,11 @@ export const useMapLogic = ({
         const onPins = (e: any) => {
             folderDataRef.current = e?.detail?.folders || [];
             folderRenderRef.current();
+            // 전체 가게 칩 레이어도 모드에 맞게 갱신(끄거나 복구) — idle 로직 재실행
+            const map = mapRef.current;
+            if (map && window.naver?.maps?.Event) {
+                window.naver.maps.Event.trigger(map, "idle");
+            }
         };
         window.addEventListener("map:folder-pins", onPins);
         return () => window.removeEventListener("map:folder-pins", onPins);
@@ -214,6 +219,12 @@ export const useMapLogic = ({
                             nearbyMarkersRef.current.forEach((m: any) => m.setMap(null));
                             nearbyMarkersRef.current = [];
                         };
+                        // 💾 저장 리스트 모드: 전체 가게 칩은 숨기고 내 폴더 핀만 (정신없음 방지)
+                        if (folderDataRef.current.length > 0) {
+                            clearNearby();
+                            nearbyPlacesRef.current = [];
+                            return;
+                        }
                         const zoom = map.getZoom();
                         if (zoom < 14) { clearNearby(); nearbyPlacesRef.current = []; return; }  // 너무 넓으면 노이즈라 생략
                         // 영역 내 전부 요청(사용자 결정) — 이름표 노출량은 충돌감지가 알아서 조절
