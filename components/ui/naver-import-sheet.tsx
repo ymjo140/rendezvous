@@ -1,6 +1,6 @@
 "use client"
 
-// 네이버 지도 저장 리스트 가져오기 — 공유 링크 붙여넣기 → 미리보기(매칭) → 일괄 저장
+// 내 맛집 가져오기 (네이버 지도/카카오맵) — 공유 링크 붙여넣기 → 미리보기(매칭) → 일괄 저장
 import React, { useMemo, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { Loader2, Check, MapPin } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
 interface PreviewItem {
+    source: string
     sid: string | null
     name: string
     address: string | null
@@ -55,7 +56,7 @@ export function NaverImportSheet({
         if (!url.trim()) { setError("네이버 지도 공유 링크를 붙여넣어 주세요."); return }
         setLoading(true); setError(null)
         try {
-            const res = await fetchWithAuth("/api/import/naver/preview", {
+            const res = await fetchWithAuth("/api/import/places/preview", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ url }),
@@ -86,11 +87,11 @@ export function NaverImportSheet({
             const items = preview.items
                 .filter((_, i) => checked.has(i))
                 .map(it => ({
-                    sid: it.sid, name: it.name, address: it.address,
+                    source: it.source, sid: it.sid, name: it.name, address: it.address,
                     lat: it.lat, lng: it.lng, mcid: it.mcid, mcid_name: it.mcid_name,
                     place_id: it.matched?.place_id ?? null,
                 }))
-            const res = await fetchWithAuth("/api/import/naver/commit", {
+            const res = await fetchWithAuth("/api/import/places/commit", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ folder_name: preview.folder_name, items }),
@@ -116,7 +117,7 @@ export function NaverImportSheet({
             <DialogContent className="max-w-md max-h-[85dvh] flex flex-col p-0 gap-0 overflow-hidden">
                 <DialogHeader className="px-5 pt-5 pb-3 border-b border-gray-100">
                     <DialogTitle className="text-base font-bold flex items-center gap-2">
-                        <span className="text-lg">🧡</span> 네이버 지도 맛집 가져오기
+                        <span className="text-lg">📥</span> 내 맛집 가져오기
                     </DialogTitle>
                 </DialogHeader>
 
@@ -134,15 +135,15 @@ export function NaverImportSheet({
                     </div>
                 ) : !preview ? (
                     <div className="p-5 space-y-4">
-                        <div className="bg-amber-50 rounded-xl p-3 text-xs text-amber-800 leading-relaxed">
-                            <span className="font-bold">가져오는 방법</span><br />
-                            네이버 지도 앱 → <span className="font-bold">저장</span> → 리스트 선택 →{" "}
-                            <span className="font-bold">공유</span> → 링크 복사 → 아래에 붙여넣기
+                        <div className="bg-amber-50 rounded-xl p-3 text-xs text-amber-800 leading-relaxed space-y-1">
+                            <div><span className="font-bold">가져오는 방법</span> — 공유 링크를 붙여넣으면 자동 인식!</div>
+                            <div>🟢 <span className="font-bold">네이버 지도</span>: 저장 → 리스트 선택 → 공유 → 링크 복사</div>
+                            <div>🟡 <span className="font-bold">카카오맵</span>: 저장 → 폴더 선택 → 공유 → 링크 복사</div>
                         </div>
                         <textarea
                             value={url}
                             onChange={(e) => setUrl(e.target.value)}
-                            placeholder={"[네이버지도]\n맛집\nhttps://naver.me/..."}
+                            placeholder={"https://naver.me/... 또는 https://kko.to/..."}
                             rows={3}
                             className="w-full rounded-xl border border-gray-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#14B8A6]/40 resize-none"
                         />
@@ -150,7 +151,7 @@ export function NaverImportSheet({
                         <Button
                             onClick={loadPreview}
                             disabled={loading}
-                            className="w-full bg-[#03C75A] hover:bg-[#02b152] text-white font-bold rounded-xl h-11"
+                            className="w-full bg-[#14B8A6] hover:bg-[#0d9488] text-white font-bold rounded-xl h-11"
                         >
                             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "리스트 불러오기"}
                         </Button>

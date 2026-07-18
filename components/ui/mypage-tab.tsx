@@ -929,9 +929,9 @@ export function MyPageTab() {
                             </button>
                             <button
                                 onClick={() => setNaverImportOpen(true)}
-                                className="flex-1 flex items-center justify-center gap-1.5 bg-white p-3 rounded-2xl border-2 border-dashed border-[#03C75A]/40 text-[#03C75A] hover:border-[#03C75A] transition-colors font-bold text-sm"
+                                className="flex-1 flex items-center justify-center gap-1.5 bg-white p-3 rounded-2xl border-2 border-dashed border-[#14B8A6]/40 text-[#14B8A6] hover:border-[#14B8A6] transition-colors font-bold text-sm"
                             >
-                                🧡 네이버 맛집 가져오기
+                                📥 내 맛집 가져오기
                             </button>
                         </div>
                         <NaverImportSheet
