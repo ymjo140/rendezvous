@@ -855,3 +855,199 @@ def set_hero_image(store_id: int, body: HeroBody, db: Session = Depends(get_db),
     place.hero_image = body.image or None
     db.commit()
     return {"ok": True, "hero_image": place.hero_image}
+
+
+# ─────────────────── 취향 리치 CRM (#1 카드 #2 리액티베이션 #3 그룹 #4 팔로업) ───────────────────
+
+_CUISINE_KW = {
+    "일식": ["일식","스시","초밥","라멘","우동","돈까스","돈가스","이자카야","텐동","일본"],
+    "한식": ["한식","국밥","찌개","백반","냉면","곰탕","국수","불고기","족발","보쌈","분식","떡볶이"],
+    "중식": ["중식","중국","짜장","짬뽕","마라","훠궈"],
+    "양식": ["양식","이탈리","파스타","피자","스테이크","브런치","경양식"],
+    "카페": ["카페","커피","디저트","베이커리","빵","케이크"],
+    "술집": ["술","맥주","포차","호프","이자카야","와인","바"],
+    "고기": ["고기","구이","삼겹","갈비","곱창","한우"],
+    "해산물": ["해산물","회","횟집","해물","조개"],
+    "아시안": ["아시안","베트남","태국","쌀국수","커리"],
+}
+
+
+def _canon_one(text_in) -> Optional[str]:
+    blob = str(text_in or "")
+    for label, kws in _CUISINE_KW.items():
+        if any(k in blob for k in kws):
+            return label
+    return None
+
+
+def _taste_tags(prefs) -> list:
+    out = []
+    if isinstance(prefs, dict):
+        for k in ("foods", "vibes"):
+            for v in (prefs.get(k) or []):
+                for part in str(v).split("/"):
+                    t = part.strip()
+                    if t and t not in out:
+                        out.append(t)
+    return out[:4]
+
+
+def _parse_ymd(v):
+    from datetime import datetime as _dt
+    if not v:
+        return None
+    try:
+        return _dt.strptime(str(v)[:10], "%Y-%m-%d")
+    except Exception:
+        return None
+
+
+@router.get("/stores/{store_id}/crm")
+def store_crm(store_id: int, db: Session = Depends(get_db)):
+    """취향 리치 손님/그룹 CRM. 취향·모임유형·재방문의사·크로스스토어 관심을 결합.
+    데모: 읽기 전용 집계."""
+    pid = store_id
+    place = db.query(models.Place).filter(models.Place.id == pid).first()
+    store_cuisine = _canon_one((place.cuisine_type if place else "") + " " + (place.category if place else "") + " " + (place.name if place else ""))
+
+    from datetime import datetime, date as _date
+    from collections import Counter
+
+    # 방문 손님 집계(예약 기준) — user_id별 방문수/마지막/파티사이즈
+    cust = {}
+    try:
+        for uid, party, dt, st in db.execute(text(
+            "SELECT user_id, party_size, date, status FROM user_reservations "
+            "WHERE place_id=:pid AND user_id IS NOT NULL AND status IN ('confirmed','completed')"
+        ), {"pid": pid}).fetchall():
+            c = cust.setdefault(int(uid), {"visits": 0, "last": None, "parties": []})
+            c["visits"] += 1
+            if party: c["parties"].append(int(party))
+            if dt and (c["last"] is None or dt > c["last"]): c["last"] = dt
+    except Exception as exc:
+        print(f"[crm] visits skip: {exc}"); db.rollback()
+
+    # 재방문 의사(또갈래요) 유저
+    intent_uids = set()
+    try:
+        for (uid,) in db.execute(text(
+            "SELECT DISTINCT user_id FROM place_visit_feedback "
+            "WHERE place_id=:pid AND (personal_revisit=TRUE OR group_revisit=TRUE) AND user_id IS NOT NULL"
+        ), {"pid": pid}).fetchall():
+            intent_uids.add(int(uid))
+            cust.setdefault(int(uid), {"visits": 0, "last": None, "parties": []})
+    except Exception as exc:
+        print(f"[crm] intent skip: {exc}"); db.rollback()
+
+    uids = list(cust.keys())[:80]
+    prefs_map = {}
+    if uids:
+        try:
+            for u in db.query(models.User).filter(models.User.id.in_(uids)).all():
+                prefs_map[u.id] = u.preferences if isinstance(u.preferences, dict) else {}
+        except Exception:
+            db.rollback()
+
+    # 크로스-스토어 최근 관심: 최근 30일 이 손님이 저장한 다른 곳의 cuisine이 우리 카테고리와 일치하는 수
+    recent_interest = {}
+    if uids and store_cuisine:
+        try:
+            rows = db.execute(text(
+                """
+                SELECT si.user_id, p.cuisine_type, p.category, p.name
+                FROM saved_items si JOIN places p ON p.id = si.place_id
+                WHERE si.user_id = ANY(:uids) AND si.place_id <> :pid
+                  AND si.created_at >= NOW() - interval '30 days'
+                """
+            ), {"uids": uids, "pid": pid}).fetchall()
+            cnt = Counter()
+            for uid, cz, cat, nm in rows:
+                if _canon_one((cz or "") + " " + (cat or "") + " " + (nm or "")) == store_cuisine:
+                    cnt[int(uid)] += 1
+            recent_interest = dict(cnt)
+        except Exception as exc:
+            print(f"[crm] interest skip: {exc}"); db.rollback()
+
+    def _persona(parties):
+        if not parties:
+            return ("모임", "👥")
+        avg = round(sum(parties) / len(parties))
+        return _persona_label(avg)
+
+    def _tier(visits):
+        return "VIP" if visits >= 4 else ("단골" if visits >= 2 else "신규")
+
+    # 손님 카드(#1)
+    customers = []
+    for uid, c in sorted(cust.items(), key=lambda kv: (kv[1]["visits"], kv[1]["last"] or ""), reverse=True):
+        label, emoji = _persona(c["parties"])
+        customers.append({
+            "persona": label, "emoji": emoji,
+            "taste": _taste_tags(prefs_map.get(uid)),
+            "visits": c["visits"],
+            "last": _ago_text(_parse_ymd(c["last"])) if c["last"] else "",
+            "revisit_intent": uid in intent_uids,
+            "recent_interest": recent_interest.get(uid, 0),
+            "tier": _tier(c["visits"]),
+        })
+    customers = customers[:40]
+
+    # 그룹 CRM(#3) — 방문 피드백을 남긴 모임(room) 단위
+    groups = []
+    try:
+        grows = db.execute(text(
+            """
+            SELECT f.room_id, COUNT(*) c, MAX(f.created_at) last_at,
+                   BOOL_OR(f.group_revisit) gr, MAX(r.party_size) party
+            FROM place_visit_feedback f
+            LEFT JOIN user_reservations r ON r.id = f.reservation_id
+            WHERE f.place_id=:pid AND f.room_id IS NOT NULL
+            GROUP BY f.room_id ORDER BY last_at DESC LIMIT 20
+            """
+        ), {"pid": pid}).fetchall()
+        for rid, c, last_at, gr, party in grows:
+            label, emoji = _persona_label(party)
+            groups.append({
+                "persona": label, "emoji": emoji, "visits": int(c),
+                "last": _ago_text(last_at), "revisit_intent": bool(gr),
+            })
+    except Exception as exc:
+        print(f"[crm] groups skip: {exc}"); db.rollback()
+
+    # 리액티베이션(#2) — 뜸한데 최근 우리 카테고리 관심↑ = 재방문 타이밍
+    reactivation = [
+        {"persona": c["persona"], "emoji": c["emoji"], "taste": c["taste"],
+         "interest": c["recent_interest"], "last": c["last"]}
+        for c in customers
+        if c["recent_interest"] >= 1 and (c["revisit_intent"] or c["visits"] >= 1)
+    ][:10]
+
+    # 자동 팔로업(#4) — 규칙기반 액션 + 메시지 초안
+    sname = place.name if place else "가게"
+    followups = []
+    for c in customers:
+        draft = None; reason = None
+        if c["recent_interest"] >= 1:
+            reason = f"최근 {store_cuisine or '우리 카테고리'} 관심↑ · 재방문 타이밍"
+            draft = f"{sname}에 요즘 {c['taste'][0] if c['taste'] else store_cuisine or ''} 좋아하시는 분들 많이 오세요! 다시 모시고 싶어요 🙌"
+        elif c["revisit_intent"]:
+            reason = "또 오고 싶다고 표시함"
+            draft = f"{sname} 다시 찾아주셔서 감사해요. 오시면 작은 서비스 준비할게요 😊"
+        elif c["tier"] in ("단골", "VIP"):
+            reason = f"{c['tier']} · {c['last']} 방문"
+            draft = f"{sname} 단골 {c['persona']}님, 보고 싶어요! 이번 주 방문 어떠세요?"
+        if draft:
+            followups.append({"persona": c["persona"], "emoji": c["emoji"],
+                              "reason": reason, "draft": draft, "tier": c["tier"]})
+    followups = followups[:8]
+
+    return {
+        "store_id": pid,
+        "store_cuisine": store_cuisine,
+        "counts": {"customers": len(customers), "groups": len(groups),
+                   "reactivation": len(reactivation), "vip": sum(1 for c in customers if c["tier"] == "VIP")},
+        "customers": customers,
+        "groups": groups,
+        "reactivation": reactivation,
+        "followups": followups,
+    }
