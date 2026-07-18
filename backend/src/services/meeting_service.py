@@ -320,9 +320,9 @@ class MeetingService:
         results = []
         raw_prefs = req.user_selected_tags or []
         purpose = (req.purpose or "").strip()
-        # 반환 개수 — 기본 15, 전체 보기는 최대 60
+        # 반환 개수 — 기본 15, 전체 보기는 최대 200
         try:
-            top_k = max(1, min(int(getattr(req, "top_k", 15) or 15), 60))
+            top_k = max(1, min(int(getattr(req, "top_k", 15) or 15), 200))
         except Exception:
             top_k = 15
 
@@ -444,15 +444,17 @@ class MeetingService:
             if facility_clauses:
                 filter_sql = f"({filter_sql}) AND " + " AND ".join(facility_clauses)
 
-            # 전체 보기(top_k>15)면 후보도 넉넉히
+            # 전체 보기(top_k>15)면 후보도 넉넉히 + 반경도 넓게(2km→최대 8km)
             cand_limit = max(30, top_k * 2)
             params["cand_limit"] = cand_limit
+            radius_km = 2.0 if top_k <= 15 else min(8.0, 2.0 + top_k * 0.05)
+            params["radius_km"] = radius_km
             db_query = text(f"""
                 SELECT id, name, category, lat, lng, address, tags, wemeet_rating,
                        (vacancy_until IS NOT NULL AND vacancy_until > NOW()) AS vacancy_now,
                        review_count, price_range
                 FROM places
-                WHERE (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) <= 2.0
+                WHERE (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) <= :radius_km
                 AND ({filter_sql})
                 ORDER BY wemeet_rating DESC
                 LIMIT :cand_limit

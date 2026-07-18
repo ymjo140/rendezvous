@@ -2,7 +2,7 @@
 
 // 장소 추천 전체 보기 — 내 취향 / 내 모임 / 핫딜 탭 + 정렬(추천·거리·급상승·또갈래요·평점·리뷰·가격)
 // 평점/리뷰/가격은 데이터가 쌓이면 자동으로 의미가 생기는 정렬(미리 구축).
-import { Suspense, useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, Loader2 } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
@@ -69,10 +69,18 @@ function PicksContent() {
   const purpose = sp.get("purpose") || "식사"
   const filterTags = (sp.get("tags") || "").split(",").map((t) => t.trim()).filter(Boolean)
 
-  const [tab, setTab] = useState<Tab>(initTab)
-  const [sort, setSort] = useState("reco")
-  const [cat, setCat] = useState("all")
-  const [roomFilter, setRoomFilter] = useState("all")
+  // 뒤로가기 복원: 장소 상세에 다녀와도 탭/정렬/필터/스크롤 유지
+  const PICKS_STATE_KEY = "picks_view_state_v1"
+  const saved = (() => {
+    if (typeof window === "undefined") return null
+    try { return JSON.parse(sessionStorage.getItem(PICKS_STATE_KEY) || "null") } catch { return null }
+  })()
+
+  const [tab, setTab] = useState<Tab>(saved?.tab || initTab)
+  const [sort, setSort] = useState(saved?.sort || "reco")
+  const [cat, setCat] = useState(saved?.cat || "all")
+  const [roomFilter, setRoomFilter] = useState(saved?.roomFilter || "all")
+  const [roomMenuOpen, setRoomMenuOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [base, setBase] = useState<{ lat: number; lng: number; label: string } | null>(
     anchorLat && anchorLng ? { lat: anchorLat, lng: anchorLng, label: areaName || "선택 지역" } : null
@@ -122,7 +130,7 @@ function PicksContent() {
           current_lat: base.lat,
           current_lng: base.lng,
           member_user_ids: [],
-          top_k: 50,
+          top_k: 100,
         }),
       })
         .then((r) => (r.ok ? r.json() : []))
@@ -131,7 +139,7 @@ function PicksContent() {
         .finally(done)
     } else if (tab === "meetings") {
       const q = anchorLat && anchorLng ? `&lat=${anchorLat}&lng=${anchorLng}&area=${encodeURIComponent(areaName)}` : ""
-      fetchWithAuth(`/api/recommend/my-meetings?per_room=10${q}`)
+      fetchWithAuth(`/api/recommend/my-meetings?per_room=100${q}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => { if (active) setMeetings(d?.places || []) })
         .catch(() => {})
@@ -151,6 +159,30 @@ function PicksContent() {
     meetings.forEach((p: any) => { if (p.room_name && names.indexOf(p.room_name) < 0) names.push(p.room_name) })
     return names
   }, [meetings])
+
+  // 뷰 상태 저장(탭/정렬/필터) — 뒤로가기 시 복원용
+  useEffect(() => {
+    try { sessionStorage.setItem(PICKS_STATE_KEY, JSON.stringify({ tab, sort, cat, roomFilter, scrollY: 0 })) } catch { /* noop */ }
+  }, [tab, sort, cat, roomFilter])
+
+  // 스크롤 위치 저장 + 복원(장소 상세 다녀온 뒤 그 자리로)
+  useEffect(() => {
+    const onScroll = () => {
+      try {
+        const s = JSON.parse(sessionStorage.getItem(PICKS_STATE_KEY) || "{}")
+        s.scrollY = window.scrollY
+        sessionStorage.setItem(PICKS_STATE_KEY, JSON.stringify(s))
+      } catch { /* noop */ }
+    }
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [])
+  const restoredRef = useRef(false)
+  useEffect(() => {
+    if (loading || restoredRef.current) return
+    restoredRef.current = true
+    if (saved?.scrollY) requestAnimationFrame(() => window.scrollTo(0, saved.scrollY))
+  }, [loading])
 
   const sortedPlaces = useMemo(() => {
     const src = tab === "meetings" ? meetings : places
@@ -236,24 +268,38 @@ function PicksContent() {
               </button>
             ))}
           </div>
-          {/* 모임 선택 줄 (모임 탭 전용) — 모임을 고르면 그 모임 추천만 */}
+          {/* 모임 선택 (모임 탭 전용) — 드롭다운으로 열어서 선택. 모임 많아도 스크롤로 수용 */}
           {tab === "meetings" && roomNames.length > 0 && (
-            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
+            <div className="relative">
               <button
-                onClick={() => setRoomFilter("all")}
-                className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold ${roomFilter === "all" ? "bg-teal-600 text-white" : "bg-teal-50 text-teal-700"}`}
+                onClick={() => setRoomMenuOpen((o) => !o)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold bg-teal-600 text-white"
               >
-                👥 전체 모임
+                👥 {roomFilter === "all" ? "전체 모임" : roomFilter}
+                <span className="text-[10px] opacity-80">{roomMenuOpen ? "▲" : "▼"}</span>
               </button>
-              {roomNames.map((rn) => (
-                <button
-                  key={rn}
-                  onClick={() => setRoomFilter(rn)}
-                  className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold ${roomFilter === rn ? "bg-teal-600 text-white" : "bg-teal-50 text-teal-700"}`}
-                >
-                  {rn}
-                </button>
-              ))}
+              {roomMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setRoomMenuOpen(false)} />
+                  <div className="absolute left-0 top-full mt-1 z-30 w-56 max-h-64 overflow-y-auto bg-white rounded-xl shadow-lg border border-gray-100 py-1">
+                    <button
+                      onClick={() => { setRoomFilter("all"); setRoomMenuOpen(false) }}
+                      className={`w-full text-left px-3 py-2 text-sm ${roomFilter === "all" ? "font-bold text-teal-700 bg-teal-50" : "text-gray-700 hover:bg-gray-50"}`}
+                    >
+                      👥 전체 모임 <span className="text-xs text-gray-400">({roomNames.length}개)</span>
+                    </button>
+                    {roomNames.map((rn) => (
+                      <button
+                        key={rn}
+                        onClick={() => { setRoomFilter(rn); setRoomMenuOpen(false) }}
+                        className={`w-full text-left px-3 py-2 text-sm truncate ${roomFilter === rn ? "font-bold text-teal-700 bg-teal-50" : "text-gray-700 hover:bg-gray-50"}`}
+                      >
+                        {rn}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
           {tab !== "hotdeals" && (

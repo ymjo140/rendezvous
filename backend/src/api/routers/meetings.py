@@ -510,7 +510,7 @@ def recommend_my_meetings(
     lat: Optional[float] = Query(None),
     lng: Optional[float] = Query(None),
     area: Optional[str] = Query(None),
-    per_room: int = Query(3, ge=1, le=20),
+    per_room: int = Query(3, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
