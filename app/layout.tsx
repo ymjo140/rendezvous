@@ -45,6 +45,17 @@ export default function RootLayout({
   src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=kcplwdse1o&submodules=gl"
 />
         {/* 🛰️ Sentry 브라우저 에러 수집 — Vercel env NEXT_PUBLIC_SENTRY_LOADER_URL 설정 시에만 로드 */}
+        {/* sentryOnLoad는 로더 실행 전에 정의돼야 해서 beforeInteractive. 크로스오리진 스크립트가
+            상세를 숨긴 'Script error.' 등 조치 불가능한 노이즈는 수집에서 제외 */}
+        {process.env.NEXT_PUBLIC_SENTRY_LOADER_URL && (
+          <Script
+            id="sentry-config"
+            strategy="beforeInteractive"
+            dangerouslySetInnerHTML={{
+              __html: `window.sentryOnLoad = function () { Sentry.init({ ignoreErrors: ["Script error.", "ResizeObserver loop"] }); };`,
+            }}
+          />
+        )}
         {process.env.NEXT_PUBLIC_SENTRY_LOADER_URL && (
           <Script strategy="afterInteractive" src={process.env.NEXT_PUBLIC_SENTRY_LOADER_URL} crossOrigin="anonymous" />
         )}
