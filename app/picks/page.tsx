@@ -30,6 +30,7 @@ const FACTOR_STYLE: Record<string, string> = {
   all: "bg-[#0F6E56] text-[#E1F5EE]",
   own: "bg-[#EEEDFE] text-[#3C3489]",
   similar: "bg-[#EEEDFE] text-[#3C3489]",
+  taste: "bg-[#EEEDFE] text-[#3C3489]",
   food: "bg-[#E1F5EE] text-[#0F6E56]",
   food_soft: "bg-[#EAF3DE] text-[#3B6D11]",
   vibe: "bg-[#E1F5EE] text-[#0F6E56]",

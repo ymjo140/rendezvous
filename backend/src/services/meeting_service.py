@@ -166,7 +166,7 @@ class MeetingService:
             return f"중간지점 근처{tag_part} · 다 같이 만족할 만한 곳이에요"
         return f"중간지점 근처{tag_part} · {n_members}명이 함께 가기 좋아요"
 
-    def _group_rerank(self, db: Session, candidates: list, member_vecs: list, session_tags: list, top_k: int = 15) -> list:
+    def _group_rerank(self, db: Session, candidates: list, member_vecs: list, session_tags: list, top_k: int = 15, taste_vec=None, boost_cats=None) -> list:
         """멤버 벡터들로 그룹 재랭킹(least-misery). (POI, 이유) 페어 반환.
         그룹점수 = 0.65*(0.6*평균유사 + 0.4*최소유사) + 0.35*세션태그매칭.
         '아무도 싫어하지 않는' 곳을 우선해 모임 전체 만족을 높인다."""
@@ -199,6 +199,19 @@ class MeetingService:
             tag_hits = sum(1 for t in (getattr(c, "tags", None) or []) if t in tagset)
             tag_score = min(tag_hits / 3.0, 1.0) if tagset else 0.0
             final = 0.65 * group_vec_score + 0.35 * tag_score
+            # 저장/재방문 취향 센트로이드와 유사하면 가점(모임이 실제로 고른 스타일 우선).
+            # (embedding 오염으로 태그는 부정확할 수 있어 랭킹에만 반영, taste_match 태그는 카테고리 부스트에서만)
+            if taste_vec is not None and emb is not None:
+                taste_sim = max(0.0, self._cosine(taste_vec, emb))
+                final = 0.6 * final + 0.4 * taste_sim
+            # 저장 취향이 가리키는 카테고리(예: 빵모임→CAFE)면 강한 가점
+            # (embedding이 오염돼도 확실히 작동 — 저장 폴더가 카페면 카페를 위로)
+            if boost_cats and getattr(c, "main_category", None) in boost_cats:
+                final += 0.4
+                try:
+                    c.taste_match = True
+                except Exception:
+                    pass
             if getattr(c, "dislike_hit", False):
                 final *= 0.4  # 멤버 불호 → 후순위
             scored.append((final, min_sim, mean_sim, c))
@@ -285,7 +298,7 @@ class MeetingService:
             print(f"[social-proof] 실패: {e}")
             return {}
 
-    def _personalized_rerank(self, db: Session, candidates: list, user_vec, session_tags: list, pref_tags: list, top_k: int = 15) -> list:
+    def _personalized_rerank(self, db: Session, candidates: list, user_vec, session_tags: list, pref_tags: list, top_k: int = 15, taste_vec=None, boost_cats=None) -> list:
         """후보(POI)를 개인 취향 벡터로 재랭킹하고 (POI, 추천이유) 페어를 반환.
         점수 = 0.65*벡터유사도(장기취향) + 0.35*세션태그매칭(현재의도).
         임베딩 없는 후보(외부/id=0)는 벡터 0으로 처리되어 태그매칭만 반영."""
@@ -312,6 +325,17 @@ class MeetingService:
             tag_hits = sum(1 for t in (getattr(c, "tags", None) or []) if t in tagset)
             tag_score = min(tag_hits / 3.0, 1.0) if tagset else 0.0
             final = 0.65 * v_sim + 0.35 * tag_score
+            npe = pe_map.get(getattr(c, "id", 0))
+            if taste_vec is not None and npe is not None:
+                ts = max(0.0, self._cosine(taste_vec, np.asarray(npe, dtype=float)))
+                final = 0.6 * final + 0.4 * ts
+                if ts >= 0.6:
+                    try: c.taste_match = True
+                    except Exception: pass
+            if boost_cats and getattr(c, "main_category", None) in boost_cats:
+                final += 0.4
+                try: c.taste_match = True
+                except Exception: pass
             if getattr(c, "dislike_hit", False):
                 final *= 0.4  # 불호 → 후순위
             scored.append((final, v_sim, c))
@@ -401,7 +425,29 @@ class MeetingService:
             "술집": ["PUB"],
             "주점": ["PUB"],
         }
-        main_category_terms = main_category_map.get(purpose, [])
+        main_category_terms = list(main_category_map.get(purpose, []))
+        # 모임 저장/재방문 취향으로 후보 품 확장(예: 빵모임 → CAFE 포함)
+        for mc in (getattr(req, "boost_main_categories", None) or []):
+            if mc and mc not in main_category_terms:
+                main_category_terms.append(mc)
+
+        # 취향 센트로이드(저장/재방문 장소 임베딩 평균) — 재랭킹에 블렌드
+        taste_vec = None
+        taste_ids = getattr(req, "taste_place_ids", None) or []
+        if taste_ids:
+            try:
+                from domain.models import PlaceEmbedding
+                rows = db.query(PlaceEmbedding.embedding).filter(
+                    PlaceEmbedding.place_id.in_(taste_ids[:300]),
+                    PlaceEmbedding.embedding.isnot(None),
+                ).all()
+                vecs = [np.asarray(e[0], dtype=float) for e in rows if e[0] is not None]
+                if vecs:
+                    c = np.mean(vecs, axis=0)
+                    n = np.linalg.norm(c)
+                    taste_vec = (c / n) if n else None
+            except Exception as _e:
+                print(f"[Debug] taste centroid skip: {_e}")
 
         search_queries = search_terms
 
@@ -458,7 +504,7 @@ class MeetingService:
             db_query = text(f"""
                 SELECT id, name, category, lat, lng, address, tags, wemeet_rating,
                        (vacancy_until IS NOT NULL AND vacancy_until > NOW()) AS vacancy_now,
-                       review_count, price_range
+                       review_count, price_range, main_category
                 FROM places
                 WHERE (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) <= :radius_km
                 AND ({filter_sql})
@@ -490,7 +536,40 @@ class MeetingService:
                 poi.vacancy_now = bool(row[8])  # 🔴 지금 빈자리(사장님 신호, TTL)
                 poi.review_count = int(row[9] or 0)   # 정렬용(전체 보기)
                 poi.price_range = row[10]             # 정렬용(전체 보기)
+                poi.main_category = row[11]           # 취향 카테고리 부스트용
                 place_candidates.append(poi)
+
+            # 저장 취향 카테고리(빵모임→CAFE 등)는 후보 풀에 반드시 포함되도록 별도 조회
+            # (레이팅 0이라 기본 후보가 FOOD로 쏠려 CAFE가 아예 안 뽑히던 문제)
+            boost_mcs = [mc for mc in (getattr(req, "boost_main_categories", None) or []) if mc in ("CAFE", "PUB")]
+            if boost_mcs:
+                try:
+                    have_ids = {c.id for c in place_candidates if getattr(c, "id", 0)}
+                    bq = text(f"""
+                        SELECT id, name, category, lat, lng, address, tags, wemeet_rating,
+                               (vacancy_until IS NOT NULL AND vacancy_until > NOW()) AS vacancy_now,
+                               review_count, price_range, main_category
+                        FROM places
+                        WHERE (6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(lat)))) <= :radius_km
+                        AND main_category = ANY(:mcs)
+                        ORDER BY wemeet_rating DESC
+                        LIMIT :bl
+                    """)
+                    for row in db.execute(bq, {**{k: params[k] for k in ("lat", "lng", "radius_km")}, "mcs": boost_mcs, "bl": max(40, top_k)}).fetchall():
+                        if int(row[0]) in have_ids:
+                            continue
+                        try:
+                            lt = row[6] if isinstance(row[6], (list, dict)) else json.loads(row[6])
+                        except Exception:
+                            lt = []
+                        poi = POI(id=int(row[0]), name=row[1], category=row[2], tags=lt,
+                                  location=np.array([row[3], row[4]]), price_level=1,
+                                  avg_rating=float(row[7] or 0.0), address=row[5])
+                        poi.vacancy_now = bool(row[8]); poi.review_count = int(row[9] or 0)
+                        poi.price_range = row[10]; poi.main_category = row[11]
+                        place_candidates.append(poi)
+                except Exception as _e:
+                    print(f"[Debug] boost-cat candidates skip: {_e}")
 
             if search_queries and len(place_candidates) < 5:
                 ext = data_provider.search_places_all_queries(search_queries, r["name"], r["lat"], r["lng"], db=db)
@@ -520,13 +599,15 @@ class MeetingService:
             if place_candidates:
                 if is_group:
                     # 그룹 취향 합성 재랭킹(least-misery) — 모임 전체 만족 우선
-                    ranked_pairs = self._group_rerank(db, place_candidates, member_vecs, user_prefs, top_k=top_k)
+                    _boost_cats = set(getattr(req, "boost_main_categories", None) or []) & {"CAFE", "PUB"}
+                    ranked_pairs = self._group_rerank(db, place_candidates, member_vecs, user_prefs, top_k=top_k, taste_vec=taste_vec, boost_cats=(_boost_cats or None))
                     # 유사 취향 그룹의 사회적 증거(비슷한 사람들이 좋아한 곳)
                     cand_ids = [p.id for p, _ in ranked_pairs if getattr(p, "id", 0)]
                     social_proof = self._lookalike_social_proof(db, member_vecs, member_ids, cand_ids)
                 elif user_vec is not None:
                     # 개인 취향 벡터 재랭킹: 장기취향(벡터) + 현재의도(선택태그) 결합
-                    ranked_pairs = self._personalized_rerank(db, place_candidates, user_vec, user_prefs, pref_tags, top_k=top_k)
+                    _boost_cats = set(getattr(req, "boost_main_categories", None) or []) & {"CAFE", "PUB"}
+                    ranked_pairs = self._personalized_rerank(db, place_candidates, user_vec, user_prefs, pref_tags, top_k=top_k, taste_vec=taste_vec, boost_cats=(_boost_cats or None))
                 else:
                     recommender = AdvancedRecommender(place_candidates)
                     # 프론트에서 추천순/평점순/거리순 재정렬할 수 있도록 넉넉히 반환
@@ -572,6 +653,7 @@ class MeetingService:
                         "revisit_count": revisit_counts.get(getattr(p, "id", 0), 0),
                         # 이유 고도화용 그룹 적합도(있을 때만) — 라우터가 '모두 만족' 게이트 판단
                         "group_min_sim": getattr(p, "group_min_sim", None),
+                        "taste_match": bool(getattr(p, "taste_match", False)),  # 저장/재방문 스타일 유사
                         "reason": reason,
                         # 유사 취향 그룹 사회적 증거(있을 때만)
                         "social_proof": social_proof.get(p.id),

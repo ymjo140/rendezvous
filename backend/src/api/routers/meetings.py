@@ -618,6 +618,72 @@ def _attach_images(db: Session, places: list) -> None:
             p["image"] = imap[p["id"]]
 
 
+def _cuisine_to_main(labels: set) -> str:
+    # _canon_cuisines의 라벨 키는 '카페'/'술'(빵·디저트·맥주 등은 이 라벨로 흡수됨)
+    if "카페" in labels:
+        return "CAFE"
+    if "술" in labels:
+        return "PUB"
+    return "FOOD"
+
+
+def meeting_taste_signal(db: Session, comm, member_ids: list) -> dict:
+    """모임의 '취향 장소' 수집 → 후보 확장 카테고리 + 센트로이드용 place_ids.
+    주력: 모임 방문 재방문의사(강) + 모임 소유 폴더 저장. 보조: 멤버 개인 저장(캡).
+    (개인 저장은 유저별로 수백 개라 그대로 쓰면 특정 유저 취향으로 쏠려서 캡+저비중)"""
+    primary_ids = []   # 모임 전용(재방문의사/모임폴더) — 카테고리 판단 근거
+    all_ids = []       # 센트로이드용(주력+보조)
+
+    # 1) 재방문 의사(가장 강함): 이 모임 방문 or 멤버 개인 재방문의사
+    try:
+        for (pid,) in db.query(models.PlaceVisitFeedback.place_id).filter(
+            models.PlaceVisitFeedback.place_id.isnot(None),
+            ((models.PlaceVisitFeedback.room_id == comm.id) |
+             (models.PlaceVisitFeedback.user_id.in_(member_ids))),
+            ((models.PlaceVisitFeedback.personal_revisit == True) |  # noqa: E712
+             (models.PlaceVisitFeedback.group_revisit == True)),     # noqa: E712
+        ).all():
+            primary_ids.append(pid)
+    except Exception as exc:
+        print(f"[taste] revisit skip: {str(exc)[:60]}")
+
+    # 2) 모임 소유 폴더 저장(빵지순례 등)
+    try:
+        fids = [f[0] for f in db.query(models.SaveFolder.id).filter(
+            models.SaveFolder.community_id == comm.id).all()]
+        if fids:
+            for (pid,) in db.query(models.SavedItem.place_id).filter(
+                    models.SavedItem.folder_id.in_(fids),
+                    models.SavedItem.place_id.isnot(None)).all():
+                primary_ids.append(pid)
+    except Exception as exc:
+        print(f"[taste] comm folder skip: {str(exc)[:60]}")
+
+    # 센트로이드는 '모임 전용(재방문의사+모임폴더)'만 사용 — 개인 저장(유저별 수백)은
+    # 그대로 섞으면 그 유저 취향으로 쏠려 모임 특색이 사라지고(빵모임→한식) 태그도 아무데나 붙음.
+    all_ids.extend(primary_ids)
+
+    from collections import Counter
+    boost = set()
+    # ① 저장 폴더 장소 이름으로 카테고리 판정(cuisine_type 오염돼서 이름 우선)
+    if primary_ids:
+        names = [n for (n,) in db.query(models.Place.name).filter(models.Place.id.in_(primary_ids[:100])).all()]
+        mains = Counter(_cuisine_to_main(_canon_cuisines(n)) for n in names)
+        total = sum(mains.values()) or 1
+        for mc, cnt in mains.items():
+            if mc in ("CAFE", "PUB") and cnt / total >= 0.34:
+                boost.add(mc)
+    # ② 모임 이름 키워드(빵탐방→CAFE, 맥주모임→PUB) — 저장 없어도 성격 반영
+    title_mc = _cuisine_to_main(_canon_cuisines(comm.title or ""))
+    if title_mc in ("CAFE", "PUB"):
+        boost.add(title_mc)
+
+    # 중복 제거
+    seen = set()
+    taste_ids = [x for x in all_ids if x and not (x in seen or seen.add(x))]
+    return {"boost_main_categories": list(boost), "taste_place_ids": taste_ids[:300]}
+
+
 def _member_taste(db: Session, member_ids: list) -> dict:
     """모임 멤버들의 취향 집계 → {n, food_counter(라벨→명수), vibe_counter}."""
     from collections import Counter
@@ -766,6 +832,8 @@ def build_meeting_reasons(db: Session, comm, member_ids: list, places: list,
             factors.append({"key": "own", "label": "우리가 또 감"})
         if sim_love >= 1 or sim_visit >= 2:
             factors.append({"key": "similar", "label": "비슷한 모임 픽"})
+        if p.get("taste_match"):
+            factors.append({"key": "taste", "label": "모임 취향 저격"})
         if top_food and food_hits >= 1:
             if food_strong or (food_hits >= n_mem and n_mem >= 2):
                 factors.append({"key": "food", "label": f"{top_food} 취향 적중"})
@@ -893,6 +961,7 @@ def recommend_my_meetings(
             anchor_lat, anchor_lng, extra_users = current_user.lat, current_user.lng, []
         else:
             anchor_lat, anchor_lng, extra_users = 37.5665, 126.978, []
+        taste = meeting_taste_signal(db, comm, member_ids)
         req = schemas.RecommendRequest(
             purpose=_norm_purpose(comm.category),
             member_user_ids=member_ids,
@@ -900,6 +969,8 @@ def recommend_my_meetings(
             current_lng=anchor_lng,
             users=extra_users,
             top_k=max(15, per_room),
+            taste_place_ids=taste["taste_place_ids"],
+            boost_main_categories=taste["boost_main_categories"],
         )
         try:
             regions = meeting_service.get_recommendations_direct(db, req, user_id=current_user.id)

@@ -60,3 +60,7 @@ class RecommendRequest(BaseModel):
     member_user_ids: List[int] = []
     # 반환 개수(전체 보기용, 최대 60) — 기본 15
     top_k: int = 15
+    # 모임 취향 신호(저장/재방문 의사 장소) — 센트로이드 블렌드용
+    taste_place_ids: List[int] = []
+    # 후보 품에 추가로 포함할 main_category (예: 빵모임 → CAFE)
+    boost_main_categories: List[str] = []
