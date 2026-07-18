@@ -53,7 +53,7 @@ export default function CuratorListPage() {
   const [posting, setPosting] = useState(false)
   // 리스트 통째 담기
   const [saveOpen, setSaveOpen] = useState(false)
-  const [myFolders, setMyFolders] = useState<{ id: number; name: string; icon: string; item_count: number; is_default: boolean }[] | null>(null)
+  const [myFolders, setMyFolders] = useState<{ id: number; name: string; icon: string; item_count: number; is_default: boolean; is_system?: boolean }[] | null>(null)
   const [saveBusy, setSaveBusy] = useState(false)
   const [savedTo, setSavedTo] = useState<string | null>(null)
   const [saveCount, setSaveCount] = useState(0)
@@ -118,7 +118,9 @@ export default function CuratorListPage() {
       try {
         const res = await fetchWithAuth(`/api/folders`)
         if (res.status === 401) { setSaveOpen(false); alert("로그인이 필요해요."); return }
-        setMyFolders(res.ok ? await res.json() : [])
+        const all = res.ok ? await res.json() : []
+        // 게시물 전용 시스템 폴더는 장소 담기 대상에서 제외
+        setMyFolders(all.filter((f: any) => !f.is_system || f.is_default))
       } catch { setMyFolders([]) }
     }
   }

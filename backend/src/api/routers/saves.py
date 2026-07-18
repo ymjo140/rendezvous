@@ -38,6 +38,7 @@ class FolderResponse(BaseModel):
     icon: str
     color: str
     is_default: bool
+    is_system: bool = False  # 시스템 폴더(내 장소/저장한 게시물) — 수정/삭제/공개 불가
     item_count: int
     created_at: str
     is_public: bool = False
@@ -117,24 +118,48 @@ def format_datetime(dt: datetime) -> str:
     return dt.strftime("%Y.%m.%d %H:%M")
 
 def ensure_default_folder(db: Session, user_id: int) -> models.SaveFolder:
-    """기본 폴더가 없으면 생성"""
+    """장소 기본 폴더('내 장소')가 없으면 생성"""
     default = db.query(models.SaveFolder).filter(
         models.SaveFolder.user_id == user_id,
         models.SaveFolder.is_default == True
     ).first()
-    
+
     if not default:
         default = models.SaveFolder(
             user_id=user_id,
-            name="모든 저장",
-            icon="💾",
-            is_default=True
+            name="내 장소",
+            icon="📍",
+            is_default=True,
+            system_kind="place_default",
         )
         db.add(default)
         db.commit()
         db.refresh(default)
-    
+
     return default
+
+
+def ensure_post_folder(db: Session, user_id: int) -> models.SaveFolder:
+    """게시물 기본 폴더('저장한 게시물')가 없으면 생성 — 게시물 저장은 전부 여기로 분류"""
+    folder = db.query(models.SaveFolder).filter(
+        models.SaveFolder.user_id == user_id,
+        models.SaveFolder.system_kind == "post_default"
+    ).first()
+    if not folder:
+        folder = models.SaveFolder(
+            user_id=user_id,
+            name="저장한 게시물",
+            icon="📸",
+            system_kind="post_default",
+        )
+        db.add(folder)
+        db.commit()
+        db.refresh(folder)
+    return folder
+
+
+def is_system_folder(folder: models.SaveFolder) -> bool:
+    return bool(folder.is_default or getattr(folder, "system_kind", None))
 
 
 # === 폴더 API ===
@@ -148,9 +173,10 @@ def get_folders(
     if not current_user:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     
-    # 기본 폴더 확인
+    # 시스템 폴더(내 장소 / 저장한 게시물) 확인
     ensure_default_folder(db, current_user.id)
-    
+    ensure_post_folder(db, current_user.id)
+
     folders = db.query(models.SaveFolder)\
         .filter(models.SaveFolder.user_id == current_user.id)\
         .order_by(desc(models.SaveFolder.is_default), models.SaveFolder.created_at)\
@@ -170,6 +196,7 @@ def get_folders(
         icon=f.icon,
         color=f.color,
         is_default=f.is_default,
+        is_system=is_system_folder(f),
         item_count=counts.get(f.id, 0),
         created_at=format_datetime(f.created_at),
         is_public=bool(getattr(f, "is_public", False)),
@@ -235,7 +262,7 @@ def update_folder(
     if not folder:
         raise HTTPException(status_code=404, detail="폴더를 찾을 수 없습니다.")
     
-    if folder.is_default:
+    if is_system_folder(folder):
         raise HTTPException(status_code=400, detail="기본 폴더는 수정할 수 없습니다.")
     
     if req.name:
@@ -279,7 +306,7 @@ def delete_folder(
     if not folder:
         raise HTTPException(status_code=404, detail="폴더를 찾을 수 없습니다.")
     
-    if folder.is_default:
+    if is_system_folder(folder):
         raise HTTPException(status_code=400, detail="기본 폴더는 삭제할 수 없습니다.")
     
     db.delete(folder)
@@ -297,7 +324,11 @@ def my_map_places(
     if not current_user:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     folders = db.query(models.SaveFolder)\
-        .filter(models.SaveFolder.user_id == current_user.id)\
+        .filter(
+            models.SaveFolder.user_id == current_user.id,
+            # 게시물 폴더는 지도에 안 띄움(좌표 없음)
+            (models.SaveFolder.system_kind.is_(None)) | (models.SaveFolder.system_kind != "post_default"),
+        )\
         .order_by(desc(models.SaveFolder.is_default), models.SaveFolder.created_at)\
         .all()
     if not folders:
@@ -406,6 +437,14 @@ def save_item(
         raise HTTPException(status_code=400, detail="post_id가 필요합니다.")
     if req.item_type == "place" and not req.place_id:
         raise HTTPException(status_code=400, detail="place_id가 필요합니다.")
+
+    # 시스템 폴더 자동 분류: 게시물은 '저장한 게시물'로, 장소는 '내 장소'로
+    kind = getattr(folder, "system_kind", None) or ("place_default" if folder.is_default else None)
+    if req.item_type == "post" and kind == "place_default":
+        folder = ensure_post_folder(db, current_user.id)
+    elif req.item_type == "place" and kind == "post_default":
+        folder = ensure_default_folder(db, current_user.id)
+    req.folder_id = folder.id
     
     # 중복 확인
     existing = db.query(models.SavedItem).filter(

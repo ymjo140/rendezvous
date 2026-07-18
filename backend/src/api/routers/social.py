@@ -271,6 +271,8 @@ def toggle_folder_publish(
     )
     if not f:
         raise HTTPException(status_code=404, detail="폴더를 찾을 수 없어요.")
+    if f.is_default or getattr(f, "system_kind", None):
+        raise HTTPException(status_code=400, detail="기본 폴더는 공개할 수 없어요. 새 폴더를 만들어 공개해 보세요.")
     if "is_public" in req:
         f.is_public = bool(req["is_public"])
     if "description" in req:
@@ -531,6 +533,8 @@ def save_list_to_my_folders(
         ).first()
         if not target:
             raise HTTPException(status_code=404, detail="폴더를 찾을 수 없어요.")
+        if getattr(target, "system_kind", None) == "post_default":
+            raise HTTPException(status_code=400, detail="게시물 폴더에는 장소를 담을 수 없어요.")
     else:
         # 새 폴더: 원본 이름 계승 + 중복 시 (2), (3)...
         base = (req.get("new_folder_name") or src.name or "담아온 리스트").strip()[:40] or "담아온 리스트"

@@ -560,6 +560,8 @@ class SaveFolder(Base):
     icon = Column(String, default="📁")    # 이모지 아이콘
     color = Column(String, default="#7C3AED")  # 색상 코드
     is_default = Column(Boolean, default=False)  # 기본 폴더 여부
+    # 시스템 폴더 구분: place_default(내 장소) / post_default(저장한 게시물) — 삭제/수정 불가
+    system_kind = Column(String, nullable=True, index=True)
     item_count = Column(Integer, default=0)
     # 큐레이터 '맛집 리스트' 공개 — 공개 시 프로필에 노출되고 남들이 팔로우/열람
     is_public = Column(Boolean, default=False)

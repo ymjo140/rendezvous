@@ -226,6 +226,7 @@ export function MyPageTab() {
       color: string;
       item_count: number;
       is_default: boolean;
+      is_system?: boolean; // 시스템 폴더(내 장소/저장한 게시물) — 수정/삭제/공개 불가
       is_public?: boolean;
       description?: string | null;
   }
@@ -1049,7 +1050,7 @@ export function MyPageTab() {
                                         <div className="flex items-center gap-3">
                                             <button
                                                 onClick={(e) => {
-                                                    if (folder.is_default) return; // 기본 폴더는 행 클릭과 동일(열기)
+                                                    if (folder.is_default || folder.is_system) return; // 시스템 폴더는 행 클릭과 동일(열기)
                                                     e.stopPropagation();
                                                     openFolderDialog(folder);
                                                 }}
@@ -1067,7 +1068,7 @@ export function MyPageTab() {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-1">
-                                            {!folder.is_default && (
+                                            {!(folder.is_default || folder.is_system) && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleTogglePublic(folder); }}
                                                     className={`px-2 py-1 rounded-full text-[11px] font-bold transition-colors ${folder.is_public ? "bg-purple-100 text-purple-600 hover:bg-purple-200" : "text-gray-400 hover:bg-gray-100"}`}
@@ -1076,7 +1077,7 @@ export function MyPageTab() {
                                                     {folder.is_public ? "🌐 공개중" : "비공개"}
                                                 </button>
                                             )}
-                                            {!folder.is_default && (
+                                            {!(folder.is_default || folder.is_system) && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); openFolderDialog(folder); }}
                                                     className="p-1.5 text-gray-300 hover:text-[#14B8A6] hover:bg-teal-50 rounded-full transition-colors"
@@ -1085,7 +1086,7 @@ export function MyPageTab() {
                                                     <Pencil className="w-4 h-4" />
                                                 </button>
                                             )}
-                                            {!folder.is_default && (
+                                            {!(folder.is_default || folder.is_system) && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder); }}
                                                     className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
