@@ -427,6 +427,54 @@ def get_place_detail(
         if tag and tag not in tags:
             tags.append(tag)
 
+    # 🔴 실시간 빈자리(사장님 원탭/테이블맵) — vacancy_until 유효할 때만
+    vacancy = None
+    try:
+        vrow = db.execute(text("""
+            SELECT EXTRACT(EPOCH FROM (vacancy_until - NOW()))/60 AS remain_min,
+                   (SELECT COUNT(*) FROM store_tables t WHERE t.place_id=:pid AND t.status='empty') AS et,
+                   (SELECT COALESCE(SUM(capacity),0) FROM store_tables t WHERE t.place_id=:pid AND t.status='empty') AS es,
+                   (SELECT MAX(deal_percent) FROM store_tables t WHERE t.place_id=:pid AND t.status='empty') AS bd
+            FROM places WHERE id=:pid AND vacancy_until IS NOT NULL AND vacancy_until > NOW()
+        """), {"pid": place_id}).fetchone()
+        if vrow:
+            vacancy = {
+                "active": True,
+                "remain_min": max(0, int(vrow[0] or 0)),
+                "empty_tables": int(vrow[1] or 0),
+                "empty_seats": int(vrow[2] or 0),
+                "best_deal": int(vrow[3]) if vrow[3] else None,
+            }
+    except Exception as exc:
+        print(f"[place_detail] vacancy skip: {str(exc)[:60]}")
+        db.rollback()
+
+    # 💸 진행 중인 할인(사장님 등록 오퍼) — 유효기간·재고 남은 것만
+    offers_out = []
+    try:
+        orows = db.execute(text("""
+            SELECT id, title, description, benefit_type, benefit_value, valid_to,
+                   inventory_cap, inventory_used
+            FROM offers
+            WHERE place_id=:pid AND COALESCE(status,'active')='active'
+              AND (valid_from IS NULL OR valid_from <= NOW())
+              AND (valid_to IS NULL OR valid_to > NOW())
+            ORDER BY created_at DESC LIMIT 10
+        """), {"pid": place_id}).fetchall()
+        for o in orows:
+            cap, used = o[6], o[7]
+            if cap is not None and used is not None and used >= cap:
+                continue  # 소진
+            offers_out.append({
+                "id": o[0], "title": o[1] or "", "description": o[2] or "",
+                "benefit_type": o[3], "benefit_value": o[4],
+                "remaining": (int(cap) - int(used)) if (cap is not None and used is not None) else None,
+                "valid_to": o[5].isoformat() if o[5] else None,
+            })
+    except Exception as exc:
+        print(f"[place_detail] offers skip: {str(exc)[:60]}")
+        db.rollback()
+
     return {
         "id": place.id,
         "name": place.name,
@@ -443,6 +491,8 @@ def get_place_detail(
         "external_link": place.external_link or "",
         "tags": tags,
         "menus": menus,
+        "vacancy": vacancy,   # 🔴 실시간 빈자리(없으면 null)
+        "offers": offers_out, # 💸 진행 중 할인
         "reviews": review_items
     }
 

@@ -73,6 +73,13 @@ type PlaceDetail = {
   external_link?: string
   tags?: string[]
   menus?: { name: string; price?: string | number | null }[]
+  vacancy?: {
+    active: boolean; remain_min: number; empty_tables: number; empty_seats: number; best_deal: number | null
+  } | null
+  offers?: {
+    id: number; title: string; description: string; benefit_type?: string; benefit_value?: string | number | null
+    remaining: number | null; valid_to: string | null
+  }[]
   reviews?: PlaceReview[]
 }
 
@@ -175,7 +182,7 @@ export default function PlaceDetailPage() {
   const [selectedTable, setSelectedTable] = useState<PlaceTable | null>(null)
 
   useEffect(() => {
-    if (!reserveOpen || !placeId) return
+    if (!placeId) return  // 상세 진입 시 미리 로드(자리 배치 미리보기 + 예약 시 지정)
     let active = true
     fetch(`${API_BASE_URL}/api/places/${placeId}/tables`)
       .then((r) => (r.ok ? r.json() : null))
@@ -186,7 +193,7 @@ export default function PlaceDetailPage() {
     return () => {
       active = false
     }
-  }, [reserveOpen, placeId])
+  }, [placeId])
 
   // 찜(저장) — 저장 시 폴더 선택 시트를 띄운다
   const [savedPlace, setSavedPlace] = useState(false)
@@ -718,6 +725,87 @@ export default function PlaceDetailPage() {
             </div>
           )}
         </section>
+
+        {/* 🔴 실시간 빈자리 배너 (사장님 신호) */}
+        {place.vacancy?.active && (
+          <section className="mt-4 rounded-2xl border-2 border-rose-200 bg-rose-50 p-4">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
+              </span>
+              <span className="font-bold text-rose-700 text-sm">지금 빈자리 있어요!</span>
+              <span className="ml-auto text-[11px] text-rose-500">약 {place.vacancy.remain_min}분 남음</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 text-[13px]">
+              {place.vacancy.empty_tables > 0 && (
+                <span className="bg-white rounded-full px-3 py-1 font-medium text-rose-700">
+                  빈 테이블 {place.vacancy.empty_tables}개 · {place.vacancy.empty_seats}석
+                </span>
+              )}
+              {place.vacancy.best_deal ? (
+                <span className="bg-rose-500 text-white rounded-full px-3 py-1 font-bold">
+                  최대 {place.vacancy.best_deal}% 할인
+                </span>
+              ) : null}
+            </div>
+          </section>
+        )}
+
+        {/* 💸 진행 중 할인(사장님 등록 오퍼) */}
+        {place.offers && place.offers.length > 0 && (
+          <section className="mt-4 rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+              <span>💸</span> 진행 중인 혜택
+            </h2>
+            <div className="mt-3 space-y-2">
+              {place.offers.map((o) => (
+                <div key={o.id} className="flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-2.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm text-amber-900 truncate">{o.title}</div>
+                    {o.description && <div className="text-[11px] text-amber-700 truncate">{o.description}</div>}
+                  </div>
+                  {o.remaining != null && (
+                    <span className="text-[10px] font-bold text-rose-500 flex-shrink-0">{o.remaining}개 남음</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* 🪑 자리 배치 미리보기 (테이블맵 등록 매장) */}
+        {placeTables.length > 0 && (
+          <section className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+              🪑 자리 배치
+              <span className="ml-1 text-xs font-normal text-gray-400">{placeTables.length}개 테이블</span>
+            </h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {placeTables.map((t) => (
+                <div
+                  key={t.id}
+                  className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold border ${
+                    t.status === "empty"
+                      ? "bg-teal-50 border-teal-200 text-teal-700"
+                      : "bg-gray-50 border-gray-200 text-gray-400"
+                  }`}
+                  title={t.status === "empty" ? "빈자리" : "사용중"}
+                >
+                  {t.zone !== "홀" ? `${t.zone} ` : ""}{t.label}
+                  <span className="ml-1 font-normal">{t.capacity}인</span>
+                  {t.status === "empty" && t.deal_percent ? (
+                    <span className="ml-1 text-rose-500">-{t.deal_percent}%</span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center gap-3 text-[10px] text-gray-400">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-teal-300 inline-block" />빈자리</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-gray-300 inline-block" />사용중</span>
+            </div>
+          </section>
+        )}
 
         {/* 여기 다녀온 사람들 — 게시물로 이 장소를 방문/언급한 사람 */}
         {visitors && (visitors.visitors.length > 0 || visitors.mentioned.length > 0) && (
