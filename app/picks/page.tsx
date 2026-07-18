@@ -35,6 +35,7 @@ const FACTOR_STYLE: Record<string, string> = {
   vibe: "bg-[#E1F5EE] text-[#0F6E56]",
   revisit: "bg-[#FAEEDA] text-[#854F0B]",
   rating: "bg-[#FBEAF0] text-[#993556]",
+  saved: "bg-[#FAEEDA] text-[#854F0B]",
   near: "bg-gray-100 text-gray-500",
 }
 

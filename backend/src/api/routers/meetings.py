@@ -672,6 +672,7 @@ def build_meeting_reasons(db: Session, comm, member_ids: list, places: list,
     # 장소별 cuisine_type + tags 배치 조회(취향/분위기 매칭용)
     pids = [p.get("id") for p in places if p.get("id")]
     meta = {}
+    save_cnt = {}
     if pids:
         try:
             rows = db.query(models.Place.id, models.Place.cuisine_type, models.Place.tags,
@@ -680,6 +681,15 @@ def build_meeting_reasons(db: Session, comm, member_ids: list, places: list,
                 meta[pid] = {"cuisine": cuisine, "tags": tags or [], "rating": rating or 0}
         except Exception as exc:
             print(f"[reason] meta skip: {str(exc)[:60]}")
+        # 저장 인기(여러 사람이 저장한 곳) — 임포트/저장이 쌓이면 자연 점등
+        try:
+            from sqlalchemy import func as _f
+            for pid, cnt in (db.query(models.SavedItem.place_id, _f.count(models.SavedItem.id))
+                             .filter(models.SavedItem.place_id.in_(pids))
+                             .group_by(models.SavedItem.place_id).all()):
+                save_cnt[pid] = int(cnt)
+        except Exception as exc:
+            print(f"[reason] save cnt skip: {str(exc)[:60]}")
 
     own_fb = fb_by_room.get(comm.id, {})
 
@@ -767,6 +777,8 @@ def build_meeting_reasons(db: Session, comm, member_ids: list, places: list,
             factors.append({"key": "revisit", "label": "재방문율 ↑"})
         if rating >= 4.3:
             factors.append({"key": "rating", "label": f"평점 {rating:.1f} ↑"})
+        if save_cnt.get(pid, 0) >= 3:
+            factors.append({"key": "saved", "label": "많이 저장된 곳"})
         if km is not None and km <= 1.0:
             factors.append({"key": "near", "label": "가까움"})
         if not factors:  # 아무 신호도 없으면 위치라도
