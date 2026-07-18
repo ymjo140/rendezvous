@@ -498,6 +498,76 @@ def like_list(folder_id: int, user: Optional[models.User] = Depends(get_current_
     return {"liked": True, "like_count": likes}
 
 
+@router.post("/api/lists/{folder_id}/save")
+def save_list_to_my_folders(
+    folder_id: int, req: dict, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """공개 리스트(큐레이터/모임)의 장소를 통째로 내 폴더에 담기.
+    body: {target_folder_id?: 기존 폴더 id} 없으면 새 폴더 생성(원본 이름/아이콘 계승).
+    저장은 saved_items로 쌓여 급상승 '저장' 집계에 자연 합산된다."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    src = db.query(models.SaveFolder).filter(models.SaveFolder.id == folder_id).first()
+    if not src or not src.is_public:
+        raise HTTPException(status_code=404, detail="공개된 리스트가 아니에요.")
+
+    items = (
+        db.query(models.SavedItem)
+        .filter(models.SavedItem.folder_id == src.id, models.SavedItem.place_id.isnot(None))
+        .order_by(models.SavedItem.created_at.asc())
+        .all()
+    )
+    if not items:
+        raise HTTPException(status_code=400, detail="담을 장소가 없는 리스트예요.")
+
+    target_id = req.get("target_folder_id")
+    if target_id:
+        if int(target_id) == src.id:
+            raise HTTPException(status_code=400, detail="같은 리스트에는 담을 수 없어요.")
+        target = db.query(models.SaveFolder).filter(
+            models.SaveFolder.id == int(target_id), models.SaveFolder.user_id == user.id
+        ).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="폴더를 찾을 수 없어요.")
+    else:
+        # 새 폴더: 원본 이름 계승 + 중복 시 (2), (3)...
+        base = (req.get("new_folder_name") or src.name or "담아온 리스트").strip()[:40] or "담아온 리스트"
+        name, n = base, 2
+        while db.query(models.SaveFolder).filter(
+            models.SaveFolder.user_id == user.id, models.SaveFolder.name == name
+        ).first():
+            name = f"{base} ({n})"
+            n += 1
+        target = models.SaveFolder(user_id=user.id, name=name, icon=src.icon or "📁", color="#7C3AED")
+        db.add(target)
+        db.flush()
+
+    have = {
+        r[0]
+        for r in db.query(models.SavedItem.place_id)
+        .filter(models.SavedItem.folder_id == target.id, models.SavedItem.place_id.isnot(None))
+        .all()
+    }
+    added = 0
+    for it in items:
+        if it.place_id in have:
+            continue
+        have.add(it.place_id)
+        db.add(models.SavedItem(
+            folder_id=target.id, user_id=user.id, item_type="place",
+            place_id=it.place_id, memo=it.memo,
+        ))
+        added += 1
+    target.item_count = len(have)
+    db.commit()
+    return {
+        "folder_id": target.id,
+        "folder_name": target.name,
+        "added": added,
+        "skipped": len(items) - added,
+    }
+
+
 @router.delete("/api/lists/{folder_id}/like")
 def unlike_list(folder_id: int, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
     if user is None:

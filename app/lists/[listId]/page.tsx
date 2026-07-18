@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ChevronLeft, MapPin, ChevronRight, Loader2, Quote, Heart, MessageCircle, Send, Trash2 } from "lucide-react"
+import { ChevronLeft, MapPin, ChevronRight, Loader2, Quote, Heart, MessageCircle, Send, Trash2, FolderPlus, Plus, X } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
 type Entry = {
@@ -50,6 +50,11 @@ export default function CuratorListPage() {
   const [comments, setComments] = useState<Comment[]>([])
   const [commentText, setCommentText] = useState("")
   const [posting, setPosting] = useState(false)
+  // 리스트 통째 담기
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [myFolders, setMyFolders] = useState<{ id: number; name: string; icon: string; item_count: number; is_default: boolean }[] | null>(null)
+  const [saveBusy, setSaveBusy] = useState(false)
+  const [savedTo, setSavedTo] = useState<string | null>(null)
 
   useEffect(() => {
     if (!listId) return
@@ -101,6 +106,39 @@ export default function CuratorListPage() {
       setLikeCount((n) => n + (next ? -1 : 1))
     } finally {
       setLikeBusy(false)
+    }
+  }
+
+  const openSave = async () => {
+    setSaveOpen(true)
+    if (myFolders === null) {
+      try {
+        const res = await fetchWithAuth(`/api/folders`)
+        if (res.status === 401) { setSaveOpen(false); alert("로그인이 필요해요."); return }
+        setMyFolders(res.ok ? await res.json() : [])
+      } catch { setMyFolders([]) }
+    }
+  }
+
+  const saveList = async (targetFolderId: number | null) => {
+    if (saveBusy) return
+    setSaveBusy(true)
+    try {
+      const res = await fetchWithAuth(`/api/lists/${listId}/save`, {
+        method: "POST",
+        body: JSON.stringify(targetFolderId ? { target_folder_id: targetFolderId } : {}),
+      })
+      const j = await res.json()
+      if (res.status === 401) { alert("로그인이 필요해요."); return }
+      if (!res.ok) { alert(j?.detail || "담기에 실패했어요."); return }
+      setSaveOpen(false)
+      setMyFolders(null) // 다음에 열 때 새 폴더 반영되게 갱신
+      setSavedTo(`'${j.folder_name}' 폴더에 ${j.added}곳을 담았어요${j.skipped ? ` (이미 있던 ${j.skipped}곳 제외)` : ""}`)
+      setTimeout(() => setSavedTo(null), 3500)
+    } catch {
+      alert("담기에 실패했어요. 잠시 후 다시 시도해 주세요.")
+    } finally {
+      setSaveBusy(false)
     }
   }
 
@@ -198,6 +236,13 @@ export default function CuratorListPage() {
             <Heart className={`w-4 h-4 ${liked ? "fill-current" : ""}`} />
             추천 {likeCount}
           </button>
+          <button
+            onClick={openSave}
+            className="flex items-center gap-1.5 h-9 px-4 rounded-full font-bold text-sm bg-[#14B8A6] text-white hover:bg-[#0d9488] transition-colors"
+          >
+            <FolderPlus className="w-4 h-4" />
+            담기
+          </button>
           <div className="flex items-center gap-1 text-sm text-gray-400">
             <MapPin className="w-4 h-4" />
             {data.count}곳
@@ -293,6 +338,61 @@ export default function CuratorListPage() {
         )}
       </div>
       <div className="h-10" />
+
+      {/* 담기 성공 토스트 */}
+      {savedTo && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm font-medium rounded-full px-4 py-2.5 shadow-lg max-w-[90%] text-center">
+          ✅ {savedTo}
+        </div>
+      )}
+
+      {/* 폴더 선택 바텀시트 */}
+      {saveOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setSaveOpen(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="relative w-full max-w-lg bg-white rounded-t-3xl max-h-[70dvh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+              <div className="font-bold text-gray-900">어디에 담을까요?</div>
+              <button onClick={() => setSaveOpen(false)} className="p-1.5 rounded-full hover:bg-gray-100">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-2">
+              <button
+                onClick={() => saveList(null)}
+                disabled={saveBusy}
+                className="w-full flex items-center gap-3 p-3 rounded-2xl border-2 border-dashed border-[#14B8A6]/50 text-[#14B8A6] font-bold text-sm hover:border-[#14B8A6] transition-colors"
+              >
+                <Plus className="w-4 h-4" /> 새 폴더로 저장 (&lsquo;{data.name}&rsquo;)
+              </button>
+              {myFolders === null ? (
+                <div className="py-6 text-center">
+                  <Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-400" />
+                </div>
+              ) : (
+                myFolders.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => saveList(f.id)}
+                    disabled={saveBusy}
+                    className="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-100 hover:border-[#14B8A6] transition-colors text-left"
+                  >
+                    <span className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center text-lg">{f.icon}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-bold text-gray-800 text-sm truncate">{f.name}</span>
+                      <span className="block text-xs text-gray-400">{f.item_count}개 저장됨</span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="h-[env(safe-area-inset-bottom)]" />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
