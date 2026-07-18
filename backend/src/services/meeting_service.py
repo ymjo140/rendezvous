@@ -204,10 +204,16 @@ class MeetingService:
             scored.append((final, min_sim, mean_sim, c))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [
-            (c, self._group_reason(c, min_sim, mean_sim, n, session_tags))
-            for _s, min_sim, mean_sim, c in scored[:top_k]
-        ]
+        out = []
+        for _s, min_sim, mean_sim, c in scored[:top_k]:
+            # 이유 고도화(라우터 후처리)에서 쓰도록 그룹 적합도를 POI에 부착
+            try:
+                c.group_min_sim = float(min_sim)
+                c.group_mean_sim = float(mean_sim)
+            except Exception:
+                pass
+            out.append((c, self._group_reason(c, min_sim, mean_sim, n, session_tags)))
+        return out
 
     def _lookalike_social_proof(self, db: Session, member_vecs: list, member_ids: list, place_ids: list,
                                 top_k_users: int = 25, sim_threshold: float = 0.5) -> dict:
@@ -564,6 +570,8 @@ class MeetingService:
                         "review_count": int(getattr(p, "review_count", 0) or 0),
                         "price_range": getattr(p, "price_range", None),
                         "revisit_count": revisit_counts.get(getattr(p, "id", 0), 0),
+                        # 이유 고도화용 그룹 적합도(있을 때만) — 라우터가 '모두 만족' 게이트 판단
+                        "group_min_sim": getattr(p, "group_min_sim", None),
                         "reason": reason,
                         # 유사 취향 그룹 사회적 증거(있을 때만)
                         "social_proof": social_proof.get(p.id),

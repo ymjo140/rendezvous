@@ -492,6 +492,62 @@ def get_places_by_category(
         "review_count": p.review_count or 0
     } for p in places]
 
+# ─────────────────────── 모임 추천 이유 엔진 ───────────────────────
+# 음식 취향/카테고리를 표준 라벨로 정규화(멤버 prefs ↔ 장소 cuisine 매칭용)
+_CUISINE_KEYWORDS = {
+    "일식": ["일식", "스시", "초밥", "오마카세", "사시미", "라멘", "우동", "돈카츠", "이자카야", "일본", "규카츠", "소바"],
+    "한식": ["한식", "국밥", "찌개", "백반", "불고기", "비빔밥", "족발", "보쌈", "분식", "떡볶이", "김밥", "해장국", "감자탕", "설렁탕", "국수", "냉면"],
+    "중식": ["중식", "중국", "짜장", "짬뽕", "마라", "딤섬", "훠궈", "양꼬치"],
+    "양식": ["양식", "이탈리", "파스타", "피자", "스테이크", "브런치", "경양식", "버거"],
+    "고기": ["고기", "구이", "삼겹", "갈비", "곱창", "막창", "정육", "숯불", "회식"],
+    "카페": ["카페", "커피", "디저트", "베이커리", "빵", "케이크"],
+    "술": ["술", "맥주", "포차", "호프", "펍", "와인", "바", "하이볼", "칵테일"],
+    "해산물": ["해산물", "회", "횟집", "물회", "조개", "대게", "랍스터", "새우", "수산"],
+    "아시아": ["아시아", "베트남", "태국", "쌀국수", "팟타이", "인도"],
+}
+
+
+def _josa_eul(word: str) -> str:
+    """받침 유무로 을/를 선택."""
+    if not word:
+        return "을"
+    ch = word[-1]
+    if "가" <= ch <= "힣":
+        return "을" if (ord(ch) - 0xAC00) % 28 else "를"
+    return "을"
+
+
+def _canon_cuisines(*texts) -> set:
+    """자유 텍스트(멤버 취향/장소 카테고리)에서 표준 음식 라벨 집합 추출."""
+    blob = " ".join(str(t) for t in texts if t)
+    labels = set()
+    for label, kws in _CUISINE_KEYWORDS.items():
+        if any(kw in blob for kw in kws):
+            labels.add(label)
+    return labels
+
+
+def _split_prefs(pref_list) -> list:
+    """['고기/구이','한식'] → ['고기','구이','한식'] 슬래시 분해."""
+    out = []
+    for raw in (pref_list or []):
+        for part in str(raw).split("/"):
+            t = part.strip()
+            if t:
+                out.append(t)
+    return out
+
+
+def _reason_km(anchor_lat, anchor_lng, plat, plng) -> Optional[float]:
+    try:
+        import math as _m
+        dx = (float(plng) - float(anchor_lng)) * 88.8
+        dy = (float(plat) - float(anchor_lat)) * 111.0
+        return _m.sqrt(dx * dx + dy * dy)
+    except Exception:
+        return None
+
+
 def _first_image(imgs) -> Optional[str]:
     """image_urls(리스트/JSON/문자열)에서 첫 유효 이미지 하나."""
     if not imgs:
@@ -562,6 +618,133 @@ def _attach_images(db: Session, places: list) -> None:
             p["image"] = imap[p["id"]]
 
 
+def _member_taste(db: Session, member_ids: list) -> dict:
+    """모임 멤버들의 취향 집계 → {n, food_counter(라벨→명수), vibe_counter}."""
+    from collections import Counter
+    food_c, vibe_c = Counter(), Counter()
+    n = 0
+    if not member_ids:
+        return {"n": 0, "food": food_c, "vibe": vibe_c}
+    users = db.query(models.User).filter(models.User.id.in_(member_ids)).all()
+    for u in users:
+        prefs = u.preferences if isinstance(u.preferences, dict) else {}
+        foods = _split_prefs(prefs.get("foods"))
+        vibes = _split_prefs(prefs.get("vibes"))
+        if not foods and not vibes:
+            continue
+        n += 1
+        seen_labels = set()
+        for f in foods:
+            for lab in _canon_cuisines(f):
+                if lab not in seen_labels:
+                    food_c[lab] += 1
+                    seen_labels.add(lab)
+        for v in set(vibes):
+            vibe_c[v] += 1
+    return {"n": n, "food": food_c, "vibe": vibe_c}
+
+
+def _room_signature(taste: dict) -> set:
+    """유사 모임 판정용 취향 시그니처(음식 라벨 + 대표 분위기)."""
+    sig = set(taste["food"].keys())
+    sig |= {f"vibe:{v}" for v, c in taste["vibe"].items() if c >= 1}
+    return sig
+
+
+def _jaccard(a: set, b: set) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def build_meeting_reasons(db: Session, comm, member_ids: list, places: list,
+                          anchor_lat, anchor_lng, room_sig_map: dict, fb_by_room: dict) -> None:
+    """장소별 근거 사다리(우리>남, 행동>말) 적용 → 각 place에 meeting_reason 재작성.
+    room_sig_map: {room_id: signature}, fb_by_room: {room_id: {place_id: {'visit':n,'love':n}}}"""
+    taste = _member_taste(db, member_ids)
+    n_mem = max(taste["n"], len(member_ids))
+    my_sig = room_sig_map.get(comm.id) or _room_signature(taste)
+
+    # 유사 모임(자기 제외) — 시그니처 자카드 ≥ 0.34
+    similar_rooms = [rid for rid, sig in room_sig_map.items()
+                     if rid != comm.id and _jaccard(my_sig, sig) >= 0.34]
+
+    # 장소별 cuisine_type + tags 배치 조회(취향/분위기 매칭용)
+    pids = [p.get("id") for p in places if p.get("id")]
+    meta = {}
+    if pids:
+        try:
+            rows = db.query(models.Place.id, models.Place.cuisine_type, models.Place.tags,
+                            models.Place.wemeet_rating).filter(models.Place.id.in_(pids)).all()
+            for pid, cuisine, tags, rating in rows:
+                meta[pid] = {"cuisine": cuisine, "tags": tags or [], "rating": rating or 0}
+        except Exception as exc:
+            print(f"[reason] meta skip: {str(exc)[:60]}")
+
+    own_fb = fb_by_room.get(comm.id, {})
+
+    def _agg_similar(pid):
+        visit = love = 0
+        for rid in similar_rooms:
+            cell = fb_by_room.get(rid, {}).get(pid)
+            if cell:
+                visit += 1 if cell.get("visit") else 0
+                love += 1 if cell.get("love") else 0
+        return visit, love
+
+    top_vibe = taste["vibe"].most_common(1)[0][0] if taste["vibe"] else None
+
+    for p in places:
+        pid = p.get("id")
+        m = meta.get(pid, {})
+        km = _reason_km(anchor_lat, anchor_lng, p.get("lat"), p.get("lng"))
+        rating = float(m.get("rating") or p.get("wemeet_rating") or 0)
+        revisit = int(p.get("revisit_count") or 0)
+        place_cuisines = _canon_cuisines(m.get("cuisine"), p.get("category"), p.get("name"))
+        food_hits = sum(taste["food"].get(lab, 0) for lab in place_cuisines)
+        top_food = None
+        if place_cuisines:
+            top_food = max(place_cuisines, key=lambda l: taste["food"].get(l, 0))
+        vibe_hit = bool(top_vibe and top_vibe in set(m.get("tags") or []))
+        sim_visit, sim_love = _agg_similar(pid)
+        own_cell = own_fb.get(pid, {})
+
+        # ── 사다리: 위에서부터 첫 충족 ──
+        reason = None
+        if own_cell.get("love"):                       # 1) 자기 모임 재방문
+            reason = "우리 모임이 다녀와서 또 가고 싶어 한 곳이에요"
+        elif sim_love >= 1:                            # 2) 유사 모임 재방문
+            reason = f"우리와 취향이 비슷한 모임 {sim_love}팀이 ‘또 가고 싶다’고 했어요"
+        elif sim_visit >= 2:                           # 3) 유사 모임 방문/평점
+            reason = f"우리와 취향이 비슷한 모임 {sim_visit}팀이 자주 찾은 곳이에요"
+        elif top_food and food_hits >= 2:              # 4) 자기 모임 음식취향
+            je = _josa_eul(top_food)
+            if food_hits >= n_mem and n_mem >= 2:
+                reason = f"모임 모두 {top_food}{je} 좋아해서 딱 맞는 곳이에요"
+            else:
+                reason = f"모임 {n_mem}명 중 {food_hits}명이 {top_food}{je} 좋아해서 추천해요"
+        elif vibe_hit:                                 # 5) 자기 모임 분위기
+            reason = f"다들 선호하는 ‘{top_vibe}’ 분위기예요"
+        elif rating >= 4.3 or revisit >= 2:            # 6) 검증된 맛집
+            if revisit >= 2:
+                reason = f"다녀온 분들 재방문율이 높은 검증된 곳이에요"
+            else:
+                reason = f"평점 {rating:.1f} · 만족도 높은 곳이에요"
+        else:                                          # 7) 위치
+            if km is not None:
+                reason = f"다들 모이기 좋은 중간지점 근처예요 ({km:.1f}km)"
+            else:
+                reason = "다들 모이기 좋은 중간지점 근처예요"
+
+        # min_sim 높으면 '모두 만족' 게이트 접두 — 단, 이미 전원/다수 뉘앙스면 중복 방지
+        gmin = p.get("group_min_sim")
+        already_all = any(k in reason for k in ["모두", "모든", "다들", "다 같이", "우리 모임"])
+        if gmin is not None and gmin >= 0.65 and not already_all:
+            reason = "누구 하나 안 빠지고 — " + reason
+        p["meeting_reason"] = reason
+        p["reason"] = reason  # 프론트 통일
+
+
 @router.post("/api/recommend")
 def get_recommendation(
     req: schemas.RecommendRequest,
@@ -625,6 +808,32 @@ def recommend_my_meetings(
     my_comms = [c for c in comms if c.host_id == current_user.id or current_user.id in (c.member_ids or [])]
     my_comms = my_comms[:8]  # 과부하 방지
 
+    # ── 이유 엔진 사전계산: 방문 피드백 있는 방들의 취향 시그니처 + 방×장소 피드백 맵 ──
+    # (유사 모임 재방문/방문 근거용. 데이터 적으면 자연히 비어 하위 근거로 폴백)
+    room_sig_map: dict = {}
+    fb_by_room: dict = {}
+    try:
+        fb_room_ids = [r[0] for r in db.query(models.PlaceVisitFeedback.room_id)
+                       .filter(models.PlaceVisitFeedback.room_id.isnot(None)).distinct().all()]
+        sig_room_ids = set(fb_room_ids) | {c.id for c in my_comms}
+        sig_comms = db.query(models.Community).filter(models.Community.id.in_(list(sig_room_ids))).all() if sig_room_ids else []
+        for c in sig_comms:
+            mids = list(dict.fromkeys((c.member_ids or []) + ([c.host_id] if c.host_id else [])))
+            room_sig_map[c.id] = _room_signature(_member_taste(db, mids))
+        if fb_room_ids:
+            for rid, pid, pr, gr in db.query(
+                models.PlaceVisitFeedback.room_id, models.PlaceVisitFeedback.place_id,
+                models.PlaceVisitFeedback.personal_revisit, models.PlaceVisitFeedback.group_revisit
+            ).filter(models.PlaceVisitFeedback.room_id.in_(fb_room_ids)).all():
+                if pid is None:
+                    continue
+                cell = fb_by_room.setdefault(rid, {}).setdefault(pid, {"visit": 0, "love": 0})
+                cell["visit"] = 1
+                if pr or gr:
+                    cell["love"] = 1
+    except Exception as exc:
+        print(f"[reason] precompute skip: {str(exc)[:80]}")
+
     # 모임별로 따로 모아서 라운드로빈으로 섞음(한 모임이 상단을 독식하지 않도록)
     per_room_lists: list = []
     for comm in my_comms:
@@ -658,17 +867,17 @@ def recommend_my_meetings(
             continue
         places = (regions[0].get("places") if regions else []) or []
         room_name = (comm.title or "모임").replace("[모임] ", "").strip()
-        room_list = []
-        for p in places[:per_room]:
-            reason = p.get("reason", "") or ""
-            if lat is not None and lng is not None:
-                reason = reason.replace("중간지점 근처", f"{area or '선택 지역'} 근처")
-            room_list.append({
-                **p,
-                "room_id": comm.id,
-                "room_name": room_name,
-                "meeting_reason": f"{room_name} 추천 · {reason}" if reason else f"{room_name} 모임 추천",
-            })
+        room_list = [{**p, "room_id": comm.id, "room_name": room_name} for p in places[:per_room]]
+        # 근거 사다리 적용(우리>남, 행동>말) — meeting_reason/reason 재작성
+        try:
+            build_meeting_reasons(db, comm, member_ids, room_list, anchor_lat, anchor_lng, room_sig_map, fb_by_room)
+        except Exception as exc:
+            print(f"[reason] build skip {comm.title}: {str(exc)[:80]}")
+        if lat is not None and lng is not None:
+            for p in room_list:
+                if p.get("meeting_reason"):
+                    p["meeting_reason"] = p["meeting_reason"].replace("중간지점 근처", f"{area or '선택 지역'} 근처")
+                    p["reason"] = p["meeting_reason"]
         if room_list:
             per_room_lists.append(room_list)
 
