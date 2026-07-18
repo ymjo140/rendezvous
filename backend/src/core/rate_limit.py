@@ -14,6 +14,7 @@ STRICT_PREFIXES = (
     "/api/login",
     "/api/auth/",
     "/api/coins/charge",
+    "/api/import/",  # 서버가 네이버로 외부 요청을 보내는 경로 — 중계 남용 방지
 )
 STRICT_LIMIT = 10      # 분당
 GLOBAL_LIMIT = 300     # 분당
