@@ -25,6 +25,18 @@ const DEAL_SORTS = [
   { key: "dist", label: "거리순" },
 ]
 
+// 요소 태그 칩 색상 — 근거 종류별
+const FACTOR_STYLE: Record<string, string> = {
+  all: "bg-[#0F6E56] text-[#E1F5EE]",
+  own: "bg-[#EEEDFE] text-[#3C3489]",
+  similar: "bg-[#EEEDFE] text-[#3C3489]",
+  food: "bg-[#E1F5EE] text-[#0F6E56]",
+  vibe: "bg-[#E1F5EE] text-[#0F6E56]",
+  revisit: "bg-[#FAEEDA] text-[#854F0B]",
+  rating: "bg-[#FBEAF0] text-[#993556]",
+  near: "bg-gray-100 text-gray-500",
+}
+
 // 카테고리 → 이모지 타일(사진 없을 때 폴백). 이름+카테고리 키워드로 판정, 구체적인 것 먼저.
 function categoryEmoji(name?: string, cat?: string): string {
   const s = `${name ?? ""} ${cat ?? ""}`
@@ -414,8 +426,19 @@ function PicksContent() {
                   <div className="text-xs text-gray-400 truncate mt-0.5">
                     {[p.category, isFinite(km) ? (km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`) : null].filter(Boolean).join(" · ")}
                   </div>
-                  {(p.meeting_reason || p.reason) && (
-                    <div className="text-[11px] text-[#D97706] truncate mt-0.5">✨ {tab === "meetings" && p.reason ? p.reason : (p.meeting_reason || p.reason)}</div>
+                  {/* 모임 탭: 강한 요소 태그 칩(A안). 그 외: 대표 이유 한 줄 */}
+                  {tab === "meetings" && Array.isArray(p.factors) && p.factors.length > 0 ? (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {p.factors.map((f: any, fi: number) => (
+                        <span key={fi} className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${FACTOR_STYLE[f.key] || FACTOR_STYLE.near}`}>
+                          {f.label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    (p.meeting_reason || p.reason) && (
+                      <div className="text-[11px] text-[#D97706] truncate mt-0.5">✨ {p.meeting_reason || p.reason}</div>
+                    )
                   )}
                   <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400">
                     {(p.wemeet_rating || 0) > 0 && <span>⭐ {Number(p.wemeet_rating).toFixed(1)}</span>}
@@ -455,8 +478,8 @@ function PicksContent() {
                     </p>
                   </div>
                   <div>
-                    <div className="font-bold text-gray-900 mb-1">카드 아래 한 줄은?</div>
-                    <p className="text-gray-600">그 가게가 뽑힌 <span className="font-bold">대표 이유 하나</span>예요. 아래 순서로 가장 강한 걸 보여줘요:</p>
+                    <div className="font-bold text-gray-900 mb-1">카드의 태그는?</div>
+                    <p className="text-gray-600">그 가게가 뽑힌 <span className="font-bold">강한 이유들</span>이에요 (강한 것 최대 3개). 아래 순서로 우선해요:</p>
                     <ol className="mt-2 space-y-1.5">
                       {[
                         ["🔁", "우리 모임이 다녀와서 또 가고 싶어 한 곳"],

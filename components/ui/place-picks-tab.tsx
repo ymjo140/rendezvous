@@ -35,6 +35,17 @@ function categoryEmoji(name?: string, cat?: string): string {
   return "🍽️"
 }
 
+const FACTOR_STYLE: Record<string, string> = {
+  all: "bg-[#0F6E56] text-[#E1F5EE]",
+  own: "bg-[#EEEDFE] text-[#3C3489]",
+  similar: "bg-[#EEEDFE] text-[#3C3489]",
+  food: "bg-[#E1F5EE] text-[#0F6E56]",
+  vibe: "bg-[#E1F5EE] text-[#0F6E56]",
+  revisit: "bg-[#FAEEDA] text-[#854F0B]",
+  rating: "bg-[#FBEAF0] text-[#993556]",
+  near: "bg-gray-100 text-gray-500",
+}
+
 function PlaceThumb({ image, name, category, accent }: { image?: string; name?: string; category?: string; accent?: string }) {
   if (image) {
     return <img src={image} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0 bg-gray-100" loading="lazy" />
@@ -526,9 +537,19 @@ export function PlacePicksTab() {
                       <div className="text-[11px] text-gray-500 flex items-center gap-1">
                         <MapPin className="w-3 h-3 flex-shrink-0" /> <span className="truncate">{p.category} · {p.address}</span>
                       </div>
-                      <div className="mt-1 text-[11px] font-bold text-[#0D9488] truncate">
-                        ✨ {p.meeting_reason}
-                      </div>
+                      {Array.isArray((p as any).factors) && (p as any).factors.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(p as any).factors.map((f: any, fi: number) => (
+                            <span key={fi} className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${FACTOR_STYLE[f.key] || FACTOR_STYLE.near}`}>
+                              {f.label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-[11px] font-bold text-[#0D9488] truncate">
+                          ✨ {p.meeting_reason}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

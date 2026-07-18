@@ -741,6 +741,29 @@ def build_meeting_reasons(db: Session, comm, member_ids: list, places: list,
         p["meeting_reason"] = reason
         p["reason"] = reason  # 프론트 통일
 
+        # A안: 강한 요소 태그(우선순위 순, 최대 3) — 카드에 칩으로 표시
+        gmin = p.get("group_min_sim")
+        factors = []
+        if gmin is not None and gmin >= 0.6:
+            factors.append({"key": "all", "label": "모두 만족"})
+        if own_cell.get("love"):
+            factors.append({"key": "own", "label": "우리가 또 감"})
+        if sim_love >= 1 or sim_visit >= 2:
+            factors.append({"key": "similar", "label": "비슷한 모임 픽"})
+        if top_food and food_hits >= 2:
+            factors.append({"key": "food", "label": f"{top_food} 취향 적중"})
+        if vibe_hit:
+            factors.append({"key": "vibe", "label": f"{top_vibe} 분위기"})
+        if revisit >= 2:
+            factors.append({"key": "revisit", "label": "재방문율 ↑"})
+        if rating >= 4.3:
+            factors.append({"key": "rating", "label": f"평점 {rating:.1f} ↑"})
+        if km is not None and km <= 1.0:
+            factors.append({"key": "near", "label": "가까움"})
+        if not factors:  # 아무 신호도 없으면 위치라도
+            factors.append({"key": "near", "label": "중간지점 근처"})
+        p["factors"] = factors[:3]
+
 
 @router.post("/api/recommend")
 def get_recommendation(
