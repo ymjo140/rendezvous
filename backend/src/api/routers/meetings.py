@@ -700,11 +700,15 @@ def build_meeting_reasons(db: Session, comm, member_ids: list, places: list,
         km = _reason_km(anchor_lat, anchor_lng, p.get("lat"), p.get("lng"))
         rating = float(m.get("rating") or p.get("wemeet_rating") or 0)
         revisit = int(p.get("revisit_count") or 0)
-        place_cuisines = _canon_cuisines(m.get("cuisine"), p.get("category"), p.get("name"))
-        food_hits = sum(taste["food"].get(lab, 0) for lab in place_cuisines)
+        # 장소 대표 취향: cuisine_type 우선(가장 정확) → 없으면 category/name.
+        # (category까지 섞으면 78%가 '한식'이라 획일화됨 → 일식집도 한식으로 뜨던 문제)
+        place_cuisines = _canon_cuisines(m.get("cuisine")) or _canon_cuisines(p.get("category"), p.get("name"))
         top_food = None
         if place_cuisines:
             top_food = max(place_cuisines, key=lambda l: taste["food"].get(l, 0))
+        food_hits = taste["food"].get(top_food, 0) if top_food else 0
+        # 강함 기준: 과반(최소 2명). 소수(1명 이상)는 약한 톤 태그로 다양성 확보.
+        food_strong = food_hits >= max(2, (n_mem + 1) // 2)
         vibe_hit = bool(top_vibe and top_vibe in set(m.get("tags") or []))
         sim_visit, sim_love = _agg_similar(pid)
         own_cell = own_fb.get(pid, {})
@@ -717,12 +721,14 @@ def build_meeting_reasons(db: Session, comm, member_ids: list, places: list,
             reason = f"우리와 취향이 비슷한 모임 {sim_love}팀이 ‘또 가고 싶다’고 했어요"
         elif sim_visit >= 2:                           # 3) 유사 모임 방문/평점
             reason = f"우리와 취향이 비슷한 모임 {sim_visit}팀이 자주 찾은 곳이에요"
-        elif top_food and food_hits >= 2:              # 4) 자기 모임 음식취향
+        elif top_food and food_hits >= 1:              # 4) 자기 모임 음식취향(가중치: 과반/소수)
             je = _josa_eul(top_food)
             if food_hits >= n_mem and n_mem >= 2:
                 reason = f"모임 모두 {top_food}{je} 좋아해서 딱 맞는 곳이에요"
-            else:
+            elif food_strong:
                 reason = f"모임 {n_mem}명 중 {food_hits}명이 {top_food}{je} 좋아해서 추천해요"
+            else:
+                reason = f"{top_food}{je} 좋아하는 멤버가 있어 골라봤어요"
         elif vibe_hit:                                 # 5) 자기 모임 분위기
             reason = f"다들 선호하는 ‘{top_vibe}’ 분위기예요"
         elif rating >= 4.3 or revisit >= 2:            # 6) 검증된 맛집
@@ -750,8 +756,11 @@ def build_meeting_reasons(db: Session, comm, member_ids: list, places: list,
             factors.append({"key": "own", "label": "우리가 또 감"})
         if sim_love >= 1 or sim_visit >= 2:
             factors.append({"key": "similar", "label": "비슷한 모임 픽"})
-        if top_food and food_hits >= 2:
-            factors.append({"key": "food", "label": f"{top_food} 취향 적중"})
+        if top_food and food_hits >= 1:
+            if food_strong or (food_hits >= n_mem and n_mem >= 2):
+                factors.append({"key": "food", "label": f"{top_food} 취향 적중"})
+            else:
+                factors.append({"key": "food_soft", "label": f"{top_food} 좋아하는 멤버"})
         if vibe_hit:
             factors.append({"key": "vibe", "label": f"{top_vibe} 분위기"})
         if revisit >= 2:
