@@ -403,22 +403,48 @@ export function MyPageTab() {
       }
   };
 
-  // 💾 폴더 생성
-  const handleCreateFolder = async () => {
-      const name = window.prompt("새 폴더 이름을 입력하세요")?.trim();
-      if (!name) return;
+  // 💾 폴더 만들기/꾸미기 — 이름 + 아이콘 + 색(홈 지도 핀 색과 동일 팔레트)
+  const FOLDER_COLORS = ["#F59E0B", "#EF4444", "#8B5CF6", "#10B981", "#EC4899", "#3B82F6", "#84CC16", "#F97316", "#06B6D4", "#A855F7"];
+  const FOLDER_ICONS = ["🍜", "🥐", "☕", "🍣", "🥩", "🍕", "🍰", "🌶️", "🍺", "🍚", "🦐", "❤️", "⭐", "👥", "📁"];
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [editingFolder, setEditingFolder] = useState<SaveFolder | null>(null);
+  const [fName, setFName] = useState("");
+  const [fIcon, setFIcon] = useState("🍜");
+  const [fColor, setFColor] = useState(FOLDER_COLORS[0]);
+  const [fSaving, setFSaving] = useState(false);
+
+  const openFolderDialog = (folder: SaveFolder | null) => {
+      setEditingFolder(folder);
+      setFName(folder?.name || "");
+      setFIcon(folder?.icon && folder.icon !== "📁" ? folder.icon : "🍜");
+      setFColor(folder?.color && FOLDER_COLORS.includes(folder.color) ? folder.color : FOLDER_COLORS[0]);
+      setFolderDialogOpen(true);
+  };
+
+  const handleSubmitFolder = async () => {
+      const name = fName.trim();
+      if (!name || fSaving) return;
+      setFSaving(true);
       try {
-          const res = await fetchWithAuth(`/api/folders`, {
-              method: "POST",
-              body: JSON.stringify({ name }),
-          });
+          const res = editingFolder
+              ? await fetchWithAuth(`/api/folders/${editingFolder.id}`, {
+                    method: "PUT",
+                    body: JSON.stringify({ name, icon: fIcon, color: fColor }),
+                })
+              : await fetchWithAuth(`/api/folders`, {
+                    method: "POST",
+                    body: JSON.stringify({ name, icon: fIcon, color: fColor }),
+                });
           if (res.ok) {
+              setFolderDialogOpen(false);
               await fetchSaveFolders();
           } else {
-              alert("폴더 생성에 실패했어요.");
+              alert(editingFolder ? "폴더 수정에 실패했어요." : "폴더 생성에 실패했어요.");
           }
       } catch (e) {
-          alert("폴더 생성 중 오류가 발생했어요.");
+          alert("저장 중 오류가 발생했어요.");
+      } finally {
+          setFSaving(false);
       }
   };
 
@@ -922,7 +948,7 @@ export function MyPageTab() {
                         {/* 새 폴더 만들기 / 네이버 가져오기 */}
                         <div className="flex gap-2">
                             <button
-                                onClick={handleCreateFolder}
+                                onClick={() => openFolderDialog(null)}
                                 className="flex-1 flex items-center justify-center gap-2 bg-white p-3 rounded-2xl border-2 border-dashed border-gray-200 text-gray-500 hover:border-[#F5A623] hover:text-[#F5A623] transition-colors font-bold text-sm"
                             >
                                 <Plus className="w-4 h-4" /> 새 폴더
@@ -939,6 +965,74 @@ export function MyPageTab() {
                             onClose={() => setNaverImportOpen(false)}
                             onImported={fetchSaveFolders}
                         />
+
+                        {/* 폴더 만들기/꾸미기 다이얼로그 */}
+                        <Dialog open={folderDialogOpen} onOpenChange={(o) => { if (!o) setFolderDialogOpen(false); }}>
+                            <DialogContent className="max-w-sm">
+                                <DialogHeader>
+                                    <DialogTitle className="text-base">
+                                        {editingFolder ? "폴더 꾸미기" : "새 폴더 만들기"}
+                                    </DialogTitle>
+                                    <DialogDescription className="hidden">폴더 이름, 아이콘, 색 설정</DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-3">
+                                        <div
+                                            className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
+                                            style={{ backgroundColor: `${fColor}20` }}
+                                        >
+                                            {fIcon}
+                                        </div>
+                                        <Input
+                                            value={fName}
+                                            onChange={(e) => setFName(e.target.value)}
+                                            placeholder="폴더 이름 (예: 빵집 투어)"
+                                            maxLength={20}
+                                            className="flex-1"
+                                        />
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-gray-500 mb-1.5">아이콘</div>
+                                        <div className="grid grid-cols-8 gap-1">
+                                            {FOLDER_ICONS.map((ic) => (
+                                                <button
+                                                    key={ic}
+                                                    onClick={() => setFIcon(ic)}
+                                                    className={`h-9 rounded-lg text-lg flex items-center justify-center transition-colors ${
+                                                        fIcon === ic ? "bg-teal-50 ring-2 ring-[#14B8A6]" : "hover:bg-gray-100"
+                                                    }`}
+                                                >
+                                                    {ic}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-gray-500 mb-1.5">색 (홈 지도 핀 색이 돼요)</div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {FOLDER_COLORS.map((c) => (
+                                                <button
+                                                    key={c}
+                                                    onClick={() => setFColor(c)}
+                                                    className={`w-8 h-8 rounded-full transition-transform ${
+                                                        fColor === c ? "ring-2 ring-offset-2 ring-gray-700 scale-110" : ""
+                                                    }`}
+                                                    style={{ backgroundColor: c }}
+                                                    aria-label={c}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <Button
+                                        onClick={handleSubmitFolder}
+                                        disabled={fSaving || !fName.trim()}
+                                        className="w-full bg-[#14B8A6] hover:bg-[#0d9488] text-white font-bold rounded-xl h-11"
+                                    >
+                                        {fSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : editingFolder ? "저장" : "만들기"}
+                                    </Button>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
                         {foldersLoading ? (
                             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
                                 <Loader2 className="w-6 h-6 animate-spin mx-auto text-amber-500 mb-2" />
@@ -974,6 +1068,15 @@ export function MyPageTab() {
                                                     title={folder.is_public ? "공개 맛집 리스트 · 탭하여 비공개" : "맛집 리스트로 공개하기"}
                                                 >
                                                     {folder.is_public ? "🌐 공개중" : "비공개"}
+                                                </button>
+                                            )}
+                                            {!folder.is_default && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); openFolderDialog(folder); }}
+                                                    className="p-1.5 text-gray-300 hover:text-[#14B8A6] hover:bg-teal-50 rounded-full transition-colors"
+                                                    title="폴더 꾸미기 (이름/아이콘/색)"
+                                                >
+                                                    <Pencil className="w-4 h-4" />
                                                 </button>
                                             )}
                                             {!folder.is_default && (
