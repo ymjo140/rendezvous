@@ -4,7 +4,7 @@
 // 평점/리뷰/가격은 데이터가 쌓이면 자동으로 의미가 생기는 정렬(미리 구축).
 import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ChevronLeft, Loader2 } from "lucide-react"
+import { ChevronLeft, Loader2, Info, X } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
 type Tab = "taste" | "meetings" | "hotdeals"
@@ -102,6 +102,7 @@ function PicksContent() {
   const [cat, setCat] = useState(saved?.cat || "all")
   const [roomFilter, setRoomFilter] = useState(saved?.roomFilter || "all")
   const [roomMenuOpen, setRoomMenuOpen] = useState(false)
+  const [criteriaOpen, setCriteriaOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [base, setBase] = useState<{ lat: number; lng: number; label: string } | null>(
     anchorLat && anchorLng ? { lat: anchorLat, lng: anchorLng, label: areaName || "선택 지역" } : null
@@ -255,6 +256,12 @@ function PicksContent() {
               {purpose}{filterTags.length > 0 ? ` +${filterTags.length}` : ""}
             </span>
           )}
+          <button
+            onClick={() => setCriteriaOpen(true)}
+            className="ml-auto flex items-center gap-1 text-[11px] font-bold text-gray-500 border border-gray-200 rounded-full px-2.5 py-1 hover:bg-gray-50"
+          >
+            <Info className="w-3.5 h-3.5" /> 추천 기준
+          </button>
         </div>
         {/* 탭 */}
         <div className="flex px-3 gap-1 pb-0">
@@ -424,6 +431,70 @@ function PicksContent() {
         </div>
       )}
       <div className="h-10" />
+
+      {/* 추천 기준 설명 시트 */}
+      {criteriaOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setCriteriaOpen(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative w-full max-w-lg bg-white rounded-t-3xl max-h-[80dvh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+              <div className="font-bold text-gray-900">추천 기준</div>
+              <button onClick={() => setCriteriaOpen(false)} className="p-1.5 rounded-full hover:bg-gray-100">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 text-sm text-gray-700 leading-relaxed">
+              {tab === "meetings" ? (
+                <>
+                  <div>
+                    <div className="font-bold text-gray-900 mb-1">순서는 이렇게 정해요</div>
+                    <p className="text-gray-600">
+                      <span className="font-bold text-[#14B8A6]">모임 전원이 두루 만족할 곳</span>을 가장 위에 둬요.
+                      한 명이라도 싫어할 만한 곳(비선호·알레르기 음식 등)은 빼거나 뒤로 미뤄요.
+                      그래서 “내가 제일 좋아하는 곳”이 아니라 <span className="font-bold">“다 같이 가기 좋은 곳”</span> 순서예요.
+                    </p>
+                  </div>
+                  <div>
+                    <div className="font-bold text-gray-900 mb-1">카드 아래 한 줄은?</div>
+                    <p className="text-gray-600">그 가게가 뽑힌 <span className="font-bold">대표 이유 하나</span>예요. 아래 순서로 가장 강한 걸 보여줘요:</p>
+                    <ol className="mt-2 space-y-1.5">
+                      {[
+                        ["🔁", "우리 모임이 다녀와서 또 가고 싶어 한 곳"],
+                        ["👥", "우리와 취향이 비슷한 모임이 좋게 평가한 곳"],
+                        ["🍽️", "멤버 다수가 좋아하는 음식 (예: 5명 중 3명이 일식)"],
+                        ["✨", "다들 선호하는 분위기 (예: 조용한)"],
+                        ["⭐", "평점·재방문율 높은 검증된 곳"],
+                        ["📍", "다들 모이기 좋은 중간지점 근처"],
+                      ].map(([ic, t], i) => (
+                        <li key={i} className="flex gap-2 items-start">
+                          <span className="text-base leading-none mt-0.5">{ic}</span>
+                          <span className="text-gray-600">{t}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                  <div className="bg-teal-50 rounded-xl p-3 text-[13px] text-teal-800">
+                    💡 “5명 중 3명”처럼 일부만 좋아해도 추천될 수 있어요. 순서는 <span className="font-bold">모임 전체 만족도</span>로 정하고, 한 줄은 그중 가장 눈에 띄는 이유를 보여주기 때문이에요.
+                  </div>
+                </>
+              ) : tab === "taste" ? (
+                <>
+                  <div className="font-bold text-gray-900">내 취향 추천 기준</div>
+                  <p className="text-gray-600">내가 저장·방문·평가한 기록으로 만든 <span className="font-bold">취향 프로필</span>과, 지금 고른 목적·필터에 맞춰 가까운 곳을 추천해요. 위에서 정렬(추천·거리·평점 등)을 바꿀 수 있어요.</p>
+                </>
+              ) : (
+                <>
+                  <div className="font-bold text-gray-900">핫딜 기준</div>
+                  <p className="text-gray-600">지금 진행 중인 혜택을 할인율·마감임박·거리 순으로 보여줘요.</p>
+                </>
+              )}
+            </div>
+            <div className="p-4 border-t border-gray-100">
+              <button onClick={() => setCriteriaOpen(false)} className="w-full h-11 rounded-xl bg-gray-900 text-white font-bold text-sm">확인</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

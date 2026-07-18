@@ -736,11 +736,8 @@ def build_meeting_reasons(db: Session, comm, member_ids: list, places: list,
             else:
                 reason = "다들 모이기 좋은 중간지점 근처예요"
 
-        # min_sim 높으면 '모두 만족' 게이트 접두 — 단, 이미 전원/다수 뉘앙스면 중복 방지
-        gmin = p.get("group_min_sim")
-        already_all = any(k in reason for k in ["모두", "모든", "다들", "다 같이", "우리 모임"])
-        if gmin is not None and gmin >= 0.65 and not already_all:
-            reason = "누구 하나 안 빠지고 — " + reason
+        # 카드 한 줄은 '대표 이유 하나'만 — 순위 산정 원리(전원 만족)는 '추천 기준' 설명으로 분리.
+        # (예전 '누구 하나 안 빠지고' 접두가 '3명 중 2명'과 모순돼 제거)
         p["meeting_reason"] = reason
         p["reason"] = reason  # 프론트 통일
 
