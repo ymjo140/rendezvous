@@ -531,27 +531,44 @@ def recommend_my_meetings(
     if hit and hit[0] > _time.time():
         return hit[1]
 
-    # 내가 속한 모임(커뮤니티=채팅방) — 호스트이거나 member_ids에 포함
-    comms = db.query(models.Community).all()
-    my_comms = [c for c in comms if c.host_id == current_user.id or current_user.id in (c.member_ids or [])]
-    my_comms = my_comms[:4]  # 과부하 방지
+    # 모임 카테고리 → 추천 엔진이 아는 유효 purpose로 정규화
+    # (채팅방 생성 시 category가 '맛집모임'/'모임' 등으로 들어와 추천이 0건이 되던 문제)
+    def _norm_purpose(cat: Optional[str]) -> str:
+        c = (cat or "").strip()
+        if not c:
+            return "식사"
+        if any(k in c for k in ["카페", "커피", "디저트", "베이커리", "빵"]):
+            return "카페"
+        if any(k in c for k in ["술", "맥주", "포차", "바", "호프", "주점", "이자카야", "와인"]):
+            return "술집"
+        # 식사/맛집/모임/기타 전부 식사로
+        return "식사"
 
-    out = []
+    # 내가 속한 모임(커뮤니티=채팅방) — 호스트이거나 member_ids에 포함. 최근 생성 우선.
+    comms = db.query(models.Community).order_by(models.Community.id.desc()).all()
+    my_comms = [c for c in comms if c.host_id == current_user.id or current_user.id in (c.member_ids or [])]
+    my_comms = my_comms[:8]  # 과부하 방지
+
+    # 모임별로 따로 모아서 라운드로빈으로 섞음(한 모임이 상단을 독식하지 않도록)
+    per_room_lists: list = []
     for comm in my_comms:
         member_ids = list(dict.fromkeys((comm.member_ids or []) + ([comm.host_id] if comm.host_id else [])))
         if len(member_ids) < 1:
             continue
-        # 멤버 위치 평균(중간지점) — 단, 지역 앵커(lat/lng)가 오면 그 좌표 기준
+        # 앵커: 지역 검색(lat/lng) > 멤버 위치 평균 > 요청자(나) 위치 > 시청
         users = db.query(models.User).filter(models.User.id.in_(member_ids)).all()
         located = [(u.lat, u.lng) for u in users if u.lat and abs(float(u.lat)) > 1]
         if lat is not None and lng is not None:
             anchor_lat, anchor_lng, extra_users = lat, lng, []
-        else:
-            anchor_lat = located[0][0] if located else 37.5665
-            anchor_lng = located[0][1] if located else 126.978
+        elif located:
+            anchor_lat, anchor_lng = located[0]
             extra_users = [{"location": {"lat": la, "lng": ln}} for la, ln in located[1:]]
+        elif current_user.lat and abs(float(current_user.lat)) > 1:
+            anchor_lat, anchor_lng, extra_users = current_user.lat, current_user.lng, []
+        else:
+            anchor_lat, anchor_lng, extra_users = 37.5665, 126.978, []
         req = schemas.RecommendRequest(
-            purpose=comm.category or "식사",
+            purpose=_norm_purpose(comm.category),
             member_user_ids=member_ids,
             current_lat=anchor_lat,
             current_lng=anchor_lng,
@@ -565,20 +582,31 @@ def recommend_my_meetings(
             continue
         places = (regions[0].get("places") if regions else []) or []
         room_name = (comm.title or "모임").replace("[모임] ", "").strip()
+        room_list = []
         for p in places[:per_room]:
             reason = p.get("reason", "") or ""
-            # 지역 앵커면 '중간지점 근처' 대신 그 지역명으로 (예: "강남 근처 · ...")
             if lat is not None and lng is not None:
                 reason = reason.replace("중간지점 근처", f"{area or '선택 지역'} 근처")
-            out.append({
+            room_list.append({
                 **p,
                 "room_id": comm.id,
                 "room_name": room_name,
-                # 예: "데모모임 장소 추천: 중간지점 근처 · 한식 취향과 잘 맞아요"
-                "meeting_reason": f"{room_name} 모임 장소 추천: {reason}",
+                "meeting_reason": f"{room_name} 추천 · {reason}" if reason else f"{room_name} 모임 추천",
             })
+        if room_list:
+            per_room_lists.append(room_list)
 
-    result = {"count": len(out), "places": out}
+    # 라운드로빈 인터리브: [방A1, 방B1, 방C1, 방A2, 방B2, ...]
+    out = []
+    if per_room_lists:
+        for i in range(max(len(l) for l in per_room_lists)):
+            for l in per_room_lists:
+                if i < len(l):
+                    out.append(l[i])
+
+    result = {"count": len(out), "places": out, "rooms": [
+        {"id": c.id, "name": (c.title or "모임").replace("[모임] ", "").strip()} for c in my_comms
+    ]}
     # 만료 엔트리 청소 후 저장(무한 성장 방지)
     now = _time.time()
     if len(_MY_MEETINGS_CACHE) > 500:

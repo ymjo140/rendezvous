@@ -236,6 +236,26 @@ function PicksContent() {
               </button>
             ))}
           </div>
+          {/* 모임 선택 줄 (모임 탭 전용) — 모임을 고르면 그 모임 추천만 */}
+          {tab === "meetings" && roomNames.length > 0 && (
+            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
+              <button
+                onClick={() => setRoomFilter("all")}
+                className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold ${roomFilter === "all" ? "bg-teal-600 text-white" : "bg-teal-50 text-teal-700"}`}
+              >
+                👥 전체 모임
+              </button>
+              {roomNames.map((rn) => (
+                <button
+                  key={rn}
+                  onClick={() => setRoomFilter(rn)}
+                  className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold ${roomFilter === rn ? "bg-teal-600 text-white" : "bg-teal-50 text-teal-700"}`}
+                >
+                  {rn}
+                </button>
+              ))}
+            </div>
+          )}
           {tab !== "hotdeals" && (
             <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
               {CATEGORY_FILTERS.map((c) => (
@@ -249,26 +269,6 @@ function PicksContent() {
                   {c.label}
                 </button>
               ))}
-              {tab === "meetings" && roomNames.length > 1 && (
-                <>
-                  <span className="flex-shrink-0 text-gray-200 py-1">|</span>
-                  <button
-                    onClick={() => setRoomFilter("all")}
-                    className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold ${roomFilter === "all" ? "bg-teal-100 text-teal-800" : "bg-gray-50 text-gray-400"}`}
-                  >
-                    모든 모임
-                  </button>
-                  {roomNames.map((rn) => (
-                    <button
-                      key={rn}
-                      onClick={() => setRoomFilter(rn)}
-                      className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold ${roomFilter === rn ? "bg-teal-100 text-teal-800" : "bg-gray-50 text-gray-400"}`}
-                    >
-                      {rn}
-                    </button>
-                  ))}
-                </>
-              )}
             </div>
           )}
         </div>
@@ -324,11 +324,17 @@ function PicksContent() {
                     {p.name}
                     {tr && tr <= 10 && <span className="ml-1 text-[9px] font-bold text-orange-600 bg-orange-50 rounded px-1 py-0.5">🔥급상승 {tr}위</span>}
                   </div>
+                  {/* 모임 탭: 어느 모임 추천인지 배지로 명확히 (전체 보기일 때만 — 특정 모임 선택 시엔 중복이라 생략) */}
+                  {tab === "meetings" && p.room_name && roomFilter === "all" && (
+                    <span className="inline-block mt-0.5 text-[10px] font-bold text-teal-700 bg-teal-50 rounded-full px-2 py-0.5">
+                      👥 {p.room_name}
+                    </span>
+                  )}
                   <div className="text-xs text-gray-400 truncate mt-0.5">
                     {[p.category, isFinite(km) ? (km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`) : null].filter(Boolean).join(" · ")}
                   </div>
                   {(p.meeting_reason || p.reason) && (
-                    <div className="text-[11px] text-[#D97706] truncate mt-0.5">✨ {p.meeting_reason || p.reason}</div>
+                    <div className="text-[11px] text-[#D97706] truncate mt-0.5">✨ {tab === "meetings" && p.reason ? p.reason : (p.meeting_reason || p.reason)}</div>
                   )}
                   <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400">
                     {(p.wemeet_rating || 0) > 0 && <span>⭐ {Number(p.wemeet_rating).toFixed(1)}</span>}
