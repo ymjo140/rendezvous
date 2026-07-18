@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from core.database import get_db
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, get_current_merchant
 from domain import models
 
 router = APIRouter()
@@ -22,6 +22,16 @@ def _assert_store_owner(db: Session, store_id: int, current_user) -> models.Plac
     if place.owner_id is None or str(place.owner_id) != str(current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your store")
     return place
+
+def _assert_merchant_owns(db: Session, store_id: int, merchant_uid: str) -> models.Place:
+    """머천트 Supabase 세션(UUID)이 해당 store 소유주인지 검증."""
+    place = db.query(models.Place).filter(models.Place.id == store_id).first()
+    if place is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Store not found")
+    if str(place.owner_id or "") != str(merchant_uid):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your store")
+    return place
+
 
 DEFAULT_LAT = 37.5665
 DEFAULT_LNG = 126.9780
@@ -704,9 +714,9 @@ class ReengageBody(BaseModel):
 
 @router.post("/stores/{store_id}/regulars/reengage")
 def reengage_regulars(store_id: int, body: ReengageBody, db: Session = Depends(get_db),
-                      current_user: models.User = Depends(get_current_user)):
+                      merchant: str = Depends(get_current_merchant)):
     """재방문 의사/뜸해진 단골에게 재초대 알림(푸시). 소유주만."""
-    place = _assert_store_owner(db, store_id, current_user)
+    place = _assert_merchant_owns(db, store_id, merchant)
     # 대상 user_id 수집
     if body.kind == "reminder":
         rows = db.execute(text(
@@ -849,9 +859,9 @@ class HeroBody(BaseModel):
 
 @router.post("/stores/{store_id}/hero-image")
 def set_hero_image(store_id: int, body: HeroBody, db: Session = Depends(get_db),
-                   current_user: models.User = Depends(get_current_user)):
+                   merchant: str = Depends(get_current_merchant)):
     """가게 대표 이미지 지정 — 손님 사진을 가게 얼굴로. 소유주만."""
-    place = _assert_store_owner(db, store_id, current_user)
+    place = _assert_merchant_owns(db, store_id, merchant)
     place.hero_image = body.image or None
     db.commit()
     return {"ok": True, "hero_image": place.hero_image}
