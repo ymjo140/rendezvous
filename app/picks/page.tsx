@@ -25,6 +25,27 @@ const DEAL_SORTS = [
   { key: "dist", label: "거리순" },
 ]
 
+// 카테고리 → 이모지 타일(사진 없을 때 폴백). 이름+카테고리 키워드로 판정, 구체적인 것 먼저.
+function categoryEmoji(name?: string, cat?: string): string {
+  const s = `${name ?? ""} ${cat ?? ""}`
+  if (/피자|pizza/i.test(s)) return "🍕"
+  if (/버거|burger/i.test(s)) return "🍔"
+  if (/파스타|이탈리|스테이크|브런치|양식/i.test(s)) return "🍝"
+  if (/카페|까페|커피|coffee|cafe|디저트|케이크|빙수|마카롱/i.test(s)) return "☕"
+  if (/베이커리|제과|도넛|베이글|크루아상|크로플|빵/i.test(s)) return "🥐"
+  if (/스시|초밥|오마카세|사시미|일식/i.test(s)) return "🍣"
+  if (/라멘|우동|소바|국수|칼국수|쌀국수|팟타이|아시아|베트남|태국/i.test(s)) return "🍜"
+  if (/중식|중국|짜장|짬뽕|마라|딤섬|만두|훠궈/i.test(s)) return "🥟"
+  if (/치킨|닭강정|통닭/i.test(s)) return "🍗"
+  if (/곱창|막창|대창|삼겹|갈비|숯불|구이|정육|양꼬치|고기/i.test(s)) return "🥩"
+  if (/호프|맥주|펍|pub|포차|술집|이자카야|와인|칵테일|하이볼/i.test(s)) return "🍺"
+  if (/분식|떡볶이|김밥|순대|어묵|토스트/i.test(s)) return "🍢"
+  if (/해산물|수산|횟집|물회|조개|대게|랍스터|새우/i.test(s)) return "🦐"
+  if (/샐러드|포케/i.test(s)) return "🥗"
+  if (/국밥|설렁탕|해장국|감자탕|찌개|백반|족발|보쌈|비빔밥|불고기|한식/i.test(s)) return "🍚"
+  return "🍽️"
+}
+
 const CATEGORY_FILTERS = [
   { key: "all", label: "전체", re: null as RegExp | null },
   { key: "food", label: "맛집", re: /식당|한식|중식|일식|양식|고기|분식|음식|FOOD|RESTAURANT/i },
@@ -364,7 +385,14 @@ function PicksContent() {
                 onClick={() => p.id && router.push(`/places/${p.id}`)}
                 className="w-full text-left flex items-start gap-3 px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50"
               >
-                <span className={`w-6 text-center text-sm font-extrabold pt-0.5 ${i < 3 ? "text-[#F5A623]" : "text-gray-300"}`}>{i + 1}</span>
+                <span className={`w-5 text-center text-sm font-extrabold pt-4 ${i < 3 ? "text-[#F5A623]" : "text-gray-300"}`}>{i + 1}</span>
+                {p.image ? (
+                  <img src={p.image} alt="" className="w-14 h-14 rounded-xl object-cover flex-shrink-0 bg-gray-100" loading="lazy" />
+                ) : (
+                  <div className="w-14 h-14 rounded-xl flex-shrink-0 bg-amber-50 flex items-center justify-center text-2xl">
+                    {categoryEmoji(p.name, p.category)}
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="font-bold text-sm text-gray-900 truncate">
                     {p.name}

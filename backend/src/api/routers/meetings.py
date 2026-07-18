@@ -1,5 +1,8 @@
+import json
+
 from fastapi import APIRouter, Depends, BackgroundTasks, Query, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List, Optional
 
 from core.database import get_db
@@ -489,6 +492,76 @@ def get_places_by_category(
         "review_count": p.review_count or 0
     } for p in places]
 
+def _first_image(imgs) -> Optional[str]:
+    """image_urls(리스트/JSON/문자열)에서 첫 유효 이미지 하나."""
+    if not imgs:
+        return None
+    try:
+        arr = imgs if isinstance(imgs, list) else json.loads(imgs)
+    except Exception:
+        arr = [imgs] if isinstance(imgs, str) else []
+    for u in arr:
+        if isinstance(u, str) and (u.startswith("http") or u.startswith("data:")):
+            return u
+    return None
+
+
+def place_image_map(db: Session, places: list) -> dict:
+    """장소 대표 이미지 배치 조회. 우선순위: 유저 게시물 사진(place_id) → 후기 사진(가게명).
+    (사장님 등록 사진 테이블이 생기면 최우선으로 이 앞에 추가) — 없으면 프론트가 이모지 타일."""
+    ids = [p.get("id") for p in places if p.get("id")]
+    names = [p.get("name") for p in places if p.get("name")]
+    out: dict = {}
+    if not ids:
+        return out
+    try:
+        rows = db.execute(text(
+            "select place_id, image_urls from posts "
+            "where place_id = any(:ids) and image_urls is not null "
+            "order by created_at desc"
+        ), {"ids": ids}).fetchall()
+        for pid, imgs in rows:
+            if pid in out:
+                continue
+            img = _first_image(imgs)
+            if img:
+                out[pid] = img
+    except Exception as exc:
+        print(f"[place-image] posts skip: {str(exc)[:60]}")
+        db.rollback()
+    # 후기 사진(place_name 매칭) — place_id 아직 안 붙은 장소 보완
+    missing_names = [p["name"] for p in places if p.get("id") and p["id"] not in out and p.get("name")]
+    if missing_names:
+        try:
+            rows = db.execute(text(
+                "select place_name, image_urls from reviews "
+                "where place_name = any(:names) and image_urls is not null "
+                "order by created_at desc"
+            ), {"names": missing_names}).fetchall()
+            name_img = {}
+            for pname, imgs in rows:
+                if pname in name_img:
+                    continue
+                img = _first_image(imgs)
+                if img:
+                    name_img[pname] = img
+            for p in places:
+                if p.get("id") and p["id"] not in out and name_img.get(p.get("name")):
+                    out[p["id"]] = name_img[p["name"]]
+        except Exception as exc:
+            print(f"[place-image] reviews skip: {str(exc)[:60]}")
+            db.rollback()
+    return out
+
+
+def _attach_images(db: Session, places: list) -> None:
+    """places 각 항목에 image 필드 부착(있는 것만)."""
+    imap = place_image_map(db, places)
+    for p in places:
+        if p.get("id") in imap:
+            p["image"] = imap[p["id"]]
+
+
 @router.post("/api/recommend")
 def get_recommendation(
     req: schemas.RecommendRequest,
@@ -497,7 +570,10 @@ def get_recommendation(
 ):
     # 로그인 시 개인 취향 벡터로 재랭킹(미로그인이면 None → 지리/태그 추천 유지)
     user_id = current_user.id if current_user else None
-    return meeting_service.get_recommendations_direct(db, req, user_id=user_id)
+    regions = meeting_service.get_recommendations_direct(db, req, user_id=user_id)
+    for reg in (regions or []):
+        _attach_images(db, reg.get("places") or [])
+    return regions
 
 
 # 🚀 my-meetings 응답 인메모리 캐시(프로세스당) — 탭 재진입마다 전체 파이프라인 재계산 방지
@@ -604,6 +680,7 @@ def recommend_my_meetings(
                 if i < len(l):
                     out.append(l[i])
 
+    _attach_images(db, out)  # 대표 이미지(게시물/후기) 부착
     result = {"count": len(out), "places": out, "rooms": [
         {"id": c.id, "name": (c.title or "모임").replace("[모임] ", "").strip()} for c in my_comms
     ]}

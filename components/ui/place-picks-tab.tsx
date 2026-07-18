@@ -14,6 +14,38 @@ import { FilterDialog } from "@/components/ui/components/home/FilterDialog"
 // 기본은 내 위치 기준, 지역 검색(앵커)하면 모든 섹션이 그 지역 기준으로 전환.
 // (예: 집은 청구지만 "강남"을 검색하면 강남에서 내 취향/모임에 맞는 곳 추천)
 
+// 사진 없을 때 카테고리 이모지 타일 폴백
+function categoryEmoji(name?: string, cat?: string): string {
+  const s = `${name ?? ""} ${cat ?? ""}`
+  if (/피자|pizza/i.test(s)) return "🍕"
+  if (/버거|burger/i.test(s)) return "🍔"
+  if (/파스타|이탈리|스테이크|브런치|양식/i.test(s)) return "🍝"
+  if (/카페|까페|커피|coffee|cafe|디저트|케이크|빙수|마카롱/i.test(s)) return "☕"
+  if (/베이커리|제과|도넛|베이글|크루아상|크로플|빵/i.test(s)) return "🥐"
+  if (/스시|초밥|오마카세|사시미|일식/i.test(s)) return "🍣"
+  if (/라멘|우동|소바|국수|칼국수|쌀국수|팟타이|아시아|베트남|태국/i.test(s)) return "🍜"
+  if (/중식|중국|짜장|짬뽕|마라|딤섬|만두|훠궈/i.test(s)) return "🥟"
+  if (/치킨|닭강정|통닭/i.test(s)) return "🍗"
+  if (/곱창|막창|대창|삼겹|갈비|숯불|구이|정육|양꼬치|고기/i.test(s)) return "🥩"
+  if (/호프|맥주|펍|pub|포차|술집|이자카야|와인|칵테일|하이볼/i.test(s)) return "🍺"
+  if (/분식|떡볶이|김밥|순대|어묵|토스트/i.test(s)) return "🍢"
+  if (/해산물|수산|횟집|물회|조개|대게|랍스터|새우/i.test(s)) return "🦐"
+  if (/샐러드|포케/i.test(s)) return "🥗"
+  if (/국밥|설렁탕|해장국|감자탕|찌개|백반|족발|보쌈|비빔밥|불고기|한식/i.test(s)) return "🍚"
+  return "🍽️"
+}
+
+function PlaceThumb({ image, name, category, accent }: { image?: string; name?: string; category?: string; accent?: string }) {
+  if (image) {
+    return <img src={image} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0 bg-gray-100" loading="lazy" />
+  }
+  return (
+    <div className="w-12 h-12 rounded-lg flex-shrink-0 flex items-center justify-center text-xl" style={{ backgroundColor: accent || "#FEF3C7" }}>
+      {categoryEmoji(name, category)}
+    </div>
+  )
+}
+
 type PlaceRec = {
   id: number
   name: string
@@ -439,18 +471,21 @@ export function PlacePicksTab() {
                 <div
                   key={p.id}
                   onClick={() => goPlace(p.id)}
-                  className="bg-white border border-gray-100 rounded-xl p-3 cursor-pointer hover:border-[#F5A623] transition-colors"
+                  className="bg-white border border-gray-100 rounded-xl p-3 cursor-pointer hover:border-[#F5A623] transition-colors flex gap-3"
                 >
-                  <div className="font-bold text-sm text-gray-800">{p.name}</div>
-                  <div className="text-[11px] text-gray-500 flex items-center gap-1">
-                    <MapPin className="w-3 h-3" /> {p.category} · {p.address}
-                  </div>
-                  {p.reason && <div className="mt-1 text-[11px] font-bold text-[#F5A623]">✨ {p.reason}</div>}
-                  {p.social_proof && p.social_proof.count > 0 && (
-                    <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
-                      🫂 비슷한 취향 {p.social_proof.count}명이 좋아함
+                  <PlaceThumb image={(p as any).image} name={p.name} category={p.category} />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-sm text-gray-800 truncate">{p.name}</div>
+                    <div className="text-[11px] text-gray-500 flex items-center gap-1">
+                      <MapPin className="w-3 h-3 flex-shrink-0" /> <span className="truncate">{p.category} · {p.address}</span>
                     </div>
-                  )}
+                    {p.reason && <div className="mt-1 text-[11px] font-bold text-[#F5A623] truncate">✨ {p.reason}</div>}
+                    {p.social_proof && p.social_proof.count > 0 && (
+                      <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
+                        🫂 비슷한 취향 {p.social_proof.count}명이 좋아함
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -483,14 +518,17 @@ export function PlacePicksTab() {
                   <div
                     key={`${p.room_id}-${p.id}-${idx}`}
                     onClick={() => goPlace(p.id)}
-                    className="bg-white border border-gray-100 rounded-xl p-3 cursor-pointer hover:border-[#14B8A6] transition-colors"
+                    className="bg-white border border-gray-100 rounded-xl p-3 cursor-pointer hover:border-[#14B8A6] transition-colors flex gap-3"
                   >
-                    <div className="font-bold text-sm text-gray-800">{p.name}</div>
-                    <div className="text-[11px] text-gray-500 flex items-center gap-1">
-                      <MapPin className="w-3 h-3" /> {p.category} · {p.address}
-                    </div>
-                    <div className="mt-1 text-[11px] font-bold text-[#0D9488]">
-                      ✨ {p.meeting_reason}
+                    <PlaceThumb image={(p as any).image} name={p.name} category={p.category} accent="#CCFBF1" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-sm text-gray-800 truncate">{p.name}</div>
+                      <div className="text-[11px] text-gray-500 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 flex-shrink-0" /> <span className="truncate">{p.category} · {p.address}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] font-bold text-[#0D9488] truncate">
+                        ✨ {p.meeting_reason}
+                      </div>
                     </div>
                   </div>
                 ))}
