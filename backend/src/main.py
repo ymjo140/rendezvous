@@ -63,7 +63,7 @@ async def root():
 #     print("?좑툘 Events ?쇱슦???놁쓬")
 
 # 2. Routers ?대뜑 ?곌껐
-from api.routers import sync, auth, users, coins, meetings, community, chat, posts, system, offers, merchant, hotdeals, reservations, game, moderation, admin, feedback, social, groups, polls, push, splits
+from api.routers import sync, auth, users, coins, meetings, community, chat, posts, system, offers, merchant, hotdeals, reservations, game, moderation, admin, feedback, social, groups, polls, push, splits, import_naver
 
 # ??[?섏젙] ?뚯씪 ?덉뿉 ?대? '/api/...' 寃쎈줈媛 ?덈뒗 ?좊뱾? prefix瑜?類띾땲??
 app.include_router(auth.router, tags=["auth"])
@@ -78,6 +78,7 @@ app.include_router(chat.router, tags=["chat"])
 app.include_router(polls.router, tags=["polls"])  # 채팅방 투표 카드(장소/일정 조율)
 app.include_router(push.router, tags=["push"])  # FCM 푸시 토큰 등록
 app.include_router(splits.router, tags=["splits"])  # 모임 예약금 분담 결제
+app.include_router(import_naver.router, tags=["import"])  # 네이버 지도 저장 리스트 임포트
 # ?뙚 以묒슂: ?댁젣 meetings.py媛 '/api/events' ?붿껌??泥섎━?섍쾶 ?⑸땲??
 app.include_router(meetings.router, tags=["meetings"]) 
 app.include_router(community.router, tags=["community"])

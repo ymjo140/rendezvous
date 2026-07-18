@@ -138,6 +138,9 @@ class Place(Base):
     # 검색 최적화용 통합 필드
     search_keywords = Column(JSON, default=[])  # [name, cuisine, vibe tags 통합]
 
+    # 네이버 장소 id — 저장 리스트 임포트 시 같은 가게를 같은 place로 수렴시키는 키
+    naver_sid = Column(String, nullable=True, index=True)
+
 class MeetingLog(Base):
     __tablename__ = "meeting_logs"
     id = Column(String, primary_key=True, default=generate_uuid)

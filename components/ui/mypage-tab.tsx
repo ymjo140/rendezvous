@@ -21,6 +21,7 @@ import {
 import { CalendarTab } from "@/components/ui/calendar-tab"
 
 import { PreferenceModal } from "@/components/ui/preference-modal"
+import { NaverImportSheet } from "@/components/ui/naver-import-sheet"
 import { FriendsPanel } from "@/components/ui/components/friends/FriendsPanel"
 import { CashWalletCard } from "@/components/ui/components/wallet/CashWalletCard"
 import { GameProfileCard } from "@/components/ui/components/game/GameProfileCard"
@@ -241,6 +242,7 @@ export function MyPageTab() {
   }
   const [saveFolders, setSaveFolders] = useState<SaveFolder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(false);
+  const [naverImportOpen, setNaverImportOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<SaveFolder | null>(null);
   const [folderItems, setFolderItems] = useState<SavedItem[]>([]);
   const [folderItemsLoading, setFolderItemsLoading] = useState(false);
@@ -917,13 +919,26 @@ export function MyPageTab() {
                   ) : (
                     /* 폴더 목록 모드 */
                     <>
-                        {/* 새 폴더 만들기 */}
-                        <button
-                            onClick={handleCreateFolder}
-                            className="w-full flex items-center justify-center gap-2 bg-white p-3 rounded-2xl border-2 border-dashed border-gray-200 text-gray-500 hover:border-[#F5A623] hover:text-[#F5A623] transition-colors font-bold text-sm"
-                        >
-                            <Plus className="w-4 h-4" /> 새 폴더 만들기
-                        </button>
+                        {/* 새 폴더 만들기 / 네이버 가져오기 */}
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleCreateFolder}
+                                className="flex-1 flex items-center justify-center gap-2 bg-white p-3 rounded-2xl border-2 border-dashed border-gray-200 text-gray-500 hover:border-[#F5A623] hover:text-[#F5A623] transition-colors font-bold text-sm"
+                            >
+                                <Plus className="w-4 h-4" /> 새 폴더
+                            </button>
+                            <button
+                                onClick={() => setNaverImportOpen(true)}
+                                className="flex-1 flex items-center justify-center gap-1.5 bg-white p-3 rounded-2xl border-2 border-dashed border-[#03C75A]/40 text-[#03C75A] hover:border-[#03C75A] transition-colors font-bold text-sm"
+                            >
+                                🧡 네이버 맛집 가져오기
+                            </button>
+                        </div>
+                        <NaverImportSheet
+                            open={naverImportOpen}
+                            onClose={() => setNaverImportOpen(false)}
+                            onImported={fetchSaveFolders}
+                        />
                         {foldersLoading ? (
                             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
                                 <Loader2 className="w-6 h-6 animate-spin mx-auto text-amber-500 mb-2" />
