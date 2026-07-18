@@ -321,7 +321,8 @@ def commit_import(
         name = f"{base} ({n})"
         n += 1
 
-    folder = models.SaveFolder(user_id=user.id, name=name, icon="🧡", color="#03C75A")
+    from api.routers.saves import pick_folder_color
+    folder = models.SaveFolder(user_id=user.id, name=name, icon="🧡", color=pick_folder_color(db, user.id))
     db.add(folder)
     db.flush()
 

@@ -23,6 +23,7 @@ type ListDetail = {
   items: Entry[]
   like_count: number
   comment_count: number
+  save_count?: number
   is_liked: boolean
 }
 
@@ -55,6 +56,7 @@ export default function CuratorListPage() {
   const [myFolders, setMyFolders] = useState<{ id: number; name: string; icon: string; item_count: number; is_default: boolean }[] | null>(null)
   const [saveBusy, setSaveBusy] = useState(false)
   const [savedTo, setSavedTo] = useState<string | null>(null)
+  const [saveCount, setSaveCount] = useState(0)
 
   useEffect(() => {
     if (!listId) return
@@ -71,6 +73,7 @@ export default function CuratorListPage() {
         if (d) {
           setLiked(!!d.is_liked)
           setLikeCount(d.like_count || 0)
+          setSaveCount(d.save_count || 0)
         }
         setComments(c.items || [])
       } catch {
@@ -133,6 +136,7 @@ export default function CuratorListPage() {
       if (!res.ok) { alert(j?.detail || "담기에 실패했어요."); return }
       setSaveOpen(false)
       setMyFolders(null) // 다음에 열 때 새 폴더 반영되게 갱신
+      if (typeof j.save_count === "number") setSaveCount(j.save_count)
       setSavedTo(`'${j.folder_name}' 폴더에 ${j.added}곳을 담았어요${j.skipped ? ` (이미 있던 ${j.skipped}곳 제외)` : ""}`)
       setTimeout(() => setSavedTo(null), 3500)
     } catch {
@@ -241,7 +245,7 @@ export default function CuratorListPage() {
             className="flex items-center gap-1.5 h-9 px-4 rounded-full font-bold text-sm bg-[#14B8A6] text-white hover:bg-[#0d9488] transition-colors"
           >
             <FolderPlus className="w-4 h-4" />
-            담기
+            담기{saveCount > 0 ? ` ${saveCount}` : ""}
           </button>
           <div className="flex items-center gap-1 text-sm text-gray-400">
             <MapPin className="w-4 h-4" />
@@ -252,6 +256,9 @@ export default function CuratorListPage() {
             {comments.length}
           </div>
         </div>
+        {saveCount > 0 && (
+          <div className="mt-2 text-xs text-gray-500 font-medium">📥 {saveCount}명이 이 리스트를 담아갔어요</div>
+        )}
       </div>
 
       {/* 랭킹 리스트 */}

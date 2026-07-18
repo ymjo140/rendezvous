@@ -85,6 +85,32 @@ class DirectShareRequest(BaseModel):
 
 # === Helper Functions ===
 
+# 폴더 자동 색 배정 — 지도 핀에서 폴더를 색으로 구별하기 위해 서로 다른 색을 돌려가며 부여
+FOLDER_PALETTE = [
+    "#F59E0B",  # 앰버
+    "#EF4444",  # 레드
+    "#8B5CF6",  # 퍼플
+    "#10B981",  # 에메랄드
+    "#EC4899",  # 핑크
+    "#3B82F6",  # 블루
+    "#84CC16",  # 라임
+    "#F97316",  # 오렌지
+    "#06B6D4",  # 시안
+    "#A855F7",  # 바이올렛
+]
+DEFAULT_FOLDER_COLOR = "#7C3AED"
+
+
+def pick_folder_color(db: Session, user_id: int) -> str:
+    """해당 유저 폴더들이 아직 안 쓰는 팔레트 색 우선, 다 쓰면 개수 기준 순환."""
+    used = {c[0] for c in db.query(models.SaveFolder.color).filter(models.SaveFolder.user_id == user_id).all()}
+    for c in FOLDER_PALETTE:
+        if c not in used:
+            return c
+    cnt = db.query(models.SaveFolder).filter(models.SaveFolder.user_id == user_id).count()
+    return FOLDER_PALETTE[cnt % len(FOLDER_PALETTE)]
+
+
 def format_datetime(dt: datetime) -> str:
     if not dt:
         return ""
@@ -164,11 +190,13 @@ def create_folder(
     if not req.name.strip():
         raise HTTPException(status_code=400, detail="폴더 이름이 필요합니다.")
     
+    # 프론트가 기본색을 그대로 보내면 팔레트에서 자동 배정(지도 핀 색 구별)
+    color = req.color if req.color and req.color != DEFAULT_FOLDER_COLOR else pick_folder_color(db, current_user.id)
     folder = models.SaveFolder(
         user_id=current_user.id,
         name=req.name.strip(),
         icon=req.icon,
-        color=req.color
+        color=color
     )
     
     db.add(folder)
@@ -258,6 +286,42 @@ def delete_folder(
     db.commit()
     
     return {"message": "폴더가 삭제되었습니다."}
+
+
+@router.get("/api/me/map-places")
+def my_map_places(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """홈 지도 폴더 핀용 — 내 폴더별(장소 좌표 포함) 목록. 프론트가 뷰포트 컬링."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    folders = db.query(models.SaveFolder)\
+        .filter(models.SaveFolder.user_id == current_user.id)\
+        .order_by(desc(models.SaveFolder.is_default), models.SaveFolder.created_at)\
+        .all()
+    if not folders:
+        return {"folders": []}
+    rows = (
+        db.query(models.SavedItem.folder_id, models.Place.id, models.Place.name, models.Place.lat, models.Place.lng)
+        .join(models.Place, models.Place.id == models.SavedItem.place_id)
+        .filter(models.SavedItem.folder_id.in_([f.id for f in folders]))
+        .all()
+    )
+    by_folder = {}
+    for fid, pid, pname, lat, lng in rows:
+        by_folder.setdefault(fid, []).append({"id": pid, "name": pname, "lat": lat, "lng": lng})
+    return {"folders": [
+        {
+            "id": f.id,
+            "name": f.name,
+            "icon": f.icon,
+            "color": f.color or DEFAULT_FOLDER_COLOR,
+            "count": len(by_folder.get(f.id, [])),
+            "places": by_folder.get(f.id, []),
+        }
+        for f in folders if by_folder.get(f.id)
+    ]}
 
 
 # === 저장 아이템 API ===

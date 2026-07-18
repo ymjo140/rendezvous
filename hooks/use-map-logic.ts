@@ -81,6 +81,66 @@ export const useMapLogic = ({
     const centeredRef = useRef(false); // 내 저장 위치로 최초 중심 이동 완료 여부
     const polylinesRef = useRef<any[]>([]);
     const timeMarkersRef = useRef<any[]>([]);
+    const folderPinsRef = useRef<any[]>([]);      // 저장 폴더 색상 핀
+    const folderDataRef = useRef<any[]>([]);      // 선택된 폴더(장소 좌표 포함)
+    const folderRenderRef = useRef<() => void>(() => {});
+
+    // 💾 저장 폴더 색상 핀 — 선택된 폴더의 가게를 폴더 색 점으로 표시(뷰포트 컬링 + 상한)
+    const renderFolderPins = useCallback(() => {
+        const map = mapRef.current;
+        if (!map || !window.naver?.maps) return;
+        folderPinsRef.current.forEach((m: any) => m.setMap(null));
+        folderPinsRef.current = [];
+        const folders = folderDataRef.current;
+        if (!folders.length) return;
+        const b = map.getBounds();
+        const sw = b.getMin ? b.getMin() : b.getSW();
+        const ne = b.getMax ? b.getMax() : b.getNE();
+        const zoom = map.getZoom();
+        const CAP = 250;      // 성능 상한(대형 임포트 폴더 대비)
+        const LABEL_CAP = 40; // 이름표는 소수만(겹침 방지)
+        let n = 0;
+        let labels = 0;
+        folders.forEach((f: any) => {
+            const color = f.color || "#7C3AED";
+            (f.places || []).forEach((p: any) => {
+                if (n >= CAP || !p.lat || !p.lng) return;
+                if (p.lat < sw.lat() || p.lat > ne.lat() || p.lng < sw.lng() || p.lng > ne.lng()) return;
+                n++;
+                const showLabel = zoom >= 16 && labels < LABEL_CAP;
+                if (showLabel) labels++;
+                const labelHtml = showLabel
+                    ? `<div style="position:absolute;left:0;bottom:9px;transform:translateX(-50%);background:#fff;border:1.5px solid ${color};border-radius:9px;padding:1px 6px;font-size:9px;font-weight:700;color:#374151;white-space:nowrap;max-width:88px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 3px rgba(0,0,0,0.15);">${escapeHtml(p.name)}</div>`
+                    : "";
+                const marker = new window.naver.maps.Marker({
+                    position: new window.naver.maps.LatLng(p.lat, p.lng),
+                    map,
+                    zIndex: 60,
+                    title: p.name,
+                    icon: {
+                        content: `<div style="position:relative;width:0;height:0;cursor:pointer;">
+                            <div style="position:absolute;left:0;top:0;transform:translate(-50%,-50%);width:13px;height:13px;background:${color};border:2.5px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>
+                            ${labelHtml}
+                        </div>`,
+                        anchor: new window.naver.maps.Point(0, 0),
+                    },
+                });
+                window.naver.maps.Event.addListener(marker, "click", () => router.push(`/places/${p.id}`));
+                folderPinsRef.current.push(marker);
+            });
+        });
+    }, [router]);
+    folderRenderRef.current = renderFolderPins;
+
+    // home-tab이 폴더 선택을 바꾸면 이벤트로 전달받아 다시 그림
+    useEffect(() => {
+        const onPins = (e: any) => {
+            folderDataRef.current = e?.detail?.folders || [];
+            folderRenderRef.current();
+        };
+        window.addEventListener("map:folder-pins", onPins);
+        return () => window.removeEventListener("map:folder-pins", onPins);
+    }, []);
 
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
         const R = 6371e3;
@@ -149,6 +209,7 @@ export const useMapLogic = ({
                     window.naver.maps.Event.addListener(mapRef.current, "idle", () => {
                         const map = mapRef.current;
                         if (!map) return;
+                        folderRenderRef.current(); // 저장 폴더 핀도 뷰포트 기준 재렌더
                         const clearNearby = () => {
                             nearbyMarkersRef.current.forEach((m: any) => m.setMap(null));
                             nearbyMarkersRef.current = [];

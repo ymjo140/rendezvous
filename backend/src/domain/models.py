@@ -601,6 +601,16 @@ class ListLike(Base):
     __table_args__ = (UniqueConstraint("folder_id", "user_id", name="uq_list_like"),)
 
 
+class ListSave(Base):
+    """공개 맛집 리스트 '담기' 기록 — 담은 사람 수 집계(1인 1회)."""
+    __tablename__ = "list_saves"
+    id = Column(Integer, primary_key=True, index=True)
+    folder_id = Column(Integer, ForeignKey("save_folders.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+    __table_args__ = (UniqueConstraint("folder_id", "user_id", name="uq_list_save"),)
+
+
 class ListComment(Base):
     """공개 맛집 리스트 댓글 — '친구 추천으로 갔는데 최고' 같은 반응."""
     __tablename__ = "list_comments"

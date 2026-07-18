@@ -240,6 +240,7 @@ def public_list_detail(folder_id: int, user: Optional[models.User] = Depends(get
         )
     like_count = db.query(models.ListLike).filter(models.ListLike.folder_id == f.id).count()
     comment_count = db.query(models.ListComment).filter(models.ListComment.folder_id == f.id).count()
+    save_count = db.query(models.ListSave).filter(models.ListSave.folder_id == f.id).count()
     is_liked = bool(user and db.query(models.ListLike).filter_by(folder_id=f.id, user_id=user.id).first())
     return {
         "id": f.id,
@@ -251,6 +252,7 @@ def public_list_detail(folder_id: int, user: Optional[models.User] = Depends(get
         "items": entries,
         "like_count": like_count,
         "comment_count": comment_count,
+        "save_count": save_count,
         "is_liked": is_liked,
     }
 
@@ -538,7 +540,8 @@ def save_list_to_my_folders(
         ).first():
             name = f"{base} ({n})"
             n += 1
-        target = models.SaveFolder(user_id=user.id, name=name, icon=src.icon or "📁", color="#7C3AED")
+        from api.routers.saves import pick_folder_color
+        target = models.SaveFolder(user_id=user.id, name=name, icon=src.icon or "📁", color=pick_folder_color(db, user.id))
         db.add(target)
         db.flush()
 
@@ -559,12 +562,17 @@ def save_list_to_my_folders(
         ))
         added += 1
     target.item_count = len(have)
+    # 담은 사람 수 집계 — 같은 사람이 여러 번 담아도 1명
+    if not db.query(models.ListSave).filter_by(folder_id=src.id, user_id=user.id).first():
+        db.add(models.ListSave(folder_id=src.id, user_id=user.id))
     db.commit()
+    save_count = db.query(models.ListSave).filter(models.ListSave.folder_id == src.id).count()
     return {
         "folder_id": target.id,
         "folder_name": target.name,
         "added": added,
         "skipped": len(items) - added,
+        "save_count": save_count,
     }
 
 

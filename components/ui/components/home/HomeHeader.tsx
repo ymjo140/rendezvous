@@ -1,5 +1,5 @@
 ﻿import React from "react"
-import { Search, Filter, X } from "lucide-react"
+import { Search, Filter, X, Bookmark } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -12,6 +12,8 @@ type HomeHeaderProps = {
   selectedFilters: Record<string, string[]>
   currentFiltersLabel?: string
   onRemoveTag: (tag: string) => void
+  onOpenSavedLists?: () => void
+  savedListCount?: number
 }
 
 export const HomeHeader = ({
@@ -22,6 +24,8 @@ export const HomeHeader = ({
   selectedFilters,
   currentFiltersLabel,
   onRemoveTag,
+  onOpenSavedLists,
+  savedListCount = 0,
 }: HomeHeaderProps) => {
   return (
     <div className="absolute top-4 left-4 right-4 z-10">
@@ -60,6 +64,26 @@ export const HomeHeader = ({
               {tag} <X className="w-3 h-3 ml-1" />
             </Badge>
           ))}
+        {onOpenSavedLists && (
+          <Button
+            variant="outline"
+            size="sm"
+            className={`rounded-full shadow-sm ml-auto flex-shrink-0 ${
+              savedListCount > 0
+                ? "bg-[#14B8A6] border-[#14B8A6] text-white hover:bg-[#0d9488] hover:text-white"
+                : "bg-white border-gray-200 text-gray-600"
+            }`}
+            onClick={onOpenSavedLists}
+          >
+            <Bookmark className="w-3 h-3 mr-1" />
+            저장 리스트
+            {savedListCount > 0 && (
+              <span className="ml-1 bg-white/90 text-[#0d9488] rounded-full text-[10px] font-bold px-1.5">
+                {savedListCount}
+              </span>
+            )}
+          </Button>
+        )}
       </div>
     </div>
   )

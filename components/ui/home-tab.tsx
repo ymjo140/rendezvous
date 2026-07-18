@@ -71,6 +71,28 @@ export function HomeTab() {
   const [nearbyLoot, setNearbyLoot] = useState<any>(null)
   const [interactionLoading, setInteractionLoading] = useState(false)
 
+  // 💾 저장 리스트 지도 핀 — 폴더 다중 선택(localStorage 유지) → use-map-logic이 색상 핀 렌더
+  const [savedSheetOpen, setSavedSheetOpen] = useState(false)
+  const [mapFolders, setMapFolders] = useState<{ id: number; name: string; icon: string; color: string; count: number; places: any[] }[]>([])
+  const [selFolderIds, setSelFolderIds] = useState<number[]>([])
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("map:folders")
+      if (raw) setSelFolderIds(JSON.parse(raw))
+    } catch { /* noop */ }
+    fetchWithAuth(`/api/me/map-places`)
+      .then((r) => (r.ok ? r.json() : { folders: [] }))
+      .then((d) => setMapFolders(d.folders || []))
+      .catch(() => {})
+  }, [])
+  useEffect(() => {
+    const sel = mapFolders.filter((f) => selFolderIds.includes(f.id))
+    window.dispatchEvent(new CustomEvent("map:folder-pins", { detail: { folders: sel } }))
+    try { localStorage.setItem("map:folders", JSON.stringify(selFolderIds)) } catch { /* noop */ }
+  }, [mapFolders, selFolderIds])
+  const selFolders = mapFolders.filter((f) => selFolderIds.includes(f.id))
+  const selPlaceCount = selFolders.reduce((s, f) => s + f.count, 0)
+
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
@@ -421,9 +443,94 @@ export function HomeTab() {
         selectedFilters={selectedFilters}
         currentFiltersLabel={currentFilters?.label}
         onRemoveTag={removeTag}
+        onOpenSavedLists={() => {
+          setSavedSheetOpen(true)
+          // 시트 열 때 최신화(새 폴더/임포트 반영)
+          fetchWithAuth(`/api/me/map-places`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => { if (d) setMapFolders(d.folders || []) })
+            .catch(() => {})
+        }}
+        savedListCount={selFolderIds.length}
       />
 
       <div id="map" className="w-full h-full bg-gray-200"></div>
+
+      {/* 💾 선택된 저장 리스트 범례 */}
+      {selFolders.length > 0 && (
+        <div className="absolute left-3 bottom-44 z-10 pointer-events-none bg-white/95 rounded-xl shadow-md px-3 py-2 space-y-1">
+          {selFolders.slice(0, 5).map((f) => (
+            <div key={f.id} className="flex items-center gap-1.5 text-[11px] font-bold text-gray-700">
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: f.color }} />
+              <span className="max-w-[110px] truncate">{f.name}</span>
+              <span className="text-gray-400 font-normal">({f.count})</span>
+            </div>
+          ))}
+          {selFolders.length > 5 && (
+            <div className="text-[10px] text-gray-400">외 {selFolders.length - 5}개</div>
+          )}
+        </div>
+      )}
+
+      {/* 💾 저장 리스트 선택 바텀시트 */}
+      {savedSheetOpen && (
+        <div className="absolute inset-0 z-50 flex items-end" onClick={() => setSavedSheetOpen(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="relative w-full bg-white rounded-t-3xl max-h-[70%] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+              <div className="font-bold text-gray-900">지도에 표시할 리스트</div>
+              {selFolderIds.length > 0 && (
+                <button onClick={() => setSelFolderIds([])} className="text-xs font-bold text-[#14B8A6]">
+                  전체 해제
+                </button>
+              )}
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-2">
+              {mapFolders.length === 0 ? (
+                <div className="py-8 text-center text-sm text-gray-400">
+                  저장된 장소가 있는 폴더가 없어요.<br />마이페이지에서 맛집을 저장하거나 가져와 보세요!
+                </div>
+              ) : (
+                mapFolders.map((f) => {
+                  const on = selFolderIds.includes(f.id)
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() =>
+                        setSelFolderIds((prev) => (on ? prev.filter((x) => x !== f.id) : [...prev, f.id]))
+                      }
+                      className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-left transition-colors ${
+                        on ? "border-transparent" : "border-gray-100"
+                      }`}
+                      style={on ? { backgroundColor: `${f.color}1A`, borderColor: f.color } : undefined}
+                    >
+                      <span className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: f.color }} />
+                      <span className="min-w-0 flex-1">
+                        <span className={`block text-sm truncate ${on ? "font-bold text-gray-800" : "text-gray-600"}`}>
+                          {f.icon} {f.name}
+                        </span>
+                        <span className="block text-xs text-gray-400">{f.count}곳</span>
+                      </span>
+                      {on && <span className="text-sm font-bold" style={{ color: f.color }}>✓</span>}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+            <div className="p-4 border-t border-gray-100">
+              <button
+                onClick={() => setSavedSheetOpen(false)}
+                className="w-full h-11 rounded-xl bg-[#14B8A6] hover:bg-[#0d9488] text-white font-bold text-sm"
+              >
+                {selFolderIds.length > 0 ? `지도에 표시 (${selFolderIds.length}개 리스트 · ${selPlaceCount}곳)` : "닫기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ActionButtons
         nearbyLoot={nearbyLoot}
