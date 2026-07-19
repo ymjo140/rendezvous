@@ -43,7 +43,15 @@ const CTX_CHIPS = [
   { tag: "family", label: "가족", emoji: "🍲" },
   { tag: "special", label: "기념일", emoji: "🎂" },
 ]
-const REGION_PRESETS = ["성수", "홍대", "강남", "연남", "이태원", "망원", "을지로", "여의도"]
+type Anchor = { name: string; lat: number; lng: number }
+const QUICK_REGIONS: Anchor[] = [
+  { name: "강남", lat: 37.498, lng: 127.0276 },
+  { name: "홍대", lat: 37.5572, lng: 126.9245 },
+  { name: "성수", lat: 37.5446, lng: 127.0559 },
+  { name: "을지로", lat: 37.5663, lng: 126.9925 },
+  { name: "잠실", lat: 37.5133, lng: 127.1001 },
+]
+type PlaceHit = { id: number; name: string; cuisine: string; category: string; address: string; rating: number; review_count: number; image: string | null; dist_km: number | null }
 const FOOD_CHIPS = ["한식", "일식", "양식", "중식", "카페", "빵", "술집", "분식"]
 const FOOD_EMOJI: Record<string, string> = { 한식: "🍜", 일식: "🍣", 양식: "🍝", 중식: "🥟", 카페: "☕", 빵: "🥐", 술집: "🍺", 분식: "🍢" }
 const FOOD_MATCH: Record<string, string[]> = {
@@ -91,12 +99,14 @@ export default function HomeNextPage() {
   // 필터(중복 선택) — 시트에서 고르고 적용
   const [ctxs, setCtxs] = useState<string[]>([])
   const [foods, setFoods] = useState<string[]>([])
-  const [regions, setRegions] = useState<string[]>([])
+  const [anchor, setAnchor] = useState<Anchor | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [draftCtxs, setDraftCtxs] = useState<string[]>([])
   const [draftFoods, setDraftFoods] = useState<string[]>([])
-  const [draftRegions, setDraftRegions] = useState<string[]>([])
+  const [draftAnchor, setDraftAnchor] = useState<Anchor | null>(null)
   const [regionInput, setRegionInput] = useState("")
+  const [regionResults, setRegionResults] = useState<{ title: string; address?: string; lat: number; lng: number }[]>([])
+  const regionTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 랭킹 3줄
   const [hotPlaces, setHotPlaces] = useState<{ name: string; place_id?: number }[]>([])
@@ -111,6 +121,7 @@ export default function HomeNextPage() {
 
   // 필터 결과 — 필터가 걸리면 화면 데이터가 아니라 서버(전체 공개 리스트)를 검색
   const [filterResults, setFilterResults] = useState<ListCard[] | null>(null)
+  const [placeResults, setPlaceResults] = useState<PlaceHit[] | null>(null)
   const [filterLoading, setFilterLoading] = useState(false)
 
   useEffect(() => {
@@ -146,22 +157,51 @@ export default function HomeNextPage() {
     return () => { alive = false }
   }, [])
 
-  // 필터 활성 시 서버 검색 (다중 태그 OR + 음식 필터)
+  // 필터 활성 시 서버 검색 — 전체 장소 DB(12만+) + 공개 리스트 동시
   useEffect(() => {
-    if (ctxs.length + foods.length + regions.length === 0) { setFilterResults(null); return }
+    if (ctxs.length + foods.length + (anchor ? 1 : 0) === 0) { setFilterResults(null); setPlaceResults(null); return }
     let alive = true
     setFilterLoading(true)
+    // ① 음식점 (전체 DB, 지역=좌표 반경)
+    const pp = new URLSearchParams()
+    if (anchor) { pp.set("lat", String(anchor.lat)); pp.set("lng", String(anchor.lng)); pp.set("radius_km", "2") }
+    if (ctxs.length) pp.set("tags", ctxs.join(","))
+    if (foods.length) pp.set("foods", foods.join(","))
+    const p1 = fetchWithAuth(`/api/home/search-places?${pp.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: any) => { if (alive) setPlaceResults(d?.items || []) })
+      .catch(() => { if (alive) setPlaceResults([]) })
+    // ② 리스트 (공개 리스트)
     const sp = new URLSearchParams()
     if (ctxs.length) sp.set("tags", ctxs.join(","))
     if (foods.length) sp.set("foods", foods.join(","))
-    if (regions.length) sp.set("regions", regions.join(","))
-    fetchWithAuth(`/api/home/search?${sp.toString()}`)
+    if (anchor) sp.set("regions", anchor.name)
+    const p2 = fetchWithAuth(`/api/home/search?${sp.toString()}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => { if (alive) setFilterResults(d?.items || []) })
       .catch(() => { if (alive) setFilterResults([]) })
-      .finally(() => { if (alive) setFilterLoading(false) })
+    Promise.allSettled([p1, p2]).then(() => { if (alive) setFilterLoading(false) })
     return () => { alive = false }
-  }, [ctxs, foods, regions])
+  }, [ctxs, foods, anchor])
+
+  // 지역 자동완성 — 기존 /api/geocode 방식 그대로
+  const onRegionInput = (v: string) => {
+    setRegionInput(v)
+    if (regionTimer.current) clearTimeout(regionTimer.current)
+    if (!v.trim() || v.trim().length < 2) { setRegionResults([]); return }
+    regionTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetchWithAuth(`/api/geocode?query=${encodeURIComponent(v.trim())}`)
+        setRegionResults(res.ok ? ((await res.json()) as any[]).slice(0, 5) : [])
+      } catch { setRegionResults([]) }
+    }, 350)
+  }
+  const pickDraftRegion = (it: { title?: string; lat: number; lng: number }, name?: string) => {
+    if (!it?.lat || !it?.lng) return
+    setDraftAnchor({ name: (name || it.title || "선택 지역").replace(/^서울\S* /, ""), lat: it.lat, lng: it.lng })
+    setRegionInput("")
+    setRegionResults([])
+  }
 
   const crewNames = useMemo(() => {
     const names: string[] = []
@@ -194,15 +234,9 @@ export default function HomeNextPage() {
     [feed.racks, ctxs]
   )
 
-  const filterCount = ctxs.length + foods.length + regions.length
-  const openSheet = () => { setDraftCtxs(ctxs); setDraftFoods(foods); setDraftRegions(regions); setRegionInput(""); setSheetOpen(true) }
-  const applySheet = () => { setCtxs(draftCtxs); setFoods(draftFoods); setRegions(draftRegions); setSheetOpen(false) }
-  const addRegion = (r: string) => {
-    const v = r.trim().replace(/\s+/g, "")
-    if (!v) return
-    if (!draftRegions.includes(v)) setDraftRegions([...draftRegions, v])
-    setRegionInput("")
-  }
+  const filterCount = ctxs.length + foods.length + (anchor ? 1 : 0)
+  const openSheet = () => { setDraftCtxs(ctxs); setDraftFoods(foods); setDraftAnchor(anchor); setRegionInput(""); setRegionResults([]); setSheetOpen(true) }
+  const applySheet = () => { setCtxs(draftCtxs); setFoods(draftFoods); setAnchor(draftAnchor); setSheetOpen(false) }
 
   const rankRows = [
     { label: "급상승", icon: <Flame className="h-3.5 w-3.5 text-rose-500" />, items: hotPlaces.map((p) => ({ name: p.name, go: p.place_id ? () => router.push(`/places/${p.place_id}`) : undefined })), goAll: () => router.push("/trending") },
@@ -277,11 +311,11 @@ export default function HomeNextPage() {
         {/* 적용된 필터 칩 (탭해서 제거) */}
         {filterCount > 0 && (
           <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
-            {regions.map((r) => (
-              <button key={r} onClick={() => setRegions(regions.filter((x) => x !== r))} className="flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[11.5px] font-medium text-amber-800">
-                📍 {r}<X className="h-3 w-3" />
+            {anchor && (
+              <button onClick={() => setAnchor(null)} className="flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[11.5px] font-medium text-amber-800">
+                📍 {anchor.name}<X className="h-3 w-3" />
               </button>
-            ))}
+            )}
             {ctxs.map((t) => {
               const c = CTX_CHIPS.find((x) => x.tag === t)
               return (
@@ -329,14 +363,47 @@ export default function HomeNextPage() {
           </div>
           {filterLoading ? (
             <div className="py-8 text-center text-[12px] text-gray-300">찾는 중...</div>
-          ) : !filterResults || filterResults.length === 0 ? (
+          ) : (placeResults?.length || 0) + (filterResults?.length || 0) === 0 ? (
             <div className="rounded-2xl border-2 border-dashed border-gray-200 py-8 text-center">
-              <p className="text-[13px] text-gray-400">이 조합의 리스트가 아직 없어요.</p>
-              <p className="mt-1 text-[11px] text-gray-300">필터를 줄이거나, 우리 크루가 첫 리스트의 주인이 될 기회예요!</p>
+              <p className="text-[13px] text-gray-400">이 조합의 결과가 아직 없어요.</p>
+              <p className="mt-1 text-[11px] text-gray-300">필터를 줄여보세요.</p>
             </div>
           ) : (
+            <>
+            {/* 음식점 — 전체 장소 DB(12만+) 검색 결과 */}
+            {(placeResults?.length || 0) > 0 && (
+              <div className="mb-3 space-y-2">
+                {placeResults!.map((p) => (
+                  <article
+                    key={p.id}
+                    onClick={() => router.push(`/places/${p.id}`)}
+                    className="flex cursor-pointer items-center gap-3 rounded-2xl border border-gray-100 p-3"
+                  >
+                    {p.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.image} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />
+                    ) : (
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gray-50 text-xl">{catEmoji(`${p.cuisine} ${p.category} ${p.name}`)}</span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <b className="block truncate text-[13px] font-semibold text-gray-900">{p.name}</b>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400">
+                        <span className="shrink-0">{p.cuisine || p.category || "맛집"}</span>
+                        {p.dist_km !== null && <span className="shrink-0">· {p.dist_km}km</span>}
+                        {p.rating > 0 && <span className="shrink-0 font-medium text-amber-600">★ {p.rating.toFixed(1)}</span>}
+                        {p.review_count > 0 && <span className="shrink-0">리뷰 {p.review_count}</span>}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+                  </article>
+                ))}
+              </div>
+            )}
+            {(filterResults?.length || 0) > 0 && (
+              <p className="mb-1.5 mt-1 text-[12px] font-semibold text-gray-500">믿을 리스트</p>
+            )}
             <div className="space-y-2">
-              {filterResults.map((it) => (
+              {(filterResults || []).map((it) => (
                 <article
                   key={it.folder_id}
                   onClick={() => router.push(`/lists/${it.folder_id}`)}
@@ -358,6 +425,7 @@ export default function HomeNextPage() {
                 </article>
               ))}
             </div>
+            </>
           )}
         </section>
       )}
@@ -486,27 +554,46 @@ export default function HomeNextPage() {
               <button onClick={() => setSheetOpen(false)} className="rounded-full p-1 text-gray-400"><X className="h-5 w-5" /></button>
             </div>
 
-            <p className="mb-2 text-[12px] font-semibold text-gray-500">지역 <span className="font-normal text-gray-400">· 중복 선택 · 직접 입력 가능</span></p>
-            <div className="mb-2 flex gap-2">
-              <input
-                value={regionInput}
-                onChange={(e) => setRegionInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") addRegion(regionInput) }}
-                placeholder="동네·역 이름 (예: 성수동, 판교)"
-                className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[13px] focus:border-amber-400 focus:outline-none"
-              />
-              <button onClick={() => addRegion(regionInput)} className="shrink-0 rounded-xl border border-gray-200 px-3 py-2 text-[13px] font-semibold text-gray-600">추가</button>
+            <p className="mb-2 text-[12px] font-semibold text-gray-500">지역 <span className="font-normal text-gray-400">· 검색해서 선택</span></p>
+            <div className="relative mb-2">
+              <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                <input
+                  value={regionInput}
+                  onChange={(e) => onRegionInput(e.target.value)}
+                  placeholder="지역 검색 (강남, 성수동, 홍대입구역…)"
+                  className="min-w-0 flex-1 bg-transparent text-[13px] focus:outline-none"
+                />
+                {regionInput && (
+                  <button onClick={() => { setRegionInput(""); setRegionResults([]) }}><X className="h-3.5 w-3.5 text-gray-300" /></button>
+                )}
+              </div>
+              {regionResults.length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg">
+                  {regionResults.map((it, i) => (
+                    <button key={i} onClick={() => pickDraftRegion(it)} className="block w-full border-b border-gray-50 px-3 py-2.5 text-left last:border-0 hover:bg-gray-50">
+                      <div className="truncate text-xs font-bold text-gray-800">{it.title}</div>
+                      {it.address && <div className="truncate text-[10px] text-gray-400">{it.address}</div>}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+            {draftAnchor && (
+              <button onClick={() => setDraftAnchor(null)} className="mb-2 inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-bold text-white" style={{ backgroundColor: BRAND }}>
+                📍 {draftAnchor.name} <X className="h-3 w-3" />
+              </button>
+            )}
             <div className="flex flex-wrap gap-2">
-              {REGION_PRESETS.concat(draftRegions.filter((r) => !REGION_PRESETS.includes(r))).map((r) => {
-                const on = draftRegions.includes(r)
+              {QUICK_REGIONS.map((r) => {
+                const on = draftAnchor?.name === r.name
                 return (
                   <button
-                    key={r}
-                    onClick={() => setDraftRegions(on ? draftRegions.filter((x) => x !== r) : [...draftRegions, r])}
+                    key={r.name}
+                    onClick={() => (on ? setDraftAnchor(null) : pickDraftRegion(r, r.name))}
                     className={`rounded-full border px-3.5 py-2 text-[13px] font-medium ${on ? "border-transparent text-white" : "border-gray-200 text-gray-600"}`}
                     style={on ? { backgroundColor: BRAND } : undefined}
-                  >📍 {r}</button>
+                  >📍 {r.name}</button>
                 )
               })}
             </div>
@@ -543,14 +630,14 @@ export default function HomeNextPage() {
 
             <div className="mt-6 flex gap-2">
               <button
-                onClick={() => { setDraftCtxs([]); setDraftFoods([]); setDraftRegions([]) }}
+                onClick={() => { setDraftCtxs([]); setDraftFoods([]); setDraftAnchor(null) }}
                 className="w-24 rounded-2xl border border-gray-200 py-3 text-[14px] font-semibold text-gray-500"
               >초기화</button>
               <button
                 onClick={applySheet}
                 className="flex-1 rounded-2xl py-3 text-[14px] font-bold text-white"
                 style={{ backgroundColor: BRAND }}
-              >적용{draftCtxs.length + draftFoods.length + draftRegions.length > 0 ? ` (${draftCtxs.length + draftFoods.length + draftRegions.length})` : ""}</button>
+              >적용{draftCtxs.length + draftFoods.length + (draftAnchor ? 1 : 0) > 0 ? ` (${draftCtxs.length + draftFoods.length + (draftAnchor ? 1 : 0)})` : ""}</button>
             </div>
           </div>
         </div>
