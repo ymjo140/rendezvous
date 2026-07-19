@@ -43,6 +43,7 @@ const CTX_CHIPS = [
   { tag: "family", label: "가족", emoji: "🍲" },
   { tag: "special", label: "기념일", emoji: "🎂" },
 ]
+const REGION_PRESETS = ["성수", "홍대", "강남", "연남", "이태원", "망원", "을지로", "여의도"]
 const FOOD_CHIPS = ["한식", "일식", "양식", "중식", "카페", "빵", "술집", "분식"]
 const FOOD_EMOJI: Record<string, string> = { 한식: "🍜", 일식: "🍣", 양식: "🍝", 중식: "🥟", 카페: "☕", 빵: "🥐", 술집: "🍺", 분식: "🍢" }
 const FOOD_MATCH: Record<string, string[]> = {
@@ -90,9 +91,12 @@ export default function HomeNextPage() {
   // 필터(중복 선택) — 시트에서 고르고 적용
   const [ctxs, setCtxs] = useState<string[]>([])
   const [foods, setFoods] = useState<string[]>([])
+  const [regions, setRegions] = useState<string[]>([])
   const [sheetOpen, setSheetOpen] = useState(false)
   const [draftCtxs, setDraftCtxs] = useState<string[]>([])
   const [draftFoods, setDraftFoods] = useState<string[]>([])
+  const [draftRegions, setDraftRegions] = useState<string[]>([])
+  const [regionInput, setRegionInput] = useState("")
 
   // 랭킹 3줄
   const [hotPlaces, setHotPlaces] = useState<{ name: string; place_id?: number }[]>([])
@@ -144,19 +148,20 @@ export default function HomeNextPage() {
 
   // 필터 활성 시 서버 검색 (다중 태그 OR + 음식 필터)
   useEffect(() => {
-    if (ctxs.length + foods.length === 0) { setFilterResults(null); return }
+    if (ctxs.length + foods.length + regions.length === 0) { setFilterResults(null); return }
     let alive = true
     setFilterLoading(true)
     const sp = new URLSearchParams()
     if (ctxs.length) sp.set("tags", ctxs.join(","))
     if (foods.length) sp.set("foods", foods.join(","))
+    if (regions.length) sp.set("regions", regions.join(","))
     fetchWithAuth(`/api/home/search?${sp.toString()}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => { if (alive) setFilterResults(d?.items || []) })
       .catch(() => { if (alive) setFilterResults([]) })
       .finally(() => { if (alive) setFilterLoading(false) })
     return () => { alive = false }
-  }, [ctxs, foods])
+  }, [ctxs, foods, regions])
 
   const crewNames = useMemo(() => {
     const names: string[] = []
@@ -189,9 +194,15 @@ export default function HomeNextPage() {
     [feed.racks, ctxs]
   )
 
-  const filterCount = ctxs.length + foods.length
-  const openSheet = () => { setDraftCtxs(ctxs); setDraftFoods(foods); setSheetOpen(true) }
-  const applySheet = () => { setCtxs(draftCtxs); setFoods(draftFoods); setSheetOpen(false) }
+  const filterCount = ctxs.length + foods.length + regions.length
+  const openSheet = () => { setDraftCtxs(ctxs); setDraftFoods(foods); setDraftRegions(regions); setRegionInput(""); setSheetOpen(true) }
+  const applySheet = () => { setCtxs(draftCtxs); setFoods(draftFoods); setRegions(draftRegions); setSheetOpen(false) }
+  const addRegion = (r: string) => {
+    const v = r.trim().replace(/\s+/g, "")
+    if (!v) return
+    if (!draftRegions.includes(v)) setDraftRegions([...draftRegions, v])
+    setRegionInput("")
+  }
 
   const rankRows = [
     { label: "급상승", icon: <Flame className="h-3.5 w-3.5 text-rose-500" />, items: hotPlaces.map((p) => ({ name: p.name, go: p.place_id ? () => router.push(`/places/${p.place_id}`) : undefined })), goAll: () => router.push("/trending") },
@@ -266,6 +277,11 @@ export default function HomeNextPage() {
         {/* 적용된 필터 칩 (탭해서 제거) */}
         {filterCount > 0 && (
           <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+            {regions.map((r) => (
+              <button key={r} onClick={() => setRegions(regions.filter((x) => x !== r))} className="flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[11.5px] font-medium text-amber-800">
+                📍 {r}<X className="h-3 w-3" />
+              </button>
+            ))}
             {ctxs.map((t) => {
               const c = CTX_CHIPS.find((x) => x.tag === t)
               return (
@@ -470,7 +486,32 @@ export default function HomeNextPage() {
               <button onClick={() => setSheetOpen(false)} className="rounded-full p-1 text-gray-400"><X className="h-5 w-5" /></button>
             </div>
 
-            <p className="mb-2 text-[12px] font-semibold text-gray-500">목적 <span className="font-normal text-gray-400">· 중복 선택</span></p>
+            <p className="mb-2 text-[12px] font-semibold text-gray-500">지역 <span className="font-normal text-gray-400">· 중복 선택 · 직접 입력 가능</span></p>
+            <div className="mb-2 flex gap-2">
+              <input
+                value={regionInput}
+                onChange={(e) => setRegionInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addRegion(regionInput) }}
+                placeholder="동네·역 이름 (예: 성수동, 판교)"
+                className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[13px] focus:border-amber-400 focus:outline-none"
+              />
+              <button onClick={() => addRegion(regionInput)} className="shrink-0 rounded-xl border border-gray-200 px-3 py-2 text-[13px] font-semibold text-gray-600">추가</button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[...new Set([...REGION_PRESETS, ...draftRegions])].map((r) => {
+                const on = draftRegions.includes(r)
+                return (
+                  <button
+                    key={r}
+                    onClick={() => setDraftRegions(on ? draftRegions.filter((x) => x !== r) : [...draftRegions, r])}
+                    className={`rounded-full border px-3.5 py-2 text-[13px] font-medium ${on ? "border-transparent text-white" : "border-gray-200 text-gray-600"}`}
+                    style={on ? { backgroundColor: BRAND } : undefined}
+                  >📍 {r}</button>
+                )
+              })}
+            </div>
+
+            <p className="mb-2 mt-5 text-[12px] font-semibold text-gray-500">목적 <span className="font-normal text-gray-400">· 중복 선택</span></p>
             <div className="flex flex-wrap gap-2">
               {CTX_CHIPS.map((c) => {
                 const on = draftCtxs.includes(c.tag)
@@ -502,14 +543,14 @@ export default function HomeNextPage() {
 
             <div className="mt-6 flex gap-2">
               <button
-                onClick={() => { setDraftCtxs([]); setDraftFoods([]) }}
+                onClick={() => { setDraftCtxs([]); setDraftFoods([]); setDraftRegions([]) }}
                 className="w-24 rounded-2xl border border-gray-200 py-3 text-[14px] font-semibold text-gray-500"
               >초기화</button>
               <button
                 onClick={applySheet}
                 className="flex-1 rounded-2xl py-3 text-[14px] font-bold text-white"
                 style={{ backgroundColor: BRAND }}
-              >적용{draftCtxs.length + draftFoods.length > 0 ? ` (${draftCtxs.length + draftFoods.length})` : ""}</button>
+              >적용{draftCtxs.length + draftFoods.length + draftRegions.length > 0 ? ` (${draftCtxs.length + draftFoods.length + draftRegions.length})` : ""}</button>
             </div>
           </div>
         </div>

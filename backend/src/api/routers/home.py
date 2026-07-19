@@ -383,6 +383,7 @@ def home_search(
     tag: Optional[str] = None,
     tags: Optional[str] = None,       # 콤마 구분 다중 태그(OR) — tag보다 우선
     foods: Optional[str] = None,      # 콤마 구분 음식 필터(OR) — 장소 카테고리 매칭
+    regions: Optional[str] = None,    # 콤마 구분 다중 지역(OR) — 장소 주소 매칭, region보다 우선
     sort: Optional[str] = None,       # match | saves | revisit (기본: 로그인+취향=match, 아니면 saves)
     verified: bool = False,           # 재방문 검증만(재방문 1명 이상)
     user: Optional[models.User] = Depends(get_current_user),
@@ -421,10 +422,12 @@ def home_search(
         .filter(models.ListSave.folder_id.in_(fids)).group_by(models.ListSave.folder_id).all()
     ) if fids else {}
 
-    # 지역 필터: 폴더 장소 주소에 region 포함 여부 (heavy 계산 전에 후보 축소)
+    # 지역 필터: 폴더 장소 주소에 지역명 포함 여부 (다중=OR, heavy 계산 전에 후보 축소)
     fplaces = _folder_place_ids(db, fids) if fids else {}
-    if region and region.strip():
-        rg = region.strip()
+    region_set = [r.strip() for r in (regions or "").split(",") if r.strip()]
+    if not region_set and region and region.strip():
+        region_set = [region.strip()]
+    if region_set:
         all_pids = list({p for pids in fplaces.values() for p in pids})
         addr_rows = (
             db.query(models.Place.id, models.Place.address)
@@ -433,7 +436,7 @@ def home_search(
         addr_map = {pid: (a or "") for pid, a in addr_rows}
         folders = [
             f for f in folders
-            if any(rg in addr_map.get(p, "") for p in fplaces.get(f.id, []))
+            if any(any(rg in addr_map.get(p, "") for rg in region_set) for p in fplaces.get(f.id, []))
         ]
 
     # 음식 필터: 리스트 안 장소들의 cuisine/category에 키워드 하나라도 매칭되면 통과
@@ -524,6 +527,6 @@ def home_search(
     return {
         "items": items,
         "count": len(items),
-        "filters": {"q": q or "", "region": region or "", "tags": sorted(tag_set), "foods": sorted(food_set), "sort": eff_sort, "verified": verified},
+        "filters": {"q": q or "", "regions": region_set, "tags": sorted(tag_set), "foods": sorted(food_set), "sort": eff_sort, "verified": verified},
         "context_tags": CONTEXT_TAGS,
     }
