@@ -26,6 +26,18 @@ router = APIRouter()
 VALID_CONTEXT_TAGS = {"date", "work", "friends", "solo", "cafe", "drink", "family", "special"}
 VALID_VISIBILITY = {"private", "list_only", "public", "open"}
 
+# 음식 필터 키워드 — 리스트 안 장소들의 cuisine/category 문자열 매칭
+FOOD_KEYWORDS = {
+    "한식": ["한식", "국밥", "찌개", "고기", "한정식", "백반", "냉면", "삼겹"],
+    "일식": ["일식", "초밥", "스시", "라멘", "돈카츠", "우동", "오마카세"],
+    "양식": ["양식", "파스타", "피자", "스테이크", "버거", "브런치"],
+    "중식": ["중식", "중국", "마라", "딤섬", "짜장", "양꼬치"],
+    "카페": ["카페", "커피", "디저트", "케이크"],
+    "빵": ["빵", "베이커리", "베이글", "도넛", "크루아상"],
+    "술집": ["술집", "주점", "포차", "바", "펍", "호프", "와인", "맥주", "이자카야"],
+    "분식": ["분식", "떡볶이", "김밥", "만두", "튀김"],
+}
+
 # 맥락 태그 체계(C 확정) — 발견 랙·검색·광고 타깃 공통 뼈대
 CONTEXT_TAGS = [
     {"tag": "date",    "label": "데이트하기 좋은",   "emoji": "💕"},
@@ -369,6 +381,8 @@ def home_search(
     q: Optional[str] = None,
     region: Optional[str] = None,
     tag: Optional[str] = None,
+    tags: Optional[str] = None,       # 콤마 구분 다중 태그(OR) — tag보다 우선
+    foods: Optional[str] = None,      # 콤마 구분 음식 필터(OR) — 장소 카테고리 매칭
     sort: Optional[str] = None,       # match | saves | revisit (기본: 로그인+취향=match, 아니면 saves)
     verified: bool = False,           # 재방문 검증만(재방문 1명 이상)
     user: Optional[models.User] = Depends(get_current_user),
@@ -377,8 +391,12 @@ def home_search(
     """리스트 단위 검색 — 필터 4축(지역·맥락·정렬·재방문 검증).
     검색의 기본 단위는 장소가 아니라 '믿을 무리가 만든 리스트'다."""
     uid = user.id if user else None
-    if tag and tag not in VALID_CONTEXT_TAGS:
-        tag = None
+    tag_set = set()
+    if tags:
+        tag_set = {t.strip() for t in tags.split(",") if t.strip() in VALID_CONTEXT_TAGS}
+    elif tag and tag in VALID_CONTEXT_TAGS:
+        tag_set = {tag}
+    food_set = {f.strip() for f in (foods or "").split(",") if f.strip() in FOOD_KEYWORDS}
 
     folders = (
         db.query(models.SaveFolder)
@@ -387,8 +405,8 @@ def home_search(
     )
     if uid:
         folders = [f for f in folders if f.user_id != uid]
-    if tag:
-        folders = [f for f in folders if getattr(f, "context_tag", None) == tag]
+    if tag_set:
+        folders = [f for f in folders if getattr(f, "context_tag", None) in tag_set]
     if q:
         ql = q.strip().lower()
         if ql:
@@ -416,6 +434,20 @@ def home_search(
         folders = [
             f for f in folders
             if any(rg in addr_map.get(p, "") for p in fplaces.get(f.id, []))
+        ]
+
+    # 음식 필터: 리스트 안 장소들의 cuisine/category에 키워드 하나라도 매칭되면 통과
+    if food_set:
+        kws = [k for f in food_set for k in FOOD_KEYWORDS[f]]
+        all_pids2 = list({p for pids in fplaces.values() for p in pids})
+        cat_rows = (
+            db.query(models.Place.id, models.Place.cuisine_type, models.Place.category)
+            .filter(models.Place.id.in_(all_pids2)).all()
+        ) if all_pids2 else []
+        cat_map = {pid: f"{ct or ''} {cat or ''}" for pid, ct, cat in cat_rows}
+        folders = [
+            f for f in folders
+            if any(any(k in cat_map.get(p, "") for k in kws) for p in fplaces.get(f.id, []))
         ]
 
     folders.sort(key=lambda f: saves_cnt.get(f.id, 0), reverse=True)
@@ -492,6 +524,6 @@ def home_search(
     return {
         "items": items,
         "count": len(items),
-        "filters": {"q": q or "", "region": region or "", "tag": tag, "sort": eff_sort, "verified": verified},
+        "filters": {"q": q or "", "region": region or "", "tags": sorted(tag_set), "foods": sorted(food_set), "sort": eff_sort, "verified": verified},
         "context_tags": CONTEXT_TAGS,
     }

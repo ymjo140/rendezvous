@@ -105,6 +105,10 @@ export default function HomeNextPage() {
   const [crewSel, setCrewSel] = useState<string | null>(null)
   const [crewOpen, setCrewOpen] = useState(false)
 
+  // 필터 결과 — 필터가 걸리면 화면 데이터가 아니라 서버(전체 공개 리스트)를 검색
+  const [filterResults, setFilterResults] = useState<ListCard[] | null>(null)
+  const [filterLoading, setFilterLoading] = useState(false)
+
   useEffect(() => {
     let alive = true
     fetchWithAuth("/api/home/feed")
@@ -137,6 +141,22 @@ export default function HomeNextPage() {
       .catch(() => {})
     return () => { alive = false }
   }, [])
+
+  // 필터 활성 시 서버 검색 (다중 태그 OR + 음식 필터)
+  useEffect(() => {
+    if (ctxs.length + foods.length === 0) { setFilterResults(null); return }
+    let alive = true
+    setFilterLoading(true)
+    const sp = new URLSearchParams()
+    if (ctxs.length) sp.set("tags", ctxs.join(","))
+    if (foods.length) sp.set("foods", foods.join(","))
+    fetchWithAuth(`/api/home/search?${sp.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: any) => { if (alive) setFilterResults(d?.items || []) })
+      .catch(() => { if (alive) setFilterResults([]) })
+      .finally(() => { if (alive) setFilterLoading(false) })
+    return () => { alive = false }
+  }, [ctxs, foods])
 
   const crewNames = useMemo(() => {
     const names: string[] = []
@@ -283,6 +303,49 @@ export default function HomeNextPage() {
         ))}
       </div>
 
+      {/* ②-b 필터 결과 — 서버에서 전체 공개 리스트 검색 */}
+      {filterCount > 0 && (
+        <section className="px-4 pt-5">
+          <div className="mb-2 flex items-center gap-1.5">
+            <SlidersHorizontal className="h-4 w-4" style={{ color: BRAND }} />
+            <h2 className="text-[15px] font-bold text-gray-900">필터 결과</h2>
+            {filterResults && <span className="text-[12px] text-gray-400">{filterResults.length}개</span>}
+          </div>
+          {filterLoading ? (
+            <div className="py-8 text-center text-[12px] text-gray-300">찾는 중...</div>
+          ) : !filterResults || filterResults.length === 0 ? (
+            <div className="rounded-2xl border-2 border-dashed border-gray-200 py-8 text-center">
+              <p className="text-[13px] text-gray-400">이 조합의 리스트가 아직 없어요.</p>
+              <p className="mt-1 text-[11px] text-gray-300">필터를 줄이거나, 우리 크루가 첫 리스트의 주인이 될 기회예요!</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filterResults.map((it) => (
+                <article
+                  key={it.folder_id}
+                  onClick={() => router.push(`/lists/${it.folder_id}`)}
+                  className="flex cursor-pointer items-center gap-3 rounded-2xl border border-gray-100 p-3"
+                >
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gray-50 text-xl">{it.icon}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <b className="truncate text-[13px] font-semibold text-gray-900">{it.name}</b>
+                      {it.match !== null && <em className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold not-italic text-amber-700">{it.match}%</em>}
+                    </span>
+                    <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400">
+                      <span className="truncate">by {it.by.name}</span>
+                      <span>·</span><span className="shrink-0">{it.item_count}곳</span>
+                      {it.revisit > 0 && <span className="shrink-0 font-medium text-amber-700">🔁 {it.revisit}</span>}
+                    </span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* ③ 내 크루에 어울리는 곳 */}
       {crewNames.length > 0 && (
         <section className="px-4 pt-5">
@@ -314,7 +377,7 @@ export default function HomeNextPage() {
           <div className="mt-2.5 flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
             {shownCrewPlaces.length === 0 ? (
               <div className="w-full rounded-2xl border-2 border-dashed border-gray-200 py-8 text-center text-[12px] text-gray-400">
-                이 필터에 맞는 추천이 아직 없어요
+                이 크루 추천 중엔 필터에 맞는 곳이 없어요 — 필터를 빼면 다시 보여요
               </div>
             ) : shownCrewPlaces.map((p, i) => (
               <article
@@ -339,8 +402,8 @@ export default function HomeNextPage() {
         </section>
       )}
 
-      {/* ④ 내 크루와 비슷한 크루의 리스트 */}
-      {crewLists.length > 0 && (
+      {/* ④ 내 크루와 비슷한 크루의 리스트 — 필터 중엔 '필터 결과'가 대신함 */}
+      {filterCount === 0 && crewLists.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
             <Users className="h-4 w-4" style={{ color: BRAND }} />
@@ -352,8 +415,8 @@ export default function HomeNextPage() {
         </section>
       )}
 
-      {/* ⑤ 내 입맛과 닮은 큐레이터의 리스트 */}
-      {curatorLists.length > 0 && (
+      {/* ⑤ 내 입맛과 닮은 큐레이터의 리스트 — 필터 중엔 '필터 결과'가 대신함 */}
+      {filterCount === 0 && curatorLists.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
             <Sparkles className="h-4 w-4" style={{ color: BRAND }} />
@@ -365,8 +428,8 @@ export default function HomeNextPage() {
         </section>
       )}
 
-      {/* ⑥ 맥락별 랙 */}
-      {shownRacks.map((rack) => (
+      {/* ⑥ 맥락별 랙 — 필터 중엔 숨김 */}
+      {filterCount === 0 && shownRacks.map((rack) => (
         <section key={rack.tag} className="px-4 pt-5">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-[15px] font-bold text-gray-900">{rack.emoji} {rack.label}</h2>
