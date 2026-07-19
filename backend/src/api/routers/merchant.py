@@ -1051,6 +1051,22 @@ def store_crm(store_id: int, db: Session = Depends(get_db)):
             "tier": _tier(c["visits"]),
         })
     customers = customers[:40]
+    # 사장님 직접 지정 등급(override) 적용
+    try:
+        cu = [c["uid"] for c in customers]
+        if cu:
+            ov = {}
+            for uid, t in db.execute(text(
+                "SELECT user_id, tier_override FROM merchant_customer_memos "
+                "WHERE store_id=:s AND user_id = ANY(:u) AND tier_override IS NOT NULL"
+            ), {"s": pid, "u": cu}).fetchall():
+                ov[int(uid)] = t
+            for c in customers:
+                if ov.get(c["uid"]):
+                    c["tier"] = ov[c["uid"]]
+                    c["tier_manual"] = True
+    except Exception as exc:
+        print(f"[crm] tier override skip: {exc}"); db.rollback()
 
     # 그룹 CRM(#3) — 방문 피드백을 남긴 모임(room) 단위
     groups = []
@@ -1213,6 +1229,16 @@ def customer_detail(store_id: int, user_id: int, db: Session = Depends(get_db)):
     cuisine = _canon_one((place.cuisine_type if place else "") + " " + (place.category if place else "") + " " + (place.name if place else ""))
     c = _customer_core(db, pid, user_id, cuisine)
 
+    # 사장님 직접 지정 등급
+    tier_manual = False
+    try:
+        row = db.execute(text("SELECT tier_override FROM merchant_customer_memos WHERE store_id=:s AND user_id=:u"),
+                         {"s": pid, "u": user_id}).fetchone()
+        if row and row[0]:
+            c["tier"] = row[0]; tier_manual = True
+    except Exception:
+        db.rollback()
+
     # 재방문 의사가 있던 예약 id
     fb_resv = set()
     try:
@@ -1251,13 +1277,32 @@ def customer_detail(store_id: int, user_id: int, db: Session = Depends(get_db)):
         db.rollback()
 
     return {
-        "persona": c["persona"], "emoji": c["emoji"], "tier": c["tier"], "taste": c["taste"],
+        "persona": c["persona"], "emoji": c["emoji"], "tier": c["tier"], "tier_manual": tier_manual,
+        "taste": c["taste"],
         "visits": c["visits"], "last": c["last"], "revisit_intent": c["revisit_intent"],
         "recent_interest": c["recent_interest"], "store_cuisine": cuisine,
         "brief": _brief_line(c["persona"], c["taste"], c["tier"], c["revisit_intent"],
                              c["avg_party"], c["recent_interest"], cuisine),
         "timeline": timeline, "reviews": reviews, "memo": memo,
     }
+
+
+class TierBody(BaseModel):
+    tier: Optional[str] = None  # "VIP" | "단골" | None(자동)
+
+
+@router.post("/stores/{store_id}/customer/{user_id}/tier")
+def set_customer_tier(store_id: int, user_id: int, body: TierBody, db: Session = Depends(get_db),
+                      merchant: str = Depends(get_current_merchant)):
+    """사장님이 손님 등급 직접 지정(자동 계산 override). None이면 자동으로 복귀."""
+    _assert_merchant_owns(db, store_id, merchant)
+    t = body.tier if body.tier in ("VIP", "단골") else None
+    db.execute(text(
+        "INSERT INTO merchant_customer_memos (store_id, user_id, tier_override, updated_at) "
+        "VALUES (:s,:u,:t,NOW()) ON CONFLICT (store_id, user_id) DO UPDATE SET tier_override=:t, updated_at=NOW()"
+    ), {"s": store_id, "u": user_id, "t": t})
+    db.commit()
+    return {"ok": True, "tier": t}
 
 
 @router.post("/stores/{store_id}/customer/{user_id}/memo")
