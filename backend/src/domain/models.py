@@ -569,6 +569,8 @@ class SaveFolder(Base):
     is_public = Column(Boolean, default=False)
     description = Column(String, nullable=True)  # 리스트 소개 문구
     community_id = Column(String, ForeignKey("communities.id"), nullable=True, index=True)  # 모임 소유 폴더(개인 폴더면 null)
+    # 맥락 태그(발견 랙·검색·광고 타깃 공통 뼈대): date/work/friends/solo/cafe/drink/family/special
+    context_tag = Column(String, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
