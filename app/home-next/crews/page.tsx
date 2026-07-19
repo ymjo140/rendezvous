@@ -37,7 +37,7 @@ export default function CrewsTabPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-24">
-      <div className="bg-violet-600 px-4 py-1.5 text-center text-[11px] font-medium text-white">
+      <div className="bg-[#F5A623] px-4 py-1.5 text-center text-[11px] font-medium text-white">
         🧪 새 홈 프로토타입 · 내 크루
       </div>
 
@@ -51,17 +51,17 @@ export default function CrewsTabPage() {
           <div className="py-16 text-center text-sm text-slate-400">불러오는 중...</div>
         ) : mine.length === 0 ? (
           /* 크루 없음 → 생성 유도 (결정 B) */
-          <div className="rounded-3xl bg-violet-50 px-5 py-8 text-center">
+          <div className="rounded-3xl bg-amber-50 px-5 py-8 text-center">
             <div className="text-4xl">👥</div>
-            <h2 className="mt-3 text-[15px] font-bold text-violet-900">아직 크루가 없어요</h2>
-            <p className="mt-1.5 text-[12px] leading-relaxed text-violet-500">
+            <h2 className="mt-3 text-[15px] font-bold text-amber-900">아직 크루가 없어요</h2>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-[#F5A623]">
               {loggedIn
                 ? "친구·동아리·회사 팀과 크루를 만들고\n우리만의 맛집 리스트를 쌓아보세요."
                 : "로그인하면 내 크루를 만들고 관리할 수 있어요."}
             </p>
             <button
               onClick={() => router.push(loggedIn ? "/home-next/crew-new" : "/login")}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-2xl bg-violet-600 px-5 py-3 text-[14px] font-semibold text-white"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-2xl bg-[#F5A623] px-5 py-3 text-[14px] font-semibold text-white"
             >
               <Plus className="h-4 w-4" />{loggedIn ? "우리 크루 만들기" : "로그인하기"}
             </button>
@@ -74,7 +74,7 @@ export default function CrewsTabPage() {
                 onClick={() => router.push(`/home-next/crew/${c.id}`)}
                 className="flex w-full items-center gap-3 rounded-2xl border border-slate-100 p-3.5 text-left"
               >
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-2xl">{c.icon}</span>
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-2xl">{c.icon}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-semibold text-slate-900">{c.title}</span>
                   <span className="mt-0.5 block text-[11px] text-slate-400">
@@ -87,7 +87,7 @@ export default function CrewsTabPage() {
             ))}
             <button
               onClick={() => router.push("/home-next/crew-new")}
-              className="flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50 py-3.5 text-[13px] font-semibold text-violet-700"
+              className="flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 py-3.5 text-[13px] font-semibold text-amber-700"
             >
               <Plus className="h-4 w-4" />크루 추가하기
             </button>
@@ -99,7 +99,7 @@ export default function CrewsTabPage() {
       {suggest.length > 0 && (
         <div className="px-4 pt-6">
           <h2 className="mb-2 flex items-center gap-1.5 text-[15px] font-semibold text-slate-900">
-            <Sparkles className="h-4 w-4 text-violet-500" />이런 크루는 어때?
+            <Sparkles className="h-4 w-4 text-[#F5A623]" />이런 크루는 어때?
           </h2>
           <div className="space-y-2">
             {suggest.map((c) => (

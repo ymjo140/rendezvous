@@ -59,7 +59,7 @@ export default function CrewProfilePage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-16">
-      <div className="bg-violet-600 px-4 py-1.5 text-center text-[11px] font-medium text-white">
+      <div className="bg-[#F5A623] px-4 py-1.5 text-center text-[11px] font-medium text-white">
         🧪 새 홈 프로토타입 · 크루 프로필
       </div>
 
@@ -77,21 +77,21 @@ export default function CrewProfilePage() {
       ) : (
         <>
           {justCreated && (
-            <div className="mx-4 mb-3 rounded-2xl bg-violet-50 px-4 py-3 text-center">
+            <div className="mx-4 mb-3 rounded-2xl bg-amber-50 px-4 py-3 text-center">
               <div className="text-2xl">🎉</div>
-              <p className="mt-1 text-[13px] font-semibold text-violet-700">크루가 만들어졌어요!</p>
-              <p className="mt-0.5 text-[11px] text-violet-500">친구를 초대하고 맛집을 담으면 리스트가 자라나요.</p>
+              <p className="mt-1 text-[13px] font-semibold text-amber-700">크루가 만들어졌어요!</p>
+              <p className="mt-0.5 text-[11px] text-[#F5A623]">친구를 초대하고 맛집을 담으면 리스트가 자라나요.</p>
             </div>
           )}
 
           {/* 헤더 */}
           <div className="px-4">
             <div className="flex items-center gap-3.5">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-50 text-3xl">{crew.icon}</div>
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-3xl">{crew.icon}</div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <h1 className="truncate text-lg font-bold text-slate-900">{crew.title}</h1>
-                  {crew.visit_verified && <BadgeCheck className="h-5 w-5 shrink-0 text-violet-500" />}
+                  {crew.visit_verified && <BadgeCheck className="h-5 w-5 shrink-0 text-[#F5A623]" />}
                 </div>
                 <div className="mt-0.5 text-[11px] text-slate-400">{VIS_LABEL[crew.visibility] || crew.visibility}</div>
               </div>
@@ -99,7 +99,7 @@ export default function CrewProfilePage() {
                 <button
                   onClick={follow}
                   className={`shrink-0 rounded-full px-4 py-2 text-[12px] font-semibold ${
-                    crew.is_following ? "bg-slate-100 text-slate-500" : "bg-violet-600 text-white"
+                    crew.is_following ? "bg-slate-100 text-slate-500" : "bg-[#F5A623] text-white"
                   }`}
                 >
                   {crew.is_following ? "팔로잉" : "팔로우"}
@@ -142,7 +142,7 @@ export default function CrewProfilePage() {
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-[15px] font-semibold text-slate-900">크루의 맛집 리스트</h2>
               {crew.is_member && (
-                <button className="flex items-center gap-1 text-[12px] font-medium text-violet-600">
+                <button className="flex items-center gap-1 text-[12px] font-medium text-[#F5A623]">
                   <Plus className="h-3.5 w-3.5" />리스트 추가
                 </button>
               )}
@@ -167,7 +167,7 @@ export default function CrewProfilePage() {
                         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
                           <span>{l.item_count}곳</span>
                           {l.context_tag && TAG_LABEL[l.context_tag] && (
-                            <span className="rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-600">{TAG_LABEL[l.context_tag]}</span>
+                            <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] text-[#F5A623]">{TAG_LABEL[l.context_tag]}</span>
                           )}
                           {l.revisit > 0 && (
                             <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">

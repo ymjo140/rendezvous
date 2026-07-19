@@ -77,7 +77,7 @@ export default function HomeSearchPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-16">
-      <div className="bg-violet-600 px-4 py-1.5 text-center text-[11px] font-medium text-white">
+      <div className="bg-[#F5A623] px-4 py-1.5 text-center text-[11px] font-medium text-white">
         🧪 새 홈 프로토타입 · 검색
       </div>
 
@@ -120,7 +120,7 @@ export default function HomeSearchPage() {
               key={t.tag}
               onClick={() => setTag(tag === t.tag ? null : t.tag)}
               className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                tag === t.tag ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-600"
+                tag === t.tag ? "bg-[#F5A623] text-white" : "bg-slate-100 text-slate-600"
               }`}
             >
               {t.emoji} {t.label}
@@ -174,12 +174,12 @@ export default function HomeSearchPage() {
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-[14px] font-semibold text-slate-900">{it.name}</span>
                     {it.match !== null && (
-                      <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{it.match}%</span>
+                      <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">{it.match}%</span>
                     )}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
                     <span className="flex items-center gap-0.5">
-                      {it.by.kind === "crew" && <BadgeCheck className="h-3 w-3 text-violet-400" />}
+                      {it.by.kind === "crew" && <BadgeCheck className="h-3 w-3 text-amber-400" />}
                       by {it.by.name}
                     </span>
                   </div>

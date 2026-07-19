@@ -69,7 +69,7 @@ export default function CrewNewPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-16">
-      <div className="bg-violet-600 px-4 py-1.5 text-center text-[11px] font-medium text-white">
+      <div className="bg-[#F5A623] px-4 py-1.5 text-center text-[11px] font-medium text-white">
         🧪 새 홈 프로토타입 · 크루 만들기
       </div>
 
@@ -83,7 +83,7 @@ export default function CrewNewPage() {
           <span className="text-[11px] text-slate-400">{step}/3</span>
         </div>
         <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-100">
-          <div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${(step / 3) * 100}%` }} />
+          <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${(step / 3) * 100}%` }} />
         </div>
       </div>
 
@@ -97,7 +97,7 @@ export default function CrewNewPage() {
             onChange={(e) => setTitle(e.target.value)}
             maxLength={30}
             placeholder="예: 성수 와인 크루, 매운맛 원정대"
-            className="mt-4 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] focus:border-violet-400 focus:outline-none"
+            className="mt-4 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] focus:border-[#F5A623] focus:outline-none"
           />
           <div className="mt-4 grid grid-cols-6 gap-2">
             {EMOJIS.map((e) => (
@@ -105,7 +105,7 @@ export default function CrewNewPage() {
                 key={e}
                 onClick={() => setIcon(e)}
                 className={`flex h-12 items-center justify-center rounded-xl text-2xl transition-colors ${
-                  icon === e ? "bg-violet-100 ring-2 ring-violet-400" : "bg-slate-50"
+                  icon === e ? "bg-amber-100 ring-2 ring-amber-400" : "bg-slate-50"
                 }`}
               >
                 {e}
@@ -115,7 +115,7 @@ export default function CrewNewPage() {
           <button
             disabled={!title.trim()}
             onClick={() => setStep(2)}
-            className="mt-6 w-full rounded-2xl bg-violet-600 py-3.5 text-[15px] font-semibold text-white disabled:opacity-30"
+            className="mt-6 w-full rounded-2xl bg-[#F5A623] py-3.5 text-[15px] font-semibold text-white disabled:opacity-30"
           >
             다음
           </button>
@@ -133,22 +133,22 @@ export default function CrewNewPage() {
                 key={v.key}
                 onClick={() => setVisibility(v.key)}
                 className={`flex w-full items-start gap-3 rounded-2xl border-2 p-3.5 text-left transition-colors ${
-                  visibility === v.key ? "border-violet-400 bg-violet-50" : "border-slate-100"
+                  visibility === v.key ? "border-[#F5A623] bg-amber-50" : "border-slate-100"
                 }`}
               >
                 <span className="text-2xl">{v.emoji}</span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <b className="text-[14px] font-semibold text-slate-900">{v.title}</b>
-                    {v.badge && <em className="rounded-full bg-violet-600 px-1.5 py-0.5 text-[9px] font-bold not-italic text-white">{v.badge}</em>}
+                    {v.badge && <em className="rounded-full bg-[#F5A623] px-1.5 py-0.5 text-[9px] font-bold not-italic text-white">{v.badge}</em>}
                   </span>
                   <span className="mt-0.5 block text-[11.5px] leading-snug text-slate-500">{v.desc}</span>
                 </span>
-                {visibility === v.key && <Check className="h-4 w-4 shrink-0 text-violet-500" />}
+                {visibility === v.key && <Check className="h-4 w-4 shrink-0 text-[#F5A623]" />}
               </button>
             ))}
           </div>
-          <button onClick={() => setStep(3)} className="mt-6 w-full rounded-2xl bg-violet-600 py-3.5 text-[15px] font-semibold text-white">
+          <button onClick={() => setStep(3)} className="mt-6 w-full rounded-2xl bg-[#F5A623] py-3.5 text-[15px] font-semibold text-white">
             다음
           </button>
         </div>
@@ -164,7 +164,7 @@ export default function CrewNewPage() {
             onChange={(e) => setListName(e.target.value)}
             maxLength={40}
             placeholder={`예: ${title.trim() || "우리 크루"}의 인생 맛집`}
-            className="mt-4 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] focus:border-violet-400 focus:outline-none"
+            className="mt-4 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] focus:border-[#F5A623] focus:outline-none"
           />
           <p className="mt-4 text-[12px] font-medium text-slate-600">어떤 상황의 리스트야?</p>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -173,7 +173,7 @@ export default function CrewNewPage() {
                 key={t.tag}
                 onClick={() => setListTag(listTag === t.tag ? null : t.tag)}
                 className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                  listTag === t.tag ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-600"
+                  listTag === t.tag ? "bg-[#F5A623] text-white" : "bg-slate-100 text-slate-600"
                 }`}
               >
                 {t.emoji} {t.label}
@@ -186,7 +186,7 @@ export default function CrewNewPage() {
           <button
             onClick={submit}
             disabled={busy}
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 py-3.5 text-[15px] font-semibold text-white disabled:opacity-50"
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#F5A623] py-3.5 text-[15px] font-semibold text-white disabled:opacity-50"
           >
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {listName.trim() ? "크루 + 첫 리스트 만들기" : "크루만 먼저 만들기"}
