@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Search, Sparkles, Plus, RotateCw, Users, MapPin, Bookmark, ChevronRight, BadgeCheck } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
@@ -57,6 +58,7 @@ const MOCK: Feed = {
 }
 
 export default function HomeNextPage() {
+  const router = useRouter()
   const [feed, setFeed] = useState<Feed>(MOCK)
   const [live, setLive] = useState(false)
 
@@ -92,10 +94,13 @@ export default function HomeNextPage() {
 
       {/* ① 검색바 — 지역 × 맥락 탐색 입구 */}
       <div className="sticky top-0 z-10 bg-white px-4 pb-2 pt-3">
-        <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
+        <button
+          onClick={() => router.push("/home-next/search")}
+          className="flex w-full items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-left"
+        >
           <Search className="h-4 w-4 text-slate-400" />
           <span className="text-sm text-slate-400">성수 데이트, 강남 회식…</span>
-        </div>
+        </button>
       </div>
 
       {/* ② 취향 매칭 히어로 — 온보딩 취향만 있어도 신규 유저에게 바로 노출 */}
@@ -108,7 +113,14 @@ export default function HomeNextPage() {
         </div>
         <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
           {feed.taste_matched.map((g) => (
-            <article key={g.folder_id} className="w-[260px] shrink-0 rounded-2xl border border-slate-100 p-3.5">
+            <article
+              key={g.folder_id}
+              onClick={() => {
+                if (g.by.kind === "crew" && g.by.id) router.push(`/home-next/crew/${g.by.id}`)
+                else if (g.folder_id > 0) router.push(`/lists/${g.folder_id}`)
+              }}
+              className="w-[260px] shrink-0 cursor-pointer rounded-2xl border border-slate-100 p-3.5"
+            >
               <div className="flex items-center gap-2.5">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-xl">{g.by.icon}</div>
                 <div className="min-w-0 flex-1">
@@ -158,13 +170,20 @@ export default function HomeNextPage() {
         </div>
         <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
           {crews.map((m) => (
-            <button key={m.id} className="flex w-[92px] shrink-0 flex-col items-center gap-1.5 rounded-2xl border border-slate-100 p-3">
+            <button
+              key={m.id}
+              onClick={() => router.push(`/home-next/crew/${m.id}`)}
+              className="flex w-[92px] shrink-0 flex-col items-center gap-1.5 rounded-2xl border border-slate-100 p-3"
+            >
               <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-50 text-xl">{m.icon}</span>
               <span className="w-full truncate text-center text-[11px] font-medium text-slate-700">{m.title}</span>
             </button>
           ))}
           {/* 크루 만들기 유도 카드 — "사람 모으기"가 아니라 "리스트 쌓기"가 상품 */}
-          <button className="flex w-[150px] shrink-0 flex-col items-start justify-center gap-1 rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50 p-3 text-left">
+          <button
+            onClick={() => router.push("/home-next/crew-new")}
+            className="flex w-[150px] shrink-0 flex-col items-start justify-center gap-1 rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50 p-3 text-left"
+          >
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-white"><Plus className="h-4 w-4" /></span>
             <span className="text-[12px] font-semibold text-violet-700">우리 크루 만들기</span>
             <span className="text-[10px] leading-tight text-violet-500">맛집 리스트를 함께 쌓아요</span>
@@ -174,7 +193,11 @@ export default function HomeNextPage() {
         {feed.crew_suggestions.length > 0 && (
           <div className="mt-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
             {feed.crew_suggestions.map((c) => (
-              <button key={c.id} className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1.5">
+              <button
+                key={c.id}
+                onClick={() => router.push(`/home-next/crew/${c.id}`)}
+                className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1.5"
+              >
                 <span className="text-sm">{c.icon}</span>
                 <span className="text-[11px] font-medium text-slate-700">{c.title}</span>
                 <span className="text-[10px] text-slate-400">리스트 {c.lists}</span>

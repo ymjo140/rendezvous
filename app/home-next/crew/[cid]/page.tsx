@@ -1,0 +1,214 @@
+"use client"
+
+// 🧪 [redesign/group-home] 크루 프로필 — 집단 정체성 = 큐레이션 보증
+// /api/groups/{cid} 재활용 + 방문 인증 배지(member_visits 기반) + 리스트 재방문 뱃지.
+
+import React, { useEffect, useState } from "react"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { ChevronLeft, RotateCw, Users, Plus, BadgeCheck, Bookmark } from "lucide-react"
+import { fetchWithAuth } from "@/lib/api-client"
+
+type CrewList = {
+  id: number; name: string; icon: string; description: string
+  item_count: number; like_count: number; comment_count: number
+  context_tag: string | null; revisit: number
+  preview: { place_id: number; name: string }[]
+}
+type Crew = {
+  id: string; title: string; description: string; icon: string; visibility: string
+  member_count: number; follower_count: number; like_count: number; list_count: number
+  is_following: boolean; is_member: boolean; is_host: boolean
+  members: { id: number; name: string; avatar: string; is_host: boolean }[]
+  lists: CrewList[]
+  member_visits: number; member_revisits: number; visit_verified: boolean
+}
+
+const TAG_LABEL: Record<string, string> = {
+  date: "💕 데이트", work: "🥂 회식", drink: "🍶 술 한잔", cafe: "☕ 카페",
+  solo: "🍚 혼밥", friends: "🍻 친구", family: "🍲 가족", special: "🎂 기념일",
+}
+
+const VIS_LABEL: Record<string, string> = {
+  private: "🔒 우리끼리", list_only: "📋 리스트만 공개", public: "🌟 크루 공개", open: "💬 오픈 크루",
+}
+
+export default function CrewProfilePage() {
+  const router = useRouter()
+  const params = useParams<{ cid: string }>()
+  const sp = useSearchParams()
+  const justCreated = sp.get("created") === "1"
+  const [crew, setCrew] = useState<Crew | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!params?.cid) return
+    fetchWithAuth(`/api/groups/${params.cid}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setCrew(d))
+      .catch(() => setCrew(null))
+      .finally(() => setLoading(false))
+  }, [params?.cid])
+
+  const follow = async () => {
+    if (!crew) return
+    try {
+      const res = await fetchWithAuth(`/api/groups/${crew.id}/follow`, { method: crew.is_following ? "DELETE" : "POST" })
+      if (res.ok) setCrew({ ...crew, is_following: !crew.is_following, follower_count: crew.follower_count + (crew.is_following ? -1 : 1) })
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <div className="mx-auto min-h-screen max-w-md bg-white pb-16">
+      <div className="bg-violet-600 px-4 py-1.5 text-center text-[11px] font-medium text-white">
+        🧪 새 홈 프로토타입 · 크루 프로필
+      </div>
+
+      <div className="sticky top-0 z-10 flex items-center gap-2 bg-white px-4 py-3">
+        <button onClick={() => router.back()} className="rounded-full p-1 text-slate-500">
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <span className="text-[15px] font-semibold text-slate-900">크루</span>
+      </div>
+
+      {loading ? (
+        <div className="py-20 text-center text-sm text-slate-400">불러오는 중...</div>
+      ) : !crew ? (
+        <div className="py-20 text-center text-sm text-slate-400">크루를 찾을 수 없어요.</div>
+      ) : (
+        <>
+          {justCreated && (
+            <div className="mx-4 mb-3 rounded-2xl bg-violet-50 px-4 py-3 text-center">
+              <div className="text-2xl">🎉</div>
+              <p className="mt-1 text-[13px] font-semibold text-violet-700">크루가 만들어졌어요!</p>
+              <p className="mt-0.5 text-[11px] text-violet-500">친구를 초대하고 맛집을 담으면 리스트가 자라나요.</p>
+            </div>
+          )}
+
+          {/* 헤더 */}
+          <div className="px-4">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-50 text-3xl">{crew.icon}</div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <h1 className="truncate text-lg font-bold text-slate-900">{crew.title}</h1>
+                  {crew.visit_verified && <BadgeCheck className="h-5 w-5 shrink-0 text-violet-500" />}
+                </div>
+                <div className="mt-0.5 text-[11px] text-slate-400">{VIS_LABEL[crew.visibility] || crew.visibility}</div>
+              </div>
+              {!crew.is_member && (
+                <button
+                  onClick={follow}
+                  className={`shrink-0 rounded-full px-4 py-2 text-[12px] font-semibold ${
+                    crew.is_following ? "bg-slate-100 text-slate-500" : "bg-violet-600 text-white"
+                  }`}
+                >
+                  {crew.is_following ? "팔로잉" : "팔로우"}
+                </button>
+              )}
+            </div>
+            {crew.description && <p className="mt-2.5 text-[13px] leading-relaxed text-slate-600">{crew.description}</p>}
+
+            {/* 방문 인증 배지 — 이 크루의 신뢰 근거 */}
+            <div className={`mt-3 rounded-2xl px-3.5 py-3 ${crew.visit_verified ? "bg-emerald-50" : "bg-slate-50"}`}>
+              {crew.visit_verified ? (
+                <p className="text-[12.5px] font-medium text-emerald-700">
+                  ✅ 방문 인증 크루 — 멤버들이 리스트 장소에 <b>실제 방문 {crew.member_visits}회</b>, 재방문 의사 {crew.member_revisits}회를 남겼어요.
+                </p>
+              ) : (
+                <p className="text-[12.5px] text-slate-500">
+                  아직 방문 인증 전이에요. 멤버가 리스트 장소를 방문하고 기록을 남기면 ✅ 인증 배지가 붙어요.
+                </p>
+              )}
+            </div>
+
+            {/* 지표 */}
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              {[
+                { v: crew.member_count, l: "멤버" },
+                { v: crew.list_count, l: "리스트" },
+                { v: crew.follower_count, l: "팔로워" },
+                { v: crew.member_revisits, l: "재방문" },
+              ].map((s) => (
+                <div key={s.l} className="rounded-xl bg-slate-50 py-2.5 text-center">
+                  <div className="text-[15px] font-bold text-slate-900">{s.v}</div>
+                  <div className="text-[10px] text-slate-400">{s.l}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 리스트 */}
+          <div className="mt-5 px-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-[15px] font-semibold text-slate-900">크루의 맛집 리스트</h2>
+              {crew.is_member && (
+                <button className="flex items-center gap-1 text-[12px] font-medium text-violet-600">
+                  <Plus className="h-3.5 w-3.5" />리스트 추가
+                </button>
+              )}
+            </div>
+            {crew.lists.length === 0 ? (
+              <div className="rounded-2xl border-2 border-dashed border-slate-200 py-10 text-center">
+                <p className="text-[13px] text-slate-400">아직 리스트가 없어요.</p>
+                {crew.is_member && <p className="mt-1 text-[11px] text-slate-300">첫 맛집 리스트를 만들어보세요!</p>}
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {crew.lists.map((l) => (
+                  <article
+                    key={l.id}
+                    onClick={() => router.push(`/lists/${l.id}`)}
+                    className="cursor-pointer rounded-2xl border border-slate-100 p-3.5"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-xl">{l.icon}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[14px] font-semibold text-slate-900">{l.name}</div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                          <span>{l.item_count}곳</span>
+                          {l.context_tag && TAG_LABEL[l.context_tag] && (
+                            <span className="rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-600">{TAG_LABEL[l.context_tag]}</span>
+                          )}
+                          {l.revisit > 0 && (
+                            <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                              <RotateCw className="h-2.5 w-2.5" />재방문 {l.revisit}명
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Bookmark className="h-4 w-4 shrink-0 text-slate-300" />
+                    </div>
+                    {l.preview.length > 0 && (
+                      <p className="mt-2 truncate text-[11.5px] text-slate-400">
+                        {l.preview.map((p) => p.name).join(" · ")}
+                      </p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 멤버 */}
+          {crew.members.length > 0 && (
+            <div className="mt-5 px-4">
+              <h2 className="mb-2 flex items-center gap-1.5 text-[15px] font-semibold text-slate-900">
+                <Users className="h-4 w-4 text-slate-400" />멤버 {crew.member_count}
+              </h2>
+              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+                {crew.members.map((m) => (
+                  <div key={m.id} className="flex w-[70px] shrink-0 flex-col items-center gap-1">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-50 text-xl">{m.avatar}</span>
+                    <span className="w-full truncate text-center text-[10px] text-slate-500">
+                      {m.name}{m.is_host && " 👑"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
