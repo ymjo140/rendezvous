@@ -119,6 +119,9 @@ export default function HomeNextPage() {
   const [crewSel, setCrewSel] = useState<string | null>(null)
   const [crewOpen, setCrewOpen] = useState(false)
 
+  // 개인 맛집 추천 — 크루 없이도 "오늘 뭐 먹지"를 해결하는 개인 축 (기존 취향 추천 API 재활용)
+  const [myPlaces, setMyPlaces] = useState<CrewPlace[]>([])
+
   // 필터 결과 — 필터가 걸리면 화면 데이터가 아니라 서버(전체 공개 리스트)를 검색
   const [filterResults, setFilterResults] = useState<ListCard[] | null>(null)
   const [placeResults, setPlaceResults] = useState<PlaceHit[] | null>(null)
@@ -146,6 +149,24 @@ export default function HomeNextPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => { if (alive && d?.items?.length) setHotLists(d.items.map((x: any) => ({ folder_id: x.folder_id, name: x.name }))) })
       .catch(() => {})
+    // 개인 취향 추천 — 위치 확보(실패 시 성수) 후 기존 /api/recommend
+    const loadMine = (lat: number, lng: number) => {
+      fetchWithAuth("/api/recommend", {
+        method: "POST",
+        body: JSON.stringify({ purpose: "식사", user_selected_tags: [], current_lat: lat, current_lng: lng, member_user_ids: [], top_k: 12 }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((regions: any) => { if (alive) setMyPlaces(regions?.[0]?.places || []) })
+        .catch(() => {})
+    }
+    if (typeof navigator !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => loadMine(pos.coords.latitude, pos.coords.longitude),
+        () => loadMine(37.5446, 127.0559),
+        { timeout: 3000 }
+      )
+    } else loadMine(37.5446, 127.0559)
+
     fetchWithAuth("/api/recommend/my-meetings?per_room=12")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
@@ -486,12 +507,49 @@ export default function HomeNextPage() {
         </section>
       )}
 
+      {/* ③-b 내 입맛 저격 — 개인 축 (크루 없어도 즐찾/저장 루프) */}
+      {filterCount === 0 && myPlaces.length > 0 && (
+        <section className="px-4 pt-5">
+          <div className="mb-1 flex items-center justify-between">
+            <h2 className="text-[15px] font-bold text-gray-900">🍽 오늘 뭐 먹지 — 내 입맛 추천</h2>
+            <button
+              onClick={() => {
+                try { sessionStorage.setItem("picks_view_state_v1", JSON.stringify({ tab: "taste", scrollY: 0 })) } catch { /* noop */ }
+                router.push("/picks")
+              }}
+              className="text-[12px] font-semibold"
+              style={{ color: BRAND }}
+            >전체 보기</button>
+          </div>
+          <p className="text-[11px] text-gray-400">저장·재방문 기록으로 고른 내 취향 맛집</p>
+          <div className="mt-2.5 flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+            {myPlaces.filter((p) => foodTest(p.category)).slice(0, 12).map((p, i) => (
+              <article
+                key={`${p.name}-${i}`}
+                onClick={() => { const pid = p.place_id || p.id; if (pid) router.push(`/places/${pid}`) }}
+                className="w-[136px] shrink-0 cursor-pointer rounded-2xl border border-gray-100 p-2.5"
+              >
+                {p.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.image} alt="" className="h-[68px] w-full rounded-xl object-cover" />
+                ) : (
+                  <div className="flex h-[68px] w-full items-center justify-center rounded-xl bg-gray-50 text-3xl">{catEmoji(`${p.category} ${p.name}`)}</div>
+                )}
+                <div className="mt-1.5 truncate text-[12px] font-semibold text-gray-900">{p.name}</div>
+                <div className="truncate text-[10px] text-gray-400">{p.category || "맛집"}{p.address ? ` · ${p.address.split(" ").slice(1, 2)}` : ""}</div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ④ 내 크루와 비슷한 크루의 리스트 — 필터 중엔 '필터 결과'가 대신함 */}
       {filterCount === 0 && crewLists.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
             <Users className="h-4 w-4" style={{ color: BRAND }} />
-            <h2 className="text-[15px] font-bold text-gray-900">내 크루와 비슷한 크루의 리스트</h2>
+            <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">내 크루와 비슷한 크루의 리스트</h2>
+            <button onClick={() => router.push("/home-next/browse?mode=crew")} className="shrink-0 text-[12px] font-semibold" style={{ color: BRAND }}>전체 보기</button>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
             {crewLists.map((g) => <ListCardView key={g.folder_id} g={g} />)}
@@ -504,7 +562,8 @@ export default function HomeNextPage() {
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
             <Sparkles className="h-4 w-4" style={{ color: BRAND }} />
-            <h2 className="text-[15px] font-bold text-gray-900">내 입맛과 닮은 큐레이터의 리스트</h2>
+            <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">내 입맛과 닮은 큐레이터의 리스트</h2>
+            <button onClick={() => router.push("/home-next/browse?mode=curator")} className="shrink-0 text-[12px] font-semibold" style={{ color: BRAND }}>전체 보기</button>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
             {curatorLists.map((g) => <ListCardView key={g.folder_id} g={g} />)}
@@ -515,10 +574,13 @@ export default function HomeNextPage() {
       {/* ⑥ 맥락별 랙 — 필터 중엔 숨김 */}
       {filterCount === 0 && shownRacks.map((rack) => (
         <section key={rack.tag} className="px-4 pt-5">
-          <div className="mb-2 flex items-center justify-between">
+          <button
+            onClick={() => router.push(`/home-next/browse?mode=tag&tag=${rack.tag}`)}
+            className="mb-2 flex w-full items-center justify-between"
+          >
             <h2 className="text-[15px] font-bold text-gray-900">{rack.emoji} {rack.label}</h2>
-            <ChevronRight className="h-4 w-4 text-gray-300" />
-          </div>
+            <span className="flex items-center text-[12px] font-semibold" style={{ color: BRAND }}>전체 보기<ChevronRight className="h-4 w-4" /></span>
+          </button>
           <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
             {rack.items.map((it) => (
               <article
