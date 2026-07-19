@@ -576,3 +576,102 @@ def home_search(
         "filters": {"q": q or "", "regions": region_set, "tags": sorted(tag_set), "foods": sorted(food_set), "sort": eff_sort, "verified": verified},
         "context_tags": CONTEXT_TAGS,
     }
+
+
+@router.get("/api/home/search-places")
+def home_search_places(
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    radius_km: float = 2.0,
+    tags: Optional[str] = None,     # 목적(콤마 OR) — 이름/카테고리 힌트 매칭
+    foods: Optional[str] = None,    # 음식(콤마 OR)
+    q: Optional[str] = None,
+    limit: int = 30,
+    db: Session = Depends(get_db),
+):
+    """전체 장소 DB(12만+)에서 지역(좌표 반경)×목적×음식으로 음식점 검색.
+    공개 리스트 검색(/api/home/search)과 별개로, 필터 결과의 본체."""
+    from sqlalchemy import or_
+
+    tag_set = {t.strip() for t in (tags or "").split(",") if t.strip() in VALID_CONTEXT_TAGS}
+    food_set = {f.strip() for f in (foods or "").split(",") if f.strip() in FOOD_KEYWORDS}
+    limit = max(1, min(int(limit or 30), 60))
+
+    query = db.query(models.Place).filter(
+        models.Place.main_category.in_(["RESTAURANT", "CAFE", "PUB"])
+    )
+
+    # 지역: 좌표 반경 bbox (기존 지역검색 /api/geocode 선택값과 연동)
+    if lat is not None and lng is not None:
+        import math
+        dlat = radius_km / 111.0
+        dlng = radius_km / (111.0 * max(0.2, math.cos(math.radians(lat))))
+        query = query.filter(
+            models.Place.lat.between(lat - dlat, lat + dlat),
+            models.Place.lng.between(lng - dlng, lng + dlng),
+        )
+
+    # 음식: cuisine/category/이름 ILIKE (OR)
+    if food_set:
+        kws = [k for f in food_set for k in FOOD_KEYWORDS[f]]
+        conds = []
+        for k in kws:
+            like = f"%{k}%"
+            conds += [
+                models.Place.cuisine_type.ilike(like),
+                models.Place.category.ilike(like),
+                models.Place.name.ilike(like),
+            ]
+        query = query.filter(or_(*conds))
+
+    # 목적: 이름/카테고리 힌트 (OR)
+    if tag_set:
+        hints = [h for t in tag_set for h in TAG_NAME_HINTS.get(t, [])]
+        conds = []
+        for h in hints:
+            like = f"%{h}%"
+            conds += [
+                models.Place.name.ilike(like),
+                models.Place.category.ilike(like),
+                models.Place.cuisine_type.ilike(like),
+            ]
+        query = query.filter(or_(*conds))
+
+    if q and q.strip():
+        query = query.filter(models.Place.name.ilike(f"%{q.strip()}%"))
+
+    rows = (
+        query.order_by(models.Place.wemeet_rating.desc().nullslast(), models.Place.review_count.desc().nullslast())
+        .limit(limit * 3)
+        .all()
+    )
+
+    # 반경 정밀 컷 + 정렬
+    import math as _m
+    def _dist(p):
+        if lat is None or lng is None or not p.lat or not p.lng:
+            return None
+        dx = (p.lng - lng) * 111.0 * _m.cos(_m.radians(lat))
+        dy = (p.lat - lat) * 111.0
+        return round(_m.sqrt(dx * dx + dy * dy), 2)
+
+    items = []
+    for p in rows:
+        d = _dist(p)
+        if d is not None and d > radius_km:
+            continue
+        items.append({
+            "id": p.id,
+            "name": p.name,
+            "cuisine": p.cuisine_type or "",
+            "category": p.category or "",
+            "address": p.address or "",
+            "rating": float(p.wemeet_rating or 0),
+            "review_count": int(p.review_count or 0),
+            "image": getattr(p, "hero_image", None) or getattr(p, "image_url", None),
+            "dist_km": d,
+        })
+        if len(items) >= limit:
+            break
+
+    return {"items": items, "count": len(items)}
