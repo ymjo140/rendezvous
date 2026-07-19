@@ -9,7 +9,11 @@ import { Users, Plus, ChevronRight, Sparkles } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "../tab-bar"
 
-type Crew = { id: string; title: string; icon: string; members: number; lists: number; visibility?: string }
+type CrewVisit = { place: string; date: string; amount: number; party: number }
+type Crew = {
+  id: string; title: string; icon: string; members: number; lists: number; visibility?: string
+  visits?: number; spent?: number; recent?: CrewVisit[]
+}
 
 const VIS_LABEL: Record<string, string> = {
   private: "🔒 우리끼리", list_only: "📋 리스트만 공개", public: "🌟 크루 공개", open: "💬 오픈",
@@ -69,21 +73,46 @@ export default function CrewsTabPage() {
         ) : (
           <div className="space-y-2.5">
             {mine.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => router.push(`/home-next/crew/${c.id}`)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-slate-100 p-3.5 text-left"
-              >
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-2xl">{c.icon}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-semibold text-slate-900">{c.title}</span>
-                  <span className="mt-0.5 block text-[11px] text-slate-400">
-                    멤버 {c.members} · 리스트 {c.lists}
-                    {c.visibility && ` · ${VIS_LABEL[c.visibility] || ""}`}
+              <div key={c.id} className="rounded-2xl border border-slate-100 p-3.5">
+                <button
+                  onClick={() => router.push(`/home-next/crew/${c.id}`)}
+                  className="flex w-full items-center gap-3 text-left"
+                >
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-2xl">{c.icon}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-semibold text-slate-900">{c.title}</span>
+                    <span className="mt-0.5 block text-[11px] text-slate-400">
+                      멤버 {c.members} · 리스트 {c.lists}
+                      {c.visibility && ` · ${VIS_LABEL[c.visibility] || ""}`}
+                    </span>
                   </span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
-              </button>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+                </button>
+
+                {/* 방문 히스토리 · 지출 (분담 결제 완료 건 집계) */}
+                <div className="mt-2.5 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-slate-50 py-2 text-center">
+                    <div className="text-[14px] font-bold text-slate-900">{c.visits ?? 0}회</div>
+                    <div className="text-[10px] text-slate-400">함께 방문</div>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 py-2 text-center">
+                    <div className="text-[14px] font-bold text-slate-900">{(c.spent ?? 0).toLocaleString()}원</div>
+                    <div className="text-[10px] text-slate-400">누적 지출</div>
+                  </div>
+                </div>
+                {(c.recent?.length ?? 0) > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {c.recent!.map((v, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[11px]">
+                        <span className="text-slate-300">·</span>
+                        <span className="min-w-0 flex-1 truncate font-medium text-slate-700">{v.place}</span>
+                        <span className="shrink-0 text-slate-400">{v.date}{v.party > 0 && ` · ${v.party}명`}</span>
+                        {v.amount > 0 && <span className="shrink-0 font-semibold text-amber-700">{v.amount.toLocaleString()}원</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             ))}
             <button
               onClick={() => router.push("/home-next/crew-new")}
