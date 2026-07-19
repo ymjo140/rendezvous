@@ -13,7 +13,7 @@ from collections import Counter
 from typing import Optional
 
 import numpy as np
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,9 @@ from domain import models
 from api.dependencies import get_current_user
 
 router = APIRouter()
+
+VALID_CONTEXT_TAGS = {"date", "work", "friends", "solo", "cafe", "drink", "family", "special"}
+VALID_VISIBILITY = {"private", "list_only", "public", "open"}
 
 # 맥락 태그 체계(C 확정) — 발견 랙·검색·광고 타깃 공통 뼈대
 CONTEXT_TAGS = [
@@ -263,4 +266,208 @@ def home_feed(
         "context_tags": CONTEXT_TAGS,
         "logged_in": bool(uid),
         "has_taste": taste is not None,
+    }
+
+
+@router.post("/api/crews")
+def create_crew(
+    req: dict,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """크루 생성(경량) — 약속형 커뮤니티 생성과 달리 날짜/인원 없이
+    제목+이모지+공개수준(+선택: 첫 공유 리스트)만으로 만든다.
+    body: {title, icon?, visibility?, first_list?: {name, icon?, context_tag?}}
+    """
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    title = (req.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="크루 이름이 필요해요.")
+    if len(title) > 30:
+        raise HTTPException(status_code=400, detail="크루 이름은 30자 이내로 해주세요.")
+    visibility = req.get("visibility") or "list_only"
+    if visibility not in VALID_VISIBILITY:
+        raise HTTPException(status_code=400, detail="공개 수준이 올바르지 않아요.")
+
+    crew = models.Community(
+        host_id=user.id,
+        title=title,
+        category="크루",
+        location="",
+        date_time="",
+        max_members=0,
+        description=(req.get("description") or "").strip()[:200],
+        tags=[],
+        member_ids=[user.id],
+        visibility=visibility,
+        icon=(req.get("icon") or "🍽️")[:8],
+    )
+    db.add(crew)
+    db.flush()
+
+    # 크루 채팅방(1:1 매칭 규약 유지 — 기존 커뮤니티 생성과 동일)
+    db.add(models.ChatRoom(id=crew.id, title=f"[크루] {title}", is_group=True))
+    db.add(models.ChatRoomMember(room_id=crew.id, user_id=user.id))
+
+    first = req.get("first_list") or None
+    folder_out = None
+    if first and (first.get("name") or "").strip():
+        tag = first.get("context_tag")
+        if tag and tag not in VALID_CONTEXT_TAGS:
+            tag = None
+        folder = models.SaveFolder(
+            user_id=user.id,
+            community_id=crew.id,
+            name=first["name"].strip()[:40],
+            icon=(first.get("icon") or crew.icon or "📁")[:8],
+            description=(first.get("description") or "").strip()[:200] or None,
+            is_public=(visibility != "private"),
+            is_default=False,
+            context_tag=tag,
+        )
+        db.add(folder)
+        db.flush()
+        folder_out = {"id": folder.id, "name": folder.name, "context_tag": folder.context_tag}
+
+    db.commit()
+    return {
+        "id": crew.id,
+        "title": crew.title,
+        "icon": crew.icon,
+        "visibility": crew.visibility,
+        "first_list": folder_out,
+    }
+
+
+@router.get("/api/home/search")
+def home_search(
+    q: Optional[str] = None,
+    region: Optional[str] = None,
+    tag: Optional[str] = None,
+    sort: Optional[str] = None,       # match | saves | revisit (기본: 로그인+취향=match, 아니면 saves)
+    verified: bool = False,           # 재방문 검증만(재방문 1명 이상)
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """리스트 단위 검색 — 필터 4축(지역·맥락·정렬·재방문 검증).
+    검색의 기본 단위는 장소가 아니라 '믿을 무리가 만든 리스트'다."""
+    uid = user.id if user else None
+    if tag and tag not in VALID_CONTEXT_TAGS:
+        tag = None
+
+    folders = (
+        db.query(models.SaveFolder)
+        .filter(models.SaveFolder.is_public == True, models.SaveFolder.item_count > 0)  # noqa: E712
+        .all()
+    )
+    if uid:
+        folders = [f for f in folders if f.user_id != uid]
+    if tag:
+        folders = [f for f in folders if getattr(f, "context_tag", None) == tag]
+    if q:
+        ql = q.strip().lower()
+        if ql:
+            folders = [
+                f for f in folders
+                if ql in (f.name or "").lower() or ql in (f.description or "").lower()
+            ]
+
+    fids = [f.id for f in folders]
+    saves_cnt = dict(
+        db.query(models.ListSave.folder_id, func.count(models.ListSave.id))
+        .filter(models.ListSave.folder_id.in_(fids)).group_by(models.ListSave.folder_id).all()
+    ) if fids else {}
+
+    # 지역 필터: 폴더 장소 주소에 region 포함 여부 (heavy 계산 전에 후보 축소)
+    fplaces = _folder_place_ids(db, fids) if fids else {}
+    if region and region.strip():
+        rg = region.strip()
+        all_pids = list({p for pids in fplaces.values() for p in pids})
+        addr_rows = (
+            db.query(models.Place.id, models.Place.address)
+            .filter(models.Place.id.in_(all_pids)).all()
+        ) if all_pids else []
+        addr_map = {pid: (a or "") for pid, a in addr_rows}
+        folders = [
+            f for f in folders
+            if any(rg in addr_map.get(p, "") for p in fplaces.get(f.id, []))
+        ]
+
+    folders.sort(key=lambda f: saves_cnt.get(f.id, 0), reverse=True)
+    heavy = folders[:40]
+    heavy_ids = [f.id for f in heavy]
+
+    hplaces = {fid: fplaces.get(fid, []) for fid in heavy_ids}
+    all_pids = list({p for pids in hplaces.values() for p in pids[:50]})
+    embs = _embeddings_for(db, all_pids)
+    addr_rows = (
+        db.query(models.Place.id, models.Place.address)
+        .filter(models.Place.id.in_(all_pids)).all()
+    ) if all_pids else []
+    addr = {pid: a for pid, a in addr_rows}
+    revisit_rows = (
+        db.query(models.PlaceVisitFeedback.place_id, func.count(func.distinct(models.PlaceVisitFeedback.user_id)))
+        .filter(
+            models.PlaceVisitFeedback.place_id.in_(all_pids),
+            models.PlaceVisitFeedback.personal_revisit == True,  # noqa: E712
+        )
+        .group_by(models.PlaceVisitFeedback.place_id)
+        .all()
+    ) if all_pids else []
+    revisit_by_place = dict(revisit_rows)
+
+    comm_ids = list({f.community_id for f in heavy if f.community_id})
+    comms = {c.id: c for c in db.query(models.Community).filter(models.Community.id.in_(comm_ids)).all()} if comm_ids else {}
+    owner_ids = list({f.user_id for f in heavy})
+    owners = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()} if owner_ids else {}
+
+    taste = _user_taste_centroid(db, uid) if uid else None
+
+    items = []
+    for f in heavy:
+        pids = hplaces.get(f.id, [])[:50]
+        vecs = [embs[p] for p in pids if p in embs]
+        cen = _centroid(vecs)
+        match = None
+        if taste is not None and cen is not None:
+            match = int(round(max(0.0, float(np.dot(taste, cen))) * 100))
+        crew = comms.get(f.community_id) if f.community_id else None
+        owner = owners.get(f.user_id)
+        revisit = sum(revisit_by_place.get(p, 0) for p in pids)
+        if verified and revisit < 1:
+            continue
+        items.append({
+            "folder_id": f.id,
+            "name": f.name,
+            "icon": f.icon or "📁",
+            "description": f.description or "",
+            "context_tag": getattr(f, "context_tag", None),
+            "item_count": f.item_count or 0,
+            "saves": int(saves_cnt.get(f.id, 0)),
+            "revisit": int(revisit),
+            "area": _area_of([addr.get(p) for p in pids]),
+            "match": match,
+            "by": (
+                {"kind": "crew", "id": crew.id, "name": crew.title, "icon": crew.icon or "👥",
+                 "members": len(crew.member_ids or [])}
+                if crew
+                else {"kind": "curator", "id": owner.id if owner else None,
+                      "name": (owner.name if owner else "큐레이터"), "icon": (owner.avatar if owner else "🙂")}
+            ),
+        })
+
+    eff_sort = sort or ("match" if taste is not None else "saves")
+    if eff_sort == "match":
+        items.sort(key=lambda c: ((c["match"] if c["match"] is not None else -1), c["saves"]), reverse=True)
+    elif eff_sort == "revisit":
+        items.sort(key=lambda c: (c["revisit"], c["saves"]), reverse=True)
+    else:
+        items.sort(key=lambda c: (c["saves"], c["revisit"]), reverse=True)
+
+    return {
+        "items": items,
+        "count": len(items),
+        "filters": {"q": q or "", "region": region or "", "tag": tag, "sort": eff_sort, "verified": verified},
+        "context_tags": CONTEXT_TAGS,
     }
