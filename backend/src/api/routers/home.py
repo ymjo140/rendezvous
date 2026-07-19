@@ -238,6 +238,30 @@ def home_feed(
     crew_suggestions.sort(key=lambda e: (e["lists"], e["members"]), reverse=True)
     crew_suggestions = crew_suggestions[:6]
 
+    # 내 크루 방문 히스토리·지출 — 분담 결제 완료 건(room_id=크루 id) 기준
+    if my_crews:
+        crew_ids = [e["id"] for e in my_crews]
+        sp_rows = (
+            db.query(models.ChatSplitRequest)
+            .filter(
+                models.ChatSplitRequest.room_id.in_(crew_ids),
+                models.ChatSplitRequest.status == "completed",
+            )
+            .order_by(models.ChatSplitRequest.date.desc())
+            .all()
+        )
+        by_room: dict[str, list] = {}
+        for r in sp_rows:
+            by_room.setdefault(r.room_id, []).append(r)
+        for e in my_crews:
+            rs = by_room.get(e["id"], [])
+            e["visits"] = len(rs)
+            e["spent"] = int(sum((r.total_amount or 0) for r in rs))
+            e["recent"] = [
+                {"place": r.place_name, "date": r.date or "", "amount": int(r.total_amount or 0), "party": int(r.party_size or 0)}
+                for r in rs[:3]
+            ]
+
     # ── ③ 맥락 랙: 태그별 인기 리스트 ──
     racks = []
     for t in CONTEXT_TAGS:
