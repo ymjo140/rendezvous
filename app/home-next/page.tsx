@@ -8,7 +8,7 @@
 
 import React, { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Search, Sparkles, RotateCw, MapPin, Bookmark, ChevronRight, ChevronDown, BadgeCheck, Flame, Users, ListOrdered, SlidersHorizontal, X } from "lucide-react"
+import { Search, Sparkles, RotateCw, MapPin, Bookmark, ChevronRight, ChevronDown, BadgeCheck, Flame, Users, ListOrdered, SlidersHorizontal, X, MessageCircle } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "./tab-bar"
 
@@ -326,6 +326,14 @@ export default function HomeNextPage() {
             style={filterCount > 0 ? { backgroundColor: BRAND } : undefined}
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />필터{filterCount > 0 && ` ${filterCount}`}
+          </button>
+          {/* 💬 채팅 — 탭에서 뺀 대신 인스타 DM 패턴으로 상단 상주 */}
+          <button
+            onClick={() => router.push("/home-next/chats")}
+            aria-label="채팅"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-gray-200 text-gray-600"
+          >
+            <MessageCircle className="h-4.5 w-4.5" style={{ width: 18, height: 18 }} />
           </button>
         </div>
 

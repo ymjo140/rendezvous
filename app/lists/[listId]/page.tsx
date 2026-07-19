@@ -112,8 +112,17 @@ export default function CuratorListPage() {
     }
   }
 
+  const [myCrews, setMyCrews] = useState<any[] | null>(null)
+
   const openSave = async () => {
     setSaveOpen(true)
+    if (myCrews === null) {
+      // 우리 크루 목록 — 크루 리스트로 담기용
+      fetchWithAuth(`/api/home/feed`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => setMyCrews(d?.my_crews || []))
+        .catch(() => setMyCrews([]))
+    }
     if (myFolders === null) {
       try {
         const res = await fetchWithAuth(`/api/folders`)
@@ -140,6 +149,28 @@ export default function CuratorListPage() {
       setMyFolders(null) // 다음에 열 때 새 폴더 반영되게 갱신
       if (typeof j.save_count === "number") setSaveCount(j.save_count)
       setSavedTo(`'${j.folder_name}' 폴더에 ${j.added}곳을 담았어요${j.skipped ? ` (이미 있던 ${j.skipped}곳 제외)` : ""}`)
+      setTimeout(() => setSavedTo(null), 3500)
+    } catch {
+      alert("담기에 실패했어요. 잠시 후 다시 시도해 주세요.")
+    } finally {
+      setSaveBusy(false)
+    }
+  }
+
+  const saveToCrew = async (communityId: string) => {
+    if (saveBusy) return
+    setSaveBusy(true)
+    try {
+      const res = await fetchWithAuth(`/api/lists/${listId}/save`, {
+        method: "POST",
+        body: JSON.stringify({ community_id: communityId }),
+      })
+      const j = await res.json()
+      if (res.status === 401) { alert("로그인이 필요해요."); return }
+      if (!res.ok) { alert(j?.detail || "담기에 실패했어요."); return }
+      setSaveOpen(false)
+      if (typeof j.save_count === "number") setSaveCount(j.save_count)
+      setSavedTo(`'${j.folder_name}'에 ${j.added}곳을 담았어요 — 크루 프로필에 공개 리스트로 올라가요`)
       setTimeout(() => setSavedTo(null), 3500)
     } catch {
       alert("담기에 실패했어요. 잠시 후 다시 시도해 주세요.")
@@ -370,6 +401,27 @@ export default function CuratorListPage() {
               </button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-2">
+              {/* 🧑‍🤝‍🧑 우리 크루에 담기 — 크루의 새 공개 리스트로 복사 */}
+              {(myCrews?.length || 0) > 0 && (
+                <>
+                  <div className="text-xs font-bold text-gray-500 px-1">우리 크루에 담기 <span className="font-normal text-gray-400">· 크루 리스트로 공개돼요</span></div>
+                  {myCrews!.map((c: any) => (
+                    <button
+                      key={c.id}
+                      onClick={() => saveToCrew(c.id)}
+                      disabled={saveBusy}
+                      className="w-full flex items-center gap-3 p-3 rounded-2xl border border-amber-200 bg-amber-50 hover:border-[#F5A623] transition-colors text-left"
+                    >
+                      <span className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-lg">{c.icon}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-bold text-gray-800 text-sm truncate">{c.title}</span>
+                        <span className="block text-xs text-amber-700">멤버 {c.members} · 리스트 {c.lists}</span>
+                      </span>
+                    </button>
+                  ))}
+                  <div className="text-xs font-bold text-gray-500 px-1 pt-2">내 폴더에 담기</div>
+                </>
+              )}
               <button
                 onClick={() => saveList(null)}
                 disabled={saveBusy}

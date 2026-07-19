@@ -524,6 +524,55 @@ def save_list_to_my_folders(
     if not items:
         raise HTTPException(status_code=400, detail="담을 장소가 없는 리스트예요.")
 
+    # 🧑‍🤝‍🧑 크루에 담기: community_id가 오면 그 크루의 "새 리스트"로 복사 (멤버만)
+    community_id = req.get("community_id")
+    if community_id:
+        crew = db.query(models.Community).filter(models.Community.id == str(community_id)).first()
+        if not crew:
+            raise HTTPException(status_code=404, detail="크루를 찾을 수 없어요.")
+        members = crew.member_ids or []
+        if user.id not in members and user.id != crew.host_id:
+            raise HTTPException(status_code=403, detail="크루 멤버만 담을 수 있어요.")
+        base = (src.name or "담아온 리스트").strip()[:40] or "담아온 리스트"
+        name, n = base, 2
+        while db.query(models.SaveFolder).filter(
+            models.SaveFolder.community_id == crew.id, models.SaveFolder.name == name
+        ).first():
+            name = f"{base} ({n})"
+            n += 1
+        target = models.SaveFolder(
+            user_id=user.id, community_id=crew.id, name=name,
+            icon=src.icon or "📁",
+            description=src.description,
+            is_public=(crew.visibility or "private") != "private",
+            is_default=False,
+            context_tag=getattr(src, "context_tag", None),
+        )
+        db.add(target)
+        db.flush()
+        have = set()
+        added = 0
+        for it in items:
+            if it.place_id in have:
+                continue
+            have.add(it.place_id)
+            db.add(models.SavedItem(folder_id=target.id, user_id=user.id, item_type="place", place_id=it.place_id, memo=it.memo))
+            added += 1
+        target.item_count = added
+        # 담은 사람 수 집계(1인 1회) — 개인 담기와 동일
+        exists_save = db.query(models.ListSave).filter_by(folder_id=src.id, user_id=user.id).first()
+        if not exists_save:
+            db.add(models.ListSave(folder_id=src.id, user_id=user.id))
+        db.commit()
+        save_count = db.query(models.ListSave).filter(models.ListSave.folder_id == src.id).count()
+        return {
+            "folder_id": target.id,
+            "folder_name": f"{crew.title} · {name}",
+            "added": added, "skipped": 0,
+            "save_count": save_count,
+            "community_id": crew.id,
+        }
+
     target_id = req.get("target_folder_id")
     if target_id:
         if int(target_id) == src.id:
