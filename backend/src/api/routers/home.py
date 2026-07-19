@@ -38,6 +38,19 @@ FOOD_KEYWORDS = {
     "분식": ["분식", "떡볶이", "김밥", "만두", "튀김"],
 }
 
+# 맥락 태그 이름-힌트 — 저장된 context_tag가 없어도 리스트 이름/설명/장소 이름으로 추정 매칭.
+# (크롤 cuisine이 오염돼 있어 장소 "이름"이 가장 정직한 신호: 스시·라멘·빵·펍 등)
+TAG_NAME_HINTS = {
+    "date": ["데이트", "커플", "분위기", "오마카세", "와인", "이탈리안", "파스타", "스시", "기념일", "야경"],
+    "work": ["회식", "단체", "회사", "부장", "고기", "한정식", "삼겹"],
+    "drink": ["술", "펍", "포차", "이자카야", "바", "맥주", "와인", "호프", "하이볼", "안주", "크롤"],
+    "cafe": ["카페", "빵", "디저트", "커피", "베이커리", "브런치", "케이크", "순례"],
+    "solo": ["혼밥", "혼술", "1인", "국밥", "라멘", "백반", "덮밥"],
+    "friends": ["친구", "수다", "미식", "맛집 투어", "동네", "지도"],
+    "family": ["가족", "부모님", "한정식", "상견례", "어르신"],
+    "special": ["기념일", "오마카세", "파인다이닝", "스페셜", "생일", "축하"],
+}
+
 # 맥락 태그 체계(C 확정) — 발견 랙·검색·광고 타깃 공통 뼈대
 CONTEXT_TAGS = [
     {"tag": "date",    "label": "데이트하기 좋은",   "emoji": "💕"},
@@ -274,13 +287,22 @@ def home_feed(
                 for r in rs[:3]
             ]
 
-    # ── ③ 맥락 랙: 태그별 인기 리스트 ──
+    # ── ③ 맥락 랙: 태그별 인기 리스트 (저장 태그 + 이름/설명 힌트 매칭) ──
     racks = []
+    used_in_rack: set = set()
     for t in CONTEXT_TAGS:
-        items = [c for c in cards if c["context_tag"] == t["tag"]]
+        hints = TAG_NAME_HINTS.get(t["tag"], [])
+        items = [
+            c for c in cards
+            if c["folder_id"] not in used_in_rack and (
+                c["context_tag"] == t["tag"]
+                or any(h in f"{c['name']} {c['description']}" for h in hints)
+            )
+        ]
         items.sort(key=lambda c: (c["saves"], c["revisit"]), reverse=True)
         if items:
             racks.append({**t, "items": items[:6]})
+            used_in_rack.update(c["folder_id"] for c in items[:6])
 
     # ── ④ 급상승: 좋아요x3 + 댓글x2 ──
     scored = sorted(
@@ -406,8 +428,7 @@ def home_search(
     )
     if uid:
         folders = [f for f in folders if f.user_id != uid]
-    if tag_set:
-        folders = [f for f in folders if getattr(f, "context_tag", None) in tag_set]
+    # (태그 필터는 장소 이름까지 봐야 해서 fplaces 확보 후로 이동)
     if q:
         ql = q.strip().lower()
         if ql:
@@ -424,6 +445,31 @@ def home_search(
 
     # 지역 필터: 폴더 장소 주소에 지역명 포함 여부 (다중=OR, heavy 계산 전에 후보 축소)
     fplaces = _folder_place_ids(db, fids) if fids else {}
+
+    # 장소 이름/카테고리 맵 — 태그·음식 필터 공용 (cuisine 오염 대비, 이름이 최고 신호)
+    _all_pids = list({p for pids in fplaces.values() for p in pids})
+    _meta_rows = (
+        db.query(models.Place.id, models.Place.name, models.Place.cuisine_type, models.Place.category)
+        .filter(models.Place.id.in_(_all_pids)).all()
+    ) if _all_pids else []
+    _pname = {pid: (nm or "") for pid, nm, _, _ in _meta_rows}
+    _pcat = {pid: f"{ct or ''} {cat or ''}" for pid, _, ct, cat in _meta_rows}
+
+    if tag_set:
+        def _tag_pass(f) -> bool:
+            if getattr(f, "context_tag", None) in tag_set:
+                return True
+            blob = f"{f.name or ''} {f.description or ''}"
+            for t in tag_set:
+                hints = TAG_NAME_HINTS.get(t, [])
+                if any(h in blob for h in hints):
+                    return True
+                # 장소 이름 2곳 이상에서 힌트가 보이면 그 성격의 리스트로 간주
+                cnt = sum(1 for p in fplaces.get(f.id, []) if any(h in _pname.get(p, "") for h in hints))
+                if cnt >= 2:
+                    return True
+            return False
+        folders = [f for f in folders if _tag_pass(f)]
     region_set = [r.strip() for r in (regions or "").split(",") if r.strip()]
     if not region_set and region and region.strip():
         region_set = [region.strip()]
@@ -439,19 +485,18 @@ def home_search(
             if any(any(rg in addr_map.get(p, "") for rg in region_set) for p in fplaces.get(f.id, []))
         ]
 
-    # 음식 필터: 리스트 안 장소들의 cuisine/category에 키워드 하나라도 매칭되면 통과
+    # 음식 필터: 장소 cuisine/category + "장소 이름" + 리스트 이름/설명까지 키워드 매칭
     if food_set:
         kws = [k for f in food_set for k in FOOD_KEYWORDS[f]]
-        all_pids2 = list({p for pids in fplaces.values() for p in pids})
-        cat_rows = (
-            db.query(models.Place.id, models.Place.cuisine_type, models.Place.category)
-            .filter(models.Place.id.in_(all_pids2)).all()
-        ) if all_pids2 else []
-        cat_map = {pid: f"{ct or ''} {cat or ''}" for pid, ct, cat in cat_rows}
-        folders = [
-            f for f in folders
-            if any(any(k in cat_map.get(p, "") for k in kws) for p in fplaces.get(f.id, []))
-        ]
+        def _food_pass(f) -> bool:
+            blob = f"{f.name or ''} {f.description or ''}"
+            if any(k in blob for k in kws):
+                return True
+            return any(
+                any(k in _pcat.get(p, "") or k in _pname.get(p, "") for k in kws)
+                for p in fplaces.get(f.id, [])
+            )
+        folders = [f for f in folders if _food_pass(f)]
 
     folders.sort(key=lambda f: saves_cnt.get(f.id, 0), reverse=True)
     heavy = folders[:40]
