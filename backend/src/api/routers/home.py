@@ -625,10 +625,11 @@ def home_search_places(
         query = query.filter(or_(*conds))
 
     # 목적: 이름/카테고리 힌트 (OR)
-    if tag_set:
-        hints = [h for t in tag_set for h in TAG_NAME_HINTS.get(t, [])]
+    # 음식 필터와 병행 시엔 하드필터가 아니라 "정렬 부스트"로 (우동집 이름에 '데이트'가 없다고 떨구면 결과가 텅 빔)
+    tag_hints = [h for t in tag_set for h in TAG_NAME_HINTS.get(t, [])]
+    if tag_set and not food_set:
         conds = []
-        for h in hints:
+        for h in tag_hints:
             like = f"%{h}%"
             conds += [
                 models.Place.name.ilike(like),
@@ -655,12 +656,19 @@ def home_search_places(
         dy = (p.lat - lat) * 111.0
         return round(_m.sqrt(dx * dx + dy * dy), 2)
 
+    def _tag_hit(p) -> bool:
+        if not tag_hints:
+            return False
+        blob = f"{p.name or ''} {p.category or ''} {p.cuisine_type or ''}"
+        return any(h in blob for h in tag_hints)
+
     items = []
     for p in rows:
         d = _dist(p)
         if d is not None and d > radius_km:
             continue
         items.append({
+            "tag_match": _tag_hit(p),
             "id": p.id,
             "name": p.name,
             "cuisine": p.cuisine_type or "",
@@ -671,7 +679,8 @@ def home_search_places(
             "image": getattr(p, "hero_image", None) or getattr(p, "image_url", None),
             "dist_km": d,
         })
-        if len(items) >= limit:
-            break
+    # 목적 힌트 맞는 곳 우선, 그 안에서 평점·리뷰순
+    items.sort(key=lambda x: (x["tag_match"], x["rating"], x["review_count"]), reverse=True)
+    items = items[:limit]
 
     return {"items": items, "count": len(items)}
