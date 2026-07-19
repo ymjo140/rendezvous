@@ -740,12 +740,52 @@ def reengage_regulars(store_id: int, body: ReengageBody, db: Session = Depends(g
     title = f"{place.name}에서 초대해요"
     dc = f" · {body.discount_pct}% 할인" if body.discount_pct else ""
     msg = body.message or ("보고 싶어요! 다시 방문해주시면 감사하겠습니다" if body.kind == "reminder" else "또 찾아주셔서 감사해요")
+    # 발송 로그(재방문 추적용)
+    try:
+        for uid in uids:
+            db.execute(text("INSERT INTO merchant_reengage (store_id, user_id, kind) VALUES (:s,:u,:k)"),
+                       {"s": store_id, "u": uid, "k": body.kind})
+        db.commit()
+    except Exception as exc:
+        print(f"[reengage] log skip: {exc}"); db.rollback()
     try:
         from services import push_service
         push_service.notify_users_async(uids, title, msg + dc, data={"type": "reengage", "place_id": str(store_id)})
     except Exception as exc:
         print(f"[reengage] push skip: {exc}")
     return {"sent": len(uids), "kind": body.kind}
+
+
+@router.get("/stores/{store_id}/reengage-stats")
+def reengage_stats(store_id: int, days: int = 30, db: Session = Depends(get_db)):
+    """재초대 성과 — 발송 대비 이후 재방문(예약)한 손님 수/전환율. 읽기 전용."""
+    days = max(7, min(int(days or 30), 180))
+    try:
+        row = db.execute(text(
+            """
+            WITH sends AS (
+              SELECT DISTINCT user_id, MIN(sent_at) AS first_sent
+              FROM merchant_reengage
+              WHERE store_id=:pid AND sent_at >= NOW() - (:days || ' days')::interval
+              GROUP BY user_id
+            )
+            SELECT COUNT(*) AS sent,
+                   COUNT(*) FILTER (WHERE EXISTS (
+                     SELECT 1 FROM user_reservations r
+                     WHERE r.place_id=:pid AND r.user_id=s.user_id
+                       AND r.status IN ('confirmed','completed')
+                       AND r.created_at > s.first_sent
+                   )) AS returned
+            FROM sends s
+            """
+        ), {"pid": store_id, "days": days}).fetchone()
+        sent = int(row[0] or 0) if row else 0
+        returned = int(row[1] or 0) if row else 0
+        rate = round(returned / sent * 100) if sent else None
+        return {"days": days, "sent": sent, "returned": returned, "rate": rate}
+    except Exception as exc:
+        print(f"[reengage-stats] skip: {exc}"); db.rollback()
+        return {"days": days, "sent": 0, "returned": 0, "rate": None}
 
 
 # ─────────────────── 손님 콘텐츠(#3) ───────────────────
@@ -902,6 +942,14 @@ def _taste_tags(prefs) -> list:
     return out[:4]
 
 
+def _days_since(ymd) -> int:
+    from datetime import datetime as _dt
+    try:
+        return (_dt.utcnow().date() - _dt.strptime(str(ymd)[:10], "%Y-%m-%d").date()).days
+    except Exception:
+        return 999
+
+
 def _parse_ymd(v):
     from datetime import datetime as _dt
     if not v:
@@ -996,6 +1044,7 @@ def store_crm(store_id: int, db: Session = Depends(get_db)):
             "persona": label, "emoji": emoji,
             "taste": _taste_tags(prefs_map.get(uid)),
             "visits": c["visits"],
+            "dormant": bool(c["last"] and (_days_since(c["last"]) >= 21)),
             "last": _ago_text(_parse_ymd(c["last"])) if c["last"] else "",
             "revisit_intent": uid in intent_uids,
             "recent_interest": recent_interest.get(uid, 0),
