@@ -11,6 +11,7 @@ import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Search, Sparkles, Plus, RotateCw, Users, MapPin, Bookmark, ChevronRight, BadgeCheck } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
+import { TabBar } from "./tab-bar"
 
 // ── 서버 응답 타입 (/api/home/feed) ──────────────────────────
 type ListBy = { kind: "crew" | "curator"; id: string | number | null; name: string; icon: string; members?: number }
@@ -255,6 +256,8 @@ export default function HomeNextPage() {
           </div>
         </section>
       )}
+
+      <TabBar />
     </div>
   )
 }
