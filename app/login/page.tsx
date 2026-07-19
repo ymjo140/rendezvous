@@ -8,9 +8,15 @@ export default function LoginPage() {
   // 카톡 초대링크(?ref=초대자id)로 들어온 경우, 로그인 후 친구 연결을 위해 저장
   useEffect(() => {
     if (typeof window === "undefined") return
-    const ref = new URLSearchParams(window.location.search).get("ref")
+    const params = new URLSearchParams(window.location.search)
+    const ref = params.get("ref")
     if (ref && /^\d+$/.test(ref)) {
       window.localStorage.setItem("invite_ref", ref)
+    }
+    // 크루 초대 링크(/login?crew=크루id) — 로그인 후 자동 합류용
+    const crew = params.get("crew")
+    if (crew) {
+      window.localStorage.setItem("invite_crew", crew)
     }
   }, [])
 

@@ -5,7 +5,8 @@
 
 import React, { useEffect, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { ChevronLeft, RotateCw, Users, Plus, BadgeCheck, Bookmark } from "lucide-react"
+import { ChevronLeft, RotateCw, Users, Plus, BadgeCheck, Bookmark, Share2, Loader2 } from "lucide-react"
+import { shareCrewInvite } from "@/lib/kakao"
 import { fetchWithAuth } from "@/lib/api-client"
 
 type CrewList = {
@@ -37,8 +38,32 @@ export default function CrewProfilePage() {
   const params = useParams<{ cid: string }>()
   const sp = useSearchParams()
   const justCreated = sp.get("created") === "1"
+  const justJoined = sp.get("joined") === "1"
+  const isInvite = sp.get("invite") === "1"
   const [crew, setCrew] = useState<Crew | null>(null)
   const [loading, setLoading] = useState(true)
+  const [joinBusy, setJoinBusy] = useState(false)
+  const [shareMsg, setShareMsg] = useState<string | null>(null)
+
+  const doJoin = async () => {
+    if (!params?.cid || joinBusy) return
+    setJoinBusy(true)
+    try {
+      const res = await fetchWithAuth(`/api/crews/${params.cid}/join`, { method: "POST" })
+      if (res.status === 401) { router.push(`/login?crew=${params.cid}`); return }
+      if (res.ok) {
+        // 합류 성공 — 멤버 시점으로 다시 로드
+        window.location.href = `/home-next/crew/${params.cid}?joined=1`
+      }
+    } catch { /* ignore */ } finally { setJoinBusy(false) }
+  }
+
+  const doInvite = async () => {
+    if (!crew) return
+    const { result } = await shareCrewInvite({ crewId: crew.id, crewTitle: crew.title, icon: crew.icon, memberCount: crew.member_count })
+    if (result === "copied") { setShareMsg("초대 링크를 복사했어요 — 카톡에 붙여넣어 보내세요!"); setTimeout(() => setShareMsg(null), 3000) }
+    else if (result === "none") { setShareMsg("공유를 지원하지 않는 환경이에요."); setTimeout(() => setShareMsg(null), 3000) }
+  }
 
   useEffect(() => {
     if (!params?.cid) return
@@ -73,7 +98,22 @@ export default function CrewProfilePage() {
       {loading ? (
         <div className="py-20 text-center text-sm text-slate-400">불러오는 중...</div>
       ) : !crew ? (
-        <div className="py-20 text-center text-sm text-slate-400">크루를 찾을 수 없어요.</div>
+        isInvite ? (
+          <div className="px-4 py-16 text-center">
+            <div className="text-4xl">💌</div>
+            <h2 className="mt-3 text-[16px] font-bold text-slate-900">크루에 초대받았어요!</h2>
+            <p className="mt-1.5 text-[12px] text-slate-400">비공개 크루라 합류하면 리스트가 보여요.</p>
+            <button
+              onClick={doJoin}
+              disabled={joinBusy}
+              className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[#F5A623] px-6 py-3 text-[14px] font-semibold text-white disabled:opacity-50"
+            >
+              {joinBusy && <Loader2 className="h-4 w-4 animate-spin" />}크루 합류하기
+            </button>
+          </div>
+        ) : (
+          <div className="py-20 text-center text-sm text-slate-400">크루를 찾을 수 없어요.</div>
+        )
       ) : (
         <>
           {justCreated && (
@@ -81,6 +121,13 @@ export default function CrewProfilePage() {
               <div className="text-2xl">🎉</div>
               <p className="mt-1 text-[13px] font-semibold text-amber-700">크루가 만들어졌어요!</p>
               <p className="mt-0.5 text-[11px] text-[#F5A623]">친구를 초대하고 맛집을 담으면 리스트가 자라나요.</p>
+            </div>
+          )}
+          {justJoined && (
+            <div className="mx-4 mb-3 rounded-2xl bg-emerald-50 px-4 py-3 text-center">
+              <div className="text-2xl">🤝</div>
+              <p className="mt-1 text-[13px] font-semibold text-emerald-700">{crew.title}에 합류했어요!</p>
+              <p className="mt-0.5 text-[11px] text-emerald-500">이제 크루 리스트에 맛집을 함께 담을 수 있어요.</p>
             </div>
           )}
 
@@ -95,7 +142,22 @@ export default function CrewProfilePage() {
                 </div>
                 <div className="mt-0.5 text-[11px] text-slate-400">{VIS_LABEL[crew.visibility] || crew.visibility}</div>
               </div>
-              {!crew.is_member && (
+              {crew.is_member ? (
+                <button
+                  onClick={doInvite}
+                  className="flex shrink-0 items-center gap-1 rounded-full bg-[#F5A623] px-3.5 py-2 text-[12px] font-semibold text-white"
+                >
+                  <Share2 className="h-3.5 w-3.5" />초대
+                </button>
+              ) : isInvite ? (
+                <button
+                  onClick={doJoin}
+                  disabled={joinBusy}
+                  className="flex shrink-0 items-center gap-1 rounded-full bg-[#F5A623] px-4 py-2 text-[12px] font-semibold text-white disabled:opacity-50"
+                >
+                  {joinBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}합류하기
+                </button>
+              ) : (
                 <button
                   onClick={follow}
                   className={`shrink-0 rounded-full px-4 py-2 text-[12px] font-semibold ${
@@ -208,6 +270,11 @@ export default function CrewProfilePage() {
             </div>
           )}
         </>
+      )}
+      {shareMsg && (
+        <div className="fixed bottom-6 left-1/2 z-50 max-w-[90%] -translate-x-1/2 rounded-full bg-gray-900 px-4 py-2.5 text-center text-sm font-medium text-white shadow-lg">
+          {shareMsg}
+        </div>
       )}
     </div>
   )

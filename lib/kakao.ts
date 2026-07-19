@@ -139,3 +139,36 @@ export async function shareRecommendation(opts: {
   const result = await fallbackShare(title, desc, url)
   return { result, url }
 }
+
+
+/** 크루 초대: 크루 프로필(?invite=1) 링크를 카톡으로 공유. 비로그인 수신자는 로그인 후 자동 합류. */
+export async function shareCrewInvite(opts: {
+  crewId: string
+  crewTitle: string
+  icon?: string
+  memberCount?: number
+}): Promise<{ result: ShareResult; url: string }> {
+  const url = `${appOrigin()}/home-next/crew/${opts.crewId}?invite=1`
+  const title = `${opts.icon || "🍽️"} ${opts.crewTitle} 크루 초대장`
+  const desc = `우리 크루에서 맛집 리스트를 함께 쌓아요! 멤버 ${opts.memberCount || 1}명이 기다리고 있어요.`
+
+  if (isKakaoReady()) {
+    try {
+      window.Kakao.Share.sendDefault({
+        objectType: "feed",
+        content: {
+          title,
+          description: desc,
+          imageUrl: DEFAULT_SHARE_IMAGE,
+          link: { mobileWebUrl: url, webUrl: url },
+        },
+        buttons: [{ title: "크루 합류하기", link: { mobileWebUrl: url, webUrl: url } }],
+      })
+      return { result: "kakao", url }
+    } catch {
+      // SDK 실패 → 폴백
+    }
+  }
+  const result = await fallbackShare(title, desc, url)
+  return { result, url }
+}

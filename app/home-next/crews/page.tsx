@@ -5,7 +5,8 @@
 
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Users, Plus, ChevronRight, Sparkles, MessageCircle } from "lucide-react"
+import { Users, Plus, ChevronRight, Sparkles, MessageCircle, Share2 } from "lucide-react"
+import { shareCrewInvite } from "@/lib/kakao"
 import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "../tab-bar"
 
@@ -89,13 +90,24 @@ export default function CrewsTabPage() {
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
                 </button>
 
-                {/* 💬 크루 채팅 — 크루마다 채팅방 1:1 연결(생성 시 자동) */}
-                <button
-                  onClick={() => router.push(`/home-next/chats?room=${c.id}`)}
-                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-amber-50 py-2 text-[12px] font-semibold text-amber-700"
-                >
-                  <MessageCircle className="h-3.5 w-3.5" />크루 채팅
-                </button>
+                {/* 💬 크루 채팅 + 💌 초대 */}
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() => router.push(`/home-next/chats?room=${c.id}`)}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-amber-50 py-2 text-[12px] font-semibold text-amber-700"
+                  >
+                    <MessageCircle className="h-3.5 w-3.5" />크루 채팅
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const { result } = await shareCrewInvite({ crewId: c.id, crewTitle: c.title, icon: c.icon, memberCount: c.members })
+                      if (result === "copied") alert("초대 링크를 복사했어요 — 카톡에 붙여넣어 보내세요!")
+                    }}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#F5A623] py-2 text-[12px] font-semibold text-white"
+                  >
+                    <Share2 className="h-3.5 w-3.5" />초대
+                  </button>
+                </div>
 
                 {/* 방문 히스토리 · 지출 (분담 결제 완료 건 집계) */}
                 <div className="mt-2.5 grid grid-cols-2 gap-2">
