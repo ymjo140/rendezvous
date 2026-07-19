@@ -597,8 +597,9 @@ def home_search_places(
     food_set = {f.strip() for f in (foods or "").split(",") if f.strip() in FOOD_KEYWORDS}
     limit = max(1, min(int(limit or 30), 60))
 
+    # 주의: 크롤 음식 대분류의 본체는 "FOOD"(10만+) — RESTAURANT만 보면 대부분 빠진다
     query = db.query(models.Place).filter(
-        models.Place.main_category.in_(["RESTAURANT", "CAFE", "PUB"])
+        models.Place.main_category.in_(["FOOD", "RESTAURANT", "CAFE", "PUB"])
     )
 
     # 지역: 좌표 반경 bbox (기존 지역검색 /api/geocode 선택값과 연동)
