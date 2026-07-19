@@ -498,7 +498,7 @@ export default function HomeNextPage() {
               <button onClick={() => addRegion(regionInput)} className="shrink-0 rounded-xl border border-gray-200 px-3 py-2 text-[13px] font-semibold text-gray-600">추가</button>
             </div>
             <div className="flex flex-wrap gap-2">
-              {[...new Set([...REGION_PRESETS, ...draftRegions])].map((r) => {
+              {REGION_PRESETS.concat(draftRegions.filter((r) => !REGION_PRESETS.includes(r))).map((r) => {
                 const on = draftRegions.includes(r)
                 return (
                   <button
