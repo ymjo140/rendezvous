@@ -685,3 +685,47 @@ def home_search_places(
     items = items[:limit]
 
     return {"items": items, "count": len(items)}
+
+
+@router.post("/api/crews/{cid}/join")
+def join_crew(
+    cid: str,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """크루 합류 — 초대 링크 전용(링크를 안다 = 초대받았다). 멱등.
+    비공개 크루도 링크 소지자는 합류 가능(카톡으로 멤버가 직접 보낸 링크라서)."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    crew = db.query(models.Community).filter(models.Community.id == cid).first()
+    if not crew:
+        raise HTTPException(status_code=404, detail="크루를 찾을 수 없어요.")
+
+    members = list(crew.member_ids or [])
+    already = user.id in members
+    if not already:
+        members.append(user.id)
+        crew.member_ids = members
+        try:
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(crew, "member_ids")
+        except Exception:
+            pass
+        # 크루 채팅방 멤버로도 추가 (방 id = 크루 id 규약)
+        exists = (
+            db.query(models.ChatRoomMember)
+            .filter(models.ChatRoomMember.room_id == cid, models.ChatRoomMember.user_id == user.id)
+            .first()
+        )
+        if not exists:
+            db.add(models.ChatRoomMember(room_id=cid, user_id=user.id))
+        db.commit()
+
+    return {
+        "id": crew.id,
+        "title": crew.title,
+        "icon": crew.icon or "👥",
+        "member_count": len(members),
+        "joined": True,
+        "already_member": already,
+    }
