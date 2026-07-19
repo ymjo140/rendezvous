@@ -992,6 +992,7 @@ def store_crm(store_id: int, db: Session = Depends(get_db)):
     for uid, c in sorted(cust.items(), key=lambda kv: (kv[1]["visits"], kv[1]["last"] or ""), reverse=True):
         label, emoji = _persona(c["parties"])
         customers.append({
+            "uid": uid,
             "persona": label, "emoji": emoji,
             "taste": _taste_tags(prefs_map.get(uid)),
             "visits": c["visits"],
@@ -1061,3 +1062,164 @@ def store_crm(store_id: int, db: Session = Depends(get_db)):
         "reactivation": reactivation,
         "followups": followups,
     }
+
+
+# ─────────────────── 예약 브리핑(A) + 손님 상세(B) ───────────────────
+
+def _brief_line(persona, taste, tier, revisit, party, interest, cuisine):
+    """규칙기반 접객 브리핑 한 줄."""
+    bits = []
+    if tier in ("VIP", "단골"):
+        bits.append(f"{tier} · {persona}")
+    else:
+        bits.append(persona)
+    if taste:
+        bits.append(f"{'·'.join(taste[:2])} 선호")
+    # 취향→접객 제안
+    tset = set(taste or [])
+    if "조용한" in tset:
+        bits.append("안쪽 조용한 자리 추천")
+    elif "감성적인" in tset or "뷰맛집" in tset:
+        bits.append("창가·분위기 자리 추천")
+    elif interest and interest >= 1:
+        bits.append(f"요즘 {cuisine or '우리 카테고리'} 관심↑ · 신메뉴 권하기 좋음")
+    elif revisit:
+        bits.append("또 오고 싶어한 손님 · 작은 서비스 어떠세요")
+    return " · ".join(bits)
+
+
+def _customer_core(db, pid, uid, store_cuisine):
+    """한 손님의 코어 집계(브리핑/상세 공통)."""
+    from datetime import datetime
+    from collections import Counter
+    rows = db.execute(text(
+        "SELECT date, party_size, status, id FROM user_reservations "
+        "WHERE place_id=:pid AND user_id=:uid ORDER BY date DESC"
+    ), {"pid": pid, "uid": uid}).fetchall()
+    visits = [r for r in rows if r[2] in ("confirmed", "completed")]
+    parties = [int(r[1]) for r in visits if r[1]]
+    avg_party = round(sum(parties) / len(parties)) if parties else 0
+    label, emoji = _persona_label(avg_party)
+    n = len(visits)
+    tier = "VIP" if n >= 4 else ("단골" if n >= 2 else "신규")
+    last = _ago_text(_parse_ymd(visits[0][0])) if visits else ""
+    # 취향
+    u = db.query(models.User).filter(models.User.id == uid).first()
+    taste = _taste_tags(u.preferences if (u and isinstance(u.preferences, dict)) else {})
+    # 재방문 의사
+    revisit = bool(db.execute(text(
+        "SELECT 1 FROM place_visit_feedback WHERE place_id=:pid AND user_id=:uid "
+        "AND (personal_revisit=TRUE OR group_revisit=TRUE) LIMIT 1"
+    ), {"pid": pid, "uid": uid}).fetchone())
+    # 크로스스토어 최근 관심
+    interest = 0
+    if store_cuisine:
+        try:
+            for (cz, cat, nm) in db.execute(text(
+                "SELECT p.cuisine_type, p.category, p.name FROM saved_items si "
+                "JOIN places p ON p.id=si.place_id WHERE si.user_id=:uid AND si.place_id<>:pid "
+                "AND si.created_at >= NOW() - interval '30 days'"
+            ), {"uid": uid, "pid": pid}).fetchall():
+                if _canon_one((cz or "")+" "+(cat or "")+" "+(nm or "")) == store_cuisine:
+                    interest += 1
+        except Exception:
+            db.rollback()
+    return {
+        "persona": label, "emoji": emoji, "tier": tier, "taste": taste,
+        "visits": n, "last": last, "revisit_intent": revisit,
+        "recent_interest": interest, "avg_party": avg_party, "_rows": rows,
+    }
+
+
+@router.post("/stores/{store_id}/customer-briefs")
+def customer_briefs(store_id: int, body: dict, db: Session = Depends(get_db)):
+    """예약 카드용 손님 브리핑(compact) — user_ids 배치."""
+    pid = store_id
+    place = db.query(models.Place).filter(models.Place.id == pid).first()
+    cuisine = _canon_one((place.cuisine_type if place else "") + " " + (place.category if place else "") + " " + (place.name if place else ""))
+    uids = [int(u) for u in (body.get("user_ids") or []) if u][:30]
+    out = {}
+    for uid in uids:
+        try:
+            c = _customer_core(db, pid, uid, cuisine)
+            out[str(uid)] = {
+                "persona": c["persona"], "emoji": c["emoji"], "tier": c["tier"],
+                "taste": c["taste"], "visits": c["visits"], "last": c["last"],
+                "revisit_intent": c["revisit_intent"], "recent_interest": c["recent_interest"],
+                "brief": _brief_line(c["persona"], c["taste"], c["tier"], c["revisit_intent"],
+                                     c["avg_party"], c["recent_interest"], cuisine),
+                "returning": c["visits"] >= 2,
+            }
+        except Exception as exc:
+            print(f"[brief] skip {uid}: {exc}"); db.rollback()
+    return {"briefs": out}
+
+
+@router.get("/stores/{store_id}/customer/{user_id}")
+def customer_detail(store_id: int, user_id: int, db: Session = Depends(get_db)):
+    """손님 상세 프로필(B) — 타임라인·후기·요즘관심·메모."""
+    pid = store_id
+    place = db.query(models.Place).filter(models.Place.id == pid).first()
+    pname = place.name if place else ""
+    cuisine = _canon_one((place.cuisine_type if place else "") + " " + (place.category if place else "") + " " + (place.name if place else ""))
+    c = _customer_core(db, pid, user_id, cuisine)
+
+    # 재방문 의사가 있던 예약 id
+    fb_resv = set()
+    try:
+        for (rid,) in db.execute(text(
+            "SELECT reservation_id FROM place_visit_feedback WHERE place_id=:pid AND user_id=:uid "
+            "AND (personal_revisit=TRUE OR group_revisit=TRUE)"
+        ), {"pid": pid, "uid": user_id}).fetchall():
+            if rid: fb_resv.add(rid)
+    except Exception:
+        db.rollback()
+
+    timeline = []
+    for i, (dt, party, st, rid) in enumerate(c["_rows"]):
+        if st not in ("confirmed", "completed"):
+            continue
+        timeline.append({
+            "ago": _ago_text(_parse_ymd(dt)), "party": int(party or 0),
+            "revisit": rid in fb_resv, "first": (i == len(c["_rows"]) - 1),
+        })
+
+    reviews = []
+    try:
+        for r in (db.query(models.Review)
+                  .filter(models.Review.place_name == pname, models.Review.user_id == user_id)
+                  .order_by(models.Review.created_at.desc()).limit(5).all()):
+            reviews.append({"rating": r.rating, "comment": (r.comment or "")[:100]})
+    except Exception:
+        db.rollback()
+
+    memo = ""
+    try:
+        row = db.execute(text("SELECT memo FROM merchant_customer_memos WHERE store_id=:s AND user_id=:u"),
+                         {"s": pid, "u": user_id}).fetchone()
+        memo = (row[0] if row else "") or ""
+    except Exception:
+        db.rollback()
+
+    return {
+        "persona": c["persona"], "emoji": c["emoji"], "tier": c["tier"], "taste": c["taste"],
+        "visits": c["visits"], "last": c["last"], "revisit_intent": c["revisit_intent"],
+        "recent_interest": c["recent_interest"], "store_cuisine": cuisine,
+        "brief": _brief_line(c["persona"], c["taste"], c["tier"], c["revisit_intent"],
+                             c["avg_party"], c["recent_interest"], cuisine),
+        "timeline": timeline, "reviews": reviews, "memo": memo,
+    }
+
+
+@router.post("/stores/{store_id}/customer/{user_id}/memo")
+def save_customer_memo(store_id: int, user_id: int, body: dict, db: Session = Depends(get_db),
+                       merchant: str = Depends(get_current_merchant)):
+    """사장님 손님 메모 저장. 소유주만."""
+    _assert_merchant_owns(db, store_id, merchant)
+    memo = (body.get("memo") or "").strip()[:500]
+    db.execute(text(
+        "INSERT INTO merchant_customer_memos (store_id, user_id, memo, updated_at) "
+        "VALUES (:s,:u,:m,NOW()) ON CONFLICT (store_id, user_id) DO UPDATE SET memo=:m, updated_at=NOW()"
+    ), {"s": store_id, "u": user_id, "m": memo})
+    db.commit()
+    return {"ok": True}
