@@ -43,7 +43,7 @@ FOOD_KEYWORDS = {
 TAG_NAME_HINTS = {
     "date": ["데이트", "커플", "분위기", "오마카세", "와인", "이탈리안", "파스타", "스시", "기념일", "야경"],
     "work": ["회식", "단체", "회사", "부장", "고기", "한정식", "삼겹"],
-    "drink": ["술", "펍", "포차", "이자카야", "바", "맥주", "와인", "호프", "하이볼", "안주", "크롤"],
+    "drink": ["술", "펍", "포차", "이자카야", "와인바", "칵테일", "맥주", "와인", "호프", "하이볼", "안주", "크롤"],
     "cafe": ["카페", "빵", "디저트", "커피", "베이커리", "브런치", "케이크", "순례"],
     "solo": ["혼밥", "혼술", "1인", "국밥", "라멘", "백반", "덮밥"],
     "friends": ["친구", "수다", "미식", "맛집 투어", "동네", "지도"],
@@ -482,7 +482,8 @@ def home_search(
         addr_map = {pid: (a or "") for pid, a in addr_rows}
         folders = [
             f for f in folders
-            if any(any(rg in addr_map.get(p, "") for rg in region_set) for p in fplaces.get(f.id, []))
+            if any(rg in f"{f.name or ''} {f.description or ''}" for rg in region_set)
+            or any(any(rg in addr_map.get(p, "") for rg in region_set) for p in fplaces.get(f.id, []))
         ]
 
     # 음식 필터: 장소 cuisine/category + "장소 이름" + 리스트 이름/설명까지 키워드 매칭
