@@ -97,6 +97,29 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
     folders = (db.query(models.SaveFolder)
                .filter(models.SaveFolder.community_id == cid, models.SaveFolder.is_public == True)  # noqa: E712
                .order_by(models.SaveFolder.updated_at.desc()).all())
+    # 크루 리스트 전체 장소 → 멤버 방문/재방문 인증 집계용
+    fids_all = [f.id for f in folders]
+    all_items = (db.query(models.SavedItem.folder_id, models.SavedItem.place_id)
+                 .filter(models.SavedItem.folder_id.in_(fids_all), models.SavedItem.place_id.isnot(None))
+                 .all()) if fids_all else []
+    pids_by_folder: dict = {}
+    for fid, pid in all_items:
+        pids_by_folder.setdefault(fid, []).append(pid)
+    all_pids = list({pid for _, pid in all_items})
+    mids_all = _members(c)
+    # 크루 멤버가 크루 리스트 장소에 남긴 방문 피드백 (방문 인증 배지의 근거)
+    fb_rows = (db.query(models.PlaceVisitFeedback.place_id, models.PlaceVisitFeedback.user_id,
+                        models.PlaceVisitFeedback.personal_revisit)
+               .filter(models.PlaceVisitFeedback.user_id.in_(mids_all),
+                       models.PlaceVisitFeedback.place_id.in_(all_pids))
+               .all()) if (mids_all and all_pids) else []
+    member_visits = len({(r[0], r[1]) for r in fb_rows})
+    member_revisits = len({(r[0], r[1]) for r in fb_rows if r[2]})
+    revisit_by_place: dict = {}
+    for pid, uid_, rev in fb_rows:
+        if rev:
+            revisit_by_place.setdefault(pid, set()).add(uid_)
+
     lists = []
     for f in folders:
         items = (db.query(models.SavedItem)
@@ -106,9 +129,12 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
         names = {p.id: p.name for p in db.query(models.Place).filter(models.Place.id.in_(pids)).all()} if pids else {}
         lk = db.query(models.ListLike).filter(models.ListLike.folder_id == f.id).count()
         cm = db.query(models.ListComment).filter(models.ListComment.folder_id == f.id).count()
+        f_revisit = sum(len(revisit_by_place.get(p, ())) for p in pids_by_folder.get(f.id, []))
         lists.append({
             "id": f.id, "name": f.name, "icon": f.icon or "📁", "description": f.description or "",
             "item_count": f.item_count or 0, "like_count": lk, "comment_count": cm,
+            "context_tag": getattr(f, "context_tag", None),
+            "revisit": int(f_revisit),
             "preview": [{"place_id": it.place_id, "name": names.get(it.place_id, "장소")} for it in items if it.place_id],
         })
 
@@ -146,6 +172,10 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
         "can_join_chat": c.visibility == "open",     # 오픈채팅만 자유 참여
         "members": members,                          # list_only면 빈 배열
         "lists": lists,
+        # 방문 인증 배지 — 멤버가 크루 리스트 장소에 실제 남긴 방문/재방문 신호
+        "member_visits": int(member_visits),
+        "member_revisits": int(member_revisits),
+        "visit_verified": member_visits >= 3,
     }
 
 
@@ -246,10 +276,13 @@ def create_group_folder(cid: str, req: dict, user: Optional[models.User] = Depen
     name = (req.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="리스트 이름이 필요해요.")
+    _tag = req.get("context_tag")
+    if _tag not in {"date", "work", "friends", "solo", "cafe", "drink", "family", "special"}:
+        _tag = None
     folder = models.SaveFolder(
         user_id=user.id, community_id=cid, name=name,
         icon=req.get("icon") or "📁", description=req.get("description"),
-        is_public=True, is_default=False,
+        is_public=True, is_default=False, context_tag=_tag,
     )
     db.add(folder)
     db.commit()
