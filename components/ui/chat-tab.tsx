@@ -338,6 +338,9 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
     useEffect(() => {
         fetchRooms()
         // 장소 상세 등 다녀와도 보던 채팅방으로 복원(뒤로가기 시 방 유지)
+        // 단, openRoomId로 특정 방을 지정해 들어온 경우(크루 채팅 딥링크)는 복원 생략
+        // — 이전 방(데모모임 등)이 먼저 떴다가 갈아타는 깜빡임 방지
+        if (openRoomId) return
         try {
             const saved = sessionStorage.getItem("chat:openRoom")
             if (saved) {

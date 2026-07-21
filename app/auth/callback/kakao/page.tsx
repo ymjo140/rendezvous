@@ -21,6 +21,23 @@ async function consumeInviteRef() {
   }
 }
 
+// 크루 초대 링크로 가입/로그인한 경우 자동 합류 → 합류한 크루 id 반환 (실패해도 무시)
+async function consumeCrewInvite(token: string): Promise<string | null> {
+  try {
+    const cid = window.localStorage.getItem("invite_crew")
+    if (!cid) return null
+    const res = await fetch(`${API_URL}/api/crews/${cid}/join`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+    })
+    return res.ok ? cid : null
+  } catch {
+    return null
+  } finally {
+    window.localStorage.removeItem("invite_crew")
+  }
+}
+
 function KakaoCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -46,8 +63,11 @@ function KakaoCallbackContent() {
             .then(res => res.json())
             .then(async user => {
               await consumeInviteRef()
+              const joinedCrew = await consumeCrewInvite(data.access_token)
               if (!user.location_name || user.location_name === "위치 미설정" || user.name.startsWith("User_")) {
                 router.push("/onboarding")
+              } else if (joinedCrew) {
+                router.push(`/home-next/crew/${joinedCrew}?joined=1`)
               } else {
                 router.push("/")
               }

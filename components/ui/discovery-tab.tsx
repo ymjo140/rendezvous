@@ -70,6 +70,7 @@ const getGridClass = (_index: number) => "col-span-1 row-span-1";
 interface DiscoveryTabProps {
     sharedPostId?: string | null;
     onBackFromShared?: () => void;
+    hideRankStrips?: boolean;  // 새 홈(v2)이 랭킹을 품게 되어 피드 탭에서는 숨김
 }
 
 // 실시간 급상승 — 최근 관여(예약·재방문·저장·게시물) velocity 순위 + ▲/NEW
@@ -256,7 +257,7 @@ function ListRankingStrip() {
     );
 }
 
-export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabProps = {}) {
+export function DiscoveryTab({ sharedPostId, onBackFromShared, hideRankStrips }: DiscoveryTabProps = {}) {
     const router = useRouter();
     const { decisionCell, requestId } = useDecisionCell();
     const [searchQuery, setSearchQuery] = useState("");
@@ -1595,10 +1596,14 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared }: DiscoveryTabPro
 
             {/* 3. 게시물 — 그리드(인스타 탐색) ↔ 피드(인스타 홈) */}
             <div className="flex-1 overflow-y-auto bg-white">
-                {/* 급상승/인기 모임/인기 리스트 — 스크롤과 함께 지나가는 컴팩트 스트립 */}
-                <TrendingStrip />
-                <GroupStrip />
-                <ListRankingStrip />
+                {/* 급상승/인기 모임/인기 리스트 — 새 홈(v2)에서는 홈이 품으므로 숨김 */}
+                {!hideRankStrips && (
+                    <>
+                        <TrendingStrip />
+                        <GroupStrip />
+                        <ListRankingStrip />
+                    </>
+                )}
                 {isLoading && (
                     <div className="py-16 text-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-4 border-amber-500 border-t-transparent mx-auto mb-3"></div>
