@@ -15,3 +15,8 @@ yarn-error.log*
 .pnp.*
 .cache/
 .vercel
+
+# python venv (백엔드 의존성은 requirements.txt로)
+backend/venv/
+__pycache__/
+*.pyc
