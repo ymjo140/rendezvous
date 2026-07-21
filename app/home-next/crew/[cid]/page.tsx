@@ -84,9 +84,6 @@ export default function CrewProfilePage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-16">
-      <div className="bg-[#F5A623] px-4 py-1.5 text-center text-[11px] font-medium text-white">
-        🧪 새 홈 프로토타입 · 크루 프로필
-      </div>
 
       <div className="sticky top-0 z-10 flex items-center gap-2 bg-white px-4 py-3">
         <button onClick={() => router.back()} className="rounded-full p-1 text-slate-500">

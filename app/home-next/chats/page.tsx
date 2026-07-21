@@ -18,9 +18,6 @@ function ChatsInner() {
 
   return (
     <div className="mx-auto flex h-[100dvh] max-w-md flex-col bg-white">
-      <div className="px-4 py-1.5 text-center text-[11px] font-medium text-white" style={{ backgroundColor: BRAND }}>
-        🧪 새 홈 프로토타입 · 채팅
-      </div>
       <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
         <button onClick={() => router.back()} className="rounded-full p-1 text-gray-500"><ChevronLeft className="h-5 w-5" /></button>
         <h1 className="text-[15px] font-bold text-gray-900">채팅</h1>

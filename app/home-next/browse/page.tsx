@@ -53,9 +53,6 @@ function BrowseInner() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-16">
-      <div className="px-4 py-1.5 text-center text-[11px] font-medium text-white" style={{ backgroundColor: BRAND }}>
-        🧪 새 홈 프로토타입 · 전체보기
-      </div>
       <div className="sticky top-0 z-10 flex items-center gap-2 bg-white px-4 py-3">
         <button onClick={() => router.back()} className="rounded-full p-1 text-gray-500"><ChevronLeft className="h-5 w-5" /></button>
         <h1 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">{title}</h1>

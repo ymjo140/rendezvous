@@ -77,9 +77,6 @@ export default function HomeSearchPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-16">
-      <div className="bg-[#F5A623] px-4 py-1.5 text-center text-[11px] font-medium text-white">
-        🧪 새 홈 프로토타입 · 검색
-      </div>
 
       {/* 검색바 */}
       <div className="sticky top-0 z-10 bg-white px-4 pb-1 pt-3">

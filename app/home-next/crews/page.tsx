@@ -42,9 +42,6 @@ export default function CrewsTabPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-24">
-      <div className="bg-[#F5A623] px-4 py-1.5 text-center text-[11px] font-medium text-white">
-        🧪 새 홈 프로토타입 · 내 크루
-      </div>
 
       <div className="px-4 pt-4">
         <h1 className="text-lg font-bold text-slate-900">내 크루</h1>

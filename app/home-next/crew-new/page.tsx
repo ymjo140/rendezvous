@@ -69,9 +69,6 @@ export default function CrewNewPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-16">
-      <div className="bg-[#F5A623] px-4 py-1.5 text-center text-[11px] font-medium text-white">
-        🧪 새 홈 프로토타입 · 크루 만들기
-      </div>
 
       {/* 헤더 + 진행 */}
       <div className="sticky top-0 z-10 bg-white px-4 pb-2 pt-3">

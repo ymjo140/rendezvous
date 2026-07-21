@@ -65,20 +65,6 @@ const FOOD_MATCH: Record<string, string[]> = {
   분식: ["분식", "떡볶이", "김밥", "만두", "튀김"],
 }
 
-// ── mock 폴백 ────────────────────────────────────────────────
-const MOCK: Feed = {
-  logged_in: false, has_taste: false,
-  taste_matched: [
-    { folder_id: -1, name: "퇴근하고 와인 한잔 하기 좋은 집", icon: "🍷", description: "", context_tag: "drink", item_count: 8, saves: 312, revisit: 19, area: "성수동", match: 87, by: { kind: "crew", id: "m1", name: "성수 와인 크루", icon: "🍷", members: 24 } },
-    { folder_id: -2, name: "홍대 이자카야 8선", icon: "🍶", description: "", context_tag: "drink", item_count: 8, saves: 96, revisit: 12, area: "서교동", match: 74, by: { kind: "curator", id: null, name: "안주 성애자", icon: "🍢" } },
-  ],
-  racks: [],
-}
-const MOCK_CREW_PLACES: CrewPlace[] = [
-  { name: "아우어 베이커리", category: "빵집", address: "서울 성수동", room_name: "빵 탐방 크루", factors: [{ label: "크루 취향 저격" }] },
-  { name: "소금빵연구소", category: "베이커리", address: "서울 연남동", room_name: "빵 탐방 크루", factors: [{ label: "🔁 유사 크루 재방문" }] },
-]
-
 const catEmoji = (c?: string) => {
   const s = c || ""
   if (/빵|베이커리/.test(s)) return "🥐"
@@ -93,8 +79,7 @@ const catEmoji = (c?: string) => {
 
 export default function HomeNextPage() {
   const router = useRouter()
-  const [feed, setFeed] = useState<Feed>(MOCK)
-  const [live, setLive] = useState(false)
+  const [feed, setFeed] = useState<Feed>({ taste_matched: [], racks: [], logged_in: false, has_taste: false })
 
   // 필터(중복 선택) — 시트에서 고르고 적용
   const [ctxs, setCtxs] = useState<string[]>([])
@@ -114,8 +99,7 @@ export default function HomeNextPage() {
   const [hotLists, setHotLists] = useState<{ folder_id: number; name: string }[]>([])
 
   // 내 크루 어울리는 가게
-  const [crewPlaces, setCrewPlaces] = useState<CrewPlace[]>(MOCK_CREW_PLACES)
-  const [crewLive, setCrewLive] = useState(false)
+  const [crewPlaces, setCrewPlaces] = useState<CrewPlace[]>([])
   const [crewSel, setCrewSel] = useState<string | null>(null)
   const [crewOpen, setCrewOpen] = useState(false)
 
@@ -132,9 +116,7 @@ export default function HomeNextPage() {
     fetchWithAuth("/api/home/feed")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
-        if (!alive || !d) return
-        const hasAny = (d.taste_matched?.length || 0) + (d.racks?.length || 0) > 0
-        if (hasAny) { setFeed(d); setLive(true) }
+        if (alive && d) setFeed(d)
       })
       .catch(() => {})
     fetchWithAuth("/api/trending/places?days=7&limit=4")
@@ -170,9 +152,7 @@ export default function HomeNextPage() {
     fetchWithAuth("/api/recommend/my-meetings?per_room=12")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
-        if (!alive) return
-        const ps: CrewPlace[] = d?.places || []
-        if (ps.length) { setCrewPlaces(ps); setCrewLive(true) }
+        if (alive) setCrewPlaces(d?.places || [])
       })
       .catch(() => {})
     return () => { alive = false }
@@ -304,9 +284,6 @@ export default function HomeNextPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-24">
-      <div className="px-4 py-1.5 text-center text-[11px] font-medium text-white" style={{ backgroundColor: BRAND }}>
-        🧪 새 홈 프로토타입 v2 · {live ? "실데이터" : "mock"}
-      </div>
 
       {/* ① 검색바 + 필터 버튼 */}
       <div className="sticky top-0 z-10 bg-white px-4 pb-2 pt-3">
@@ -486,7 +463,7 @@ export default function HomeNextPage() {
               </div>
             )}
           </div>
-          <p className="text-[11px] text-gray-400">크루 취향·저장·재방문 기록으로 골랐어요 {!crewLive && "(예시)"}</p>
+          <p className="text-[11px] text-gray-400">크루 취향·저장·재방문 기록으로 골랐어요</p>
           <div className="mt-2.5 flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
             {shownCrewPlaces.length === 0 ? (
               <div className="w-full rounded-2xl border-2 border-dashed border-gray-200 py-8 text-center text-[12px] text-gray-400">
