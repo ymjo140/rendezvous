@@ -1346,6 +1346,23 @@ def _crew_snapshot(db: Session, cid: str) -> dict:
         .filter(models.ChatSplitRequest.room_id == cid, models.ChatSplitRequest.status == "completed")
         .count()
     )
+    # 재방문율 — 멤버들이 남긴 방문 피드백 중 "또 갈래요" 비율 (판단 근거)
+    revisit_rate = None
+    if members:
+        fb_total = (
+            db.query(models.PlaceVisitFeedback)
+            .filter(models.PlaceVisitFeedback.user_id.in_(members))
+            .count()
+        )
+        if fb_total > 0:
+            fb_yes = (
+                db.query(models.PlaceVisitFeedback)
+                .filter(
+                    models.PlaceVisitFeedback.user_id.in_(members),
+                    models.PlaceVisitFeedback.personal_revisit == True,  # noqa: E712
+                ).count()
+            )
+            revisit_rate = round(fb_yes / fb_total * 100)
     return {
         "id": c.id, "title": c.title or "이름 없는 크루", "icon": c.icon or "👥",
         "members": len(members),
@@ -1353,6 +1370,7 @@ def _crew_snapshot(db: Session, cid: str) -> dict:
         "org_name": getattr(c, "org_name", None),
         "verified_members": int(verified),
         "visits_total": int(visits),
+        "revisit_rate": revisit_rate,
     }
 
 
@@ -1378,10 +1396,11 @@ def list_partnerships(
     ) if deal_ids else []
 
     approved_cids = list({a.community_id for a in apps if a.status == "approved"})
-    # 성과: 승인 크루가 "이 가게에서" 완료한 분담결제 + 재방문 의사
+    # 성과: 승인 크루가 "이 가게에서" 완료한 분담결제 + 재방문 의사 — 크루별 분해 포함
     perf_visits = 0
     perf_amount = 0
     perf_revisits = 0
+    by_crew = []
     if approved_cids:
         rows = (
             db.query(models.ChatSplitRequest)
@@ -1393,20 +1412,33 @@ def list_partnerships(
         )
         perf_visits = len(rows)
         perf_amount = int(sum(r.total_amount or 0 for r in rows))
-        member_ids = set()
+        rows_by_cid: dict = {}
+        for r in rows:
+            rows_by_cid.setdefault(r.room_id, []).append(r)
         for cid in approved_cids:
             c = db.query(models.Community).filter(models.Community.id == cid).first()
-            if c:
-                member_ids.update(c.member_ids or [])
-        if member_ids:
-            perf_revisits = (
-                db.query(models.PlaceVisitFeedback)
-                .filter(
-                    models.PlaceVisitFeedback.user_id.in_(list(member_ids)),
-                    models.PlaceVisitFeedback.place_id == place.id,
-                    models.PlaceVisitFeedback.personal_revisit == True,  # noqa: E712
-                ).count()
-            )
+            mids = list((c.member_ids or [])) if c else []
+            crew_revisits = 0
+            if mids:
+                crew_revisits = (
+                    db.query(models.PlaceVisitFeedback)
+                    .filter(
+                        models.PlaceVisitFeedback.user_id.in_(mids),
+                        models.PlaceVisitFeedback.place_id == place.id,
+                        models.PlaceVisitFeedback.personal_revisit == True,  # noqa: E712
+                    ).count()
+                )
+            perf_revisits += crew_revisits
+            crs = rows_by_cid.get(cid, [])
+            by_crew.append({
+                "id": cid,
+                "title": (c.title if c else "(삭제된 크루)") or "크루",
+                "icon": (c.icon if c else "👥") or "👥",
+                "visits": len(crs),
+                "amount": int(sum(r.total_amount or 0 for r in crs)),
+                "revisits": int(crew_revisits),
+            })
+        by_crew.sort(key=lambda x: (x["visits"], x["amount"]), reverse=True)
 
     apps_by_deal: dict = {}
     for a in apps:
@@ -1438,6 +1470,7 @@ def list_partnerships(
             "visits": perf_visits,
             "amount": perf_amount,
             "revisits": perf_revisits,
+            "by_crew": by_crew,
         },
     }
 
