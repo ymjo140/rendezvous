@@ -218,6 +218,10 @@ class Community(Base):
     # 맛집 모임 공개 수준: private(우리끼리) | list_only(리스트만 공개) | public(모임 공개) | open(오픈채팅)
     visibility = Column(String, default="private")
     icon = Column(String, nullable=True)  # 모임 대표 이모지(탐색 노출용)
+    # 크루 종류: friends(기본)|university(대학, 학교메일 인증)|company(회사메일 인증)|community(오픈 동호회)
+    crew_type = Column(String, default="friends", index=True)
+    org_domain = Column(String, nullable=True)  # 인증 크루의 소속 도메인 (예: korea.ac.kr)
+    org_name = Column(String, nullable=True)    # 소속 표시명 (예: 고려대학교)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -889,3 +893,19 @@ class PlaceVisitFeedback(Base):
     personal_revisit = Column(Boolean, nullable=True)  # 또 가고 싶어요?(개인 취향 축)
     group_revisit = Column(Boolean, nullable=True)     # 모임 장소로 추천?(모임 적합 축)
     created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class UserVerification(Base):
+    """소속 인증 — 이메일 도메인 기반(대학 .ac.kr / 회사 도메인). 유저 단위로 저장, 크루 합류 게이트에 사용."""
+    __tablename__ = "user_verifications"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String, nullable=False)      # university | company
+    email = Column(String, nullable=False)
+    domain = Column(String, nullable=False, index=True)
+    org_name = Column(String, nullable=True)
+    code = Column(String, nullable=True)       # 6자리 인증 코드 (검증 후 폐기)
+    status = Column(String, default="pending") # pending | verified
+    expires_at = Column(DateTime, nullable=True)
+    verified_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)

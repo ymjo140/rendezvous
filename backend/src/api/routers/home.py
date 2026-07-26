@@ -10,6 +10,7 @@
 용어: '크루' = 리스트를 함께 쌓는 지속적 취향 집단(= communities).
 """
 from collections import Counter
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
@@ -25,6 +26,24 @@ router = APIRouter()
 
 VALID_CONTEXT_TAGS = {"date", "work", "friends", "solo", "cafe", "drink", "family", "special"}
 VALID_VISIBILITY = {"private", "list_only", "public", "open"}
+VALID_CREW_TYPES = {"friends", "university", "company", "community"}
+# 인증이 필요한 크루 종류 → 인증 kind
+CREW_TYPE_VERIFY = {"university": "university", "company": "company"}
+
+# 주요 대학 도메인 → 표시명 (그 외 .ac.kr은 도메인 그대로 표시)
+UNIV_NAMES = {
+    "korea.ac.kr": "고려대학교", "snu.ac.kr": "서울대학교", "yonsei.ac.kr": "연세대학교",
+    "kaist.ac.kr": "KAIST", "postech.ac.kr": "POSTECH", "hanyang.ac.kr": "한양대학교",
+    "skku.edu": "성균관대학교", "sogang.ac.kr": "서강대학교", "cau.ac.kr": "중앙대학교",
+    "khu.ac.kr": "경희대학교", "hufs.ac.kr": "한국외국어대학교", "uos.ac.kr": "서울시립대학교",
+    "konkuk.ac.kr": "건국대학교", "dongguk.edu": "동국대학교", "hongik.ac.kr": "홍익대학교",
+    "ewha.ac.kr": "이화여자대학교", "sookmyung.ac.kr": "숙명여자대학교", "inha.ac.kr": "인하대학교",
+    "ajou.ac.kr": "아주대학교", "pusan.ac.kr": "부산대학교", "knu.ac.kr": "경북대학교",
+    "jnu.ac.kr": "전남대학교", "cnu.ac.kr": "충남대학교", "kku.ac.kr": "건국대학교(글로컬)",
+}
+# 회사 인증에서 거부할 무료 메일
+FREE_MAIL = {"gmail.com", "naver.com", "daum.net", "kakao.com", "hanmail.net", "nate.com",
+             "outlook.com", "hotmail.com", "yahoo.com", "icloud.com", "proton.me"}
 
 # 음식 필터 키워드 — 리스트 안 장소들의 cuisine/category 문자열 매칭
 FOOD_KEYWORDS = {
@@ -255,6 +274,8 @@ def home_feed(
             "id": c.id, "title": c.title, "icon": c.icon or "👥",
             "members": len(members), "lists": int(crew_list_cnt.get(c.id, 0)),
             "visibility": c.visibility or "private",
+            "crew_type": getattr(c, "crew_type", None) or "friends",
+            "org_name": getattr(c, "org_name", None),
         }
         if uid and uid in members:
             my_crews.append(entry)
@@ -348,6 +369,22 @@ def create_crew(
     if visibility not in VALID_VISIBILITY:
         raise HTTPException(status_code=400, detail="공개 수준이 올바르지 않아요.")
 
+    crew_type = req.get("crew_type") or "friends"
+    if crew_type not in VALID_CREW_TYPES:
+        raise HTTPException(status_code=400, detail="크루 종류가 올바르지 않아요.")
+    org_domain = None
+    org_name = None
+    if crew_type in CREW_TYPE_VERIFY:
+        # 인증 크루는 개설자가 해당 소속 인증을 갖고 있어야 하고, 크루에 도메인이 박힌다
+        v = _user_verified_domain(db, user.id, CREW_TYPE_VERIFY[crew_type])
+        if not v:
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "verify_required", "kind": CREW_TYPE_VERIFY[crew_type]},
+            )
+        org_domain = v.domain
+        org_name = v.org_name
+
     crew = models.Community(
         host_id=user.id,
         title=title,
@@ -360,6 +397,9 @@ def create_crew(
         member_ids=[user.id],
         visibility=visibility,
         icon=(req.get("icon") or "🍽️")[:8],
+        crew_type=crew_type,
+        org_domain=org_domain,
+        org_name=org_name,
     )
     db.add(crew)
     db.flush()
@@ -394,6 +434,8 @@ def create_crew(
         "title": crew.title,
         "icon": crew.icon,
         "visibility": crew.visibility,
+        "crew_type": crew_type,
+        "org_name": org_name,
         "first_list": folder_out,
     }
 
@@ -701,6 +743,21 @@ def join_crew(
     if not crew:
         raise HTTPException(status_code=404, detail="크루를 찾을 수 없어요.")
 
+    # 인증 크루(대학/회사)는 같은 소속 인증이 있어야 합류 가능
+    ctype = getattr(crew, "crew_type", None) or "friends"
+    if ctype in CREW_TYPE_VERIFY and getattr(crew, "org_domain", None):
+        v = _user_verified_domain(db, user.id, CREW_TYPE_VERIFY[ctype])
+        if not v or v.domain != crew.org_domain:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "verify_required",
+                    "kind": CREW_TYPE_VERIFY[ctype],
+                    "domain": crew.org_domain,
+                    "org_name": getattr(crew, "org_name", None) or crew.org_domain,
+                },
+            )
+
     members = list(crew.member_ids or [])
     already = user.id in members
     if not already:
@@ -729,3 +786,161 @@ def join_crew(
         "joined": True,
         "already_member": already,
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# 소속 인증 (이메일 도메인) — 대학(.ac.kr/.edu) / 회사(무료메일 차단)
+# SMTP 미설정 시 dev 모드: 응답에 dev_code 포함(베타용). SMTP_* env 넣으면 실메일 발송.
+# ─────────────────────────────────────────────────────────────
+
+def _org_name_for(kind: str, domain: str) -> str:
+    if kind == "university":
+        return UNIV_NAMES.get(domain, domain)
+    return domain
+
+
+def _send_verify_email(to_email: str, code: str) -> bool:
+    """SMTP env가 있으면 발송, 없으면 False(dev 모드)."""
+    import os
+    host = os.getenv("SMTP_HOST")
+    if not host:
+        return False
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        port = int(os.getenv("SMTP_PORT", "587"))
+        user_ = os.getenv("SMTP_USER", "")
+        pw = os.getenv("SMTP_PASS", "")
+        sender = os.getenv("SMTP_FROM", user_)
+        msg = MIMEText(f"랑데부 소속 인증 코드: {code}\n10분 안에 입력해주세요.")
+        msg["Subject"] = f"[랑데부] 인증 코드 {code}"
+        msg["From"] = sender
+        msg["To"] = to_email
+        with smtplib.SMTP(host, port, timeout=10) as sv:
+            sv.starttls()
+            if user_:
+                sv.login(user_, pw)
+            sv.sendmail(sender, [to_email], msg.as_string())
+        return True
+    except Exception as e:
+        print(f"[verify] SMTP send failed: {e}")
+        return False
+
+
+@router.post("/api/verify/email/request")
+def verify_email_request(
+    req: dict,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """인증 코드 요청. body: {kind: university|company, email}"""
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    kind = req.get("kind")
+    email = (req.get("email") or "").strip().lower()
+    if kind not in ("university", "company"):
+        raise HTTPException(status_code=400, detail="인증 종류가 올바르지 않아요.")
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="이메일 형식이 올바르지 않아요.")
+    domain = email.split("@")[-1]
+
+    if kind == "university":
+        if not (domain.endswith(".ac.kr") or domain.endswith(".edu") or domain in UNIV_NAMES):
+            raise HTTPException(status_code=400, detail="학교 이메일(@OO.ac.kr)로만 인증할 수 있어요.")
+    else:  # company
+        if domain in FREE_MAIL or domain.endswith(".ac.kr"):
+            raise HTTPException(status_code=400, detail="회사 이메일로만 인증할 수 있어요. (개인 메일 불가)")
+
+    import random
+    from datetime import timedelta
+    code = f"{random.randint(0, 999999):06d}"
+
+    # 기존 pending 정리 후 새로 발급
+    db.query(models.UserVerification).filter(
+        models.UserVerification.user_id == user.id,
+        models.UserVerification.kind == kind,
+        models.UserVerification.status == "pending",
+    ).delete()
+    v = models.UserVerification(
+        user_id=user.id, kind=kind, email=email, domain=domain,
+        org_name=_org_name_for(kind, domain), code=code,
+        status="pending", expires_at=datetime.now() + timedelta(minutes=10),
+    )
+    db.add(v)
+    db.commit()
+
+    sent = _send_verify_email(email, code)
+    out = {"requested": True, "email": email, "domain": domain, "org_name": v.org_name, "sent": sent}
+    if not sent:
+        # ⚠️ dev 모드(베타): SMTP 미설정이라 코드를 응답으로 반환. 정식 오픈 전 SMTP_* env 필수.
+        out["dev_code"] = code
+    return out
+
+
+@router.post("/api/verify/email/confirm")
+def verify_email_confirm(
+    req: dict,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """코드 확인. body: {kind, code}"""
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    kind = req.get("kind")
+    code = (req.get("code") or "").strip()
+    v = (
+        db.query(models.UserVerification)
+        .filter(
+            models.UserVerification.user_id == user.id,
+            models.UserVerification.kind == kind,
+            models.UserVerification.status == "pending",
+        )
+        .order_by(models.UserVerification.id.desc())
+        .first()
+    )
+    if not v:
+        raise HTTPException(status_code=404, detail="진행 중인 인증이 없어요. 다시 요청해주세요.")
+    if v.expires_at and v.expires_at < datetime.now():
+        raise HTTPException(status_code=400, detail="코드가 만료됐어요. 다시 요청해주세요.")
+    if v.code != code:
+        raise HTTPException(status_code=400, detail="코드가 일치하지 않아요.")
+
+    v.status = "verified"
+    v.verified_at = datetime.now()
+    v.code = None
+    db.commit()
+    return {"verified": True, "kind": v.kind, "domain": v.domain, "org_name": v.org_name}
+
+
+@router.get("/api/verify/me")
+def verify_me(
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """내 인증 현황 — 크루 생성/합류 화면에서 사용."""
+    if user is None:
+        return {"verifications": []}
+    rows = (
+        db.query(models.UserVerification)
+        .filter(models.UserVerification.user_id == user.id, models.UserVerification.status == "verified")
+        .all()
+    )
+    return {
+        "verifications": [
+            {"kind": r.kind, "domain": r.domain, "org_name": r.org_name, "email": r.email}
+            for r in rows
+        ]
+    }
+
+
+def _user_verified_domain(db: Session, user_id: int, kind: str) -> Optional[models.UserVerification]:
+    return (
+        db.query(models.UserVerification)
+        .filter(
+            models.UserVerification.user_id == user_id,
+            models.UserVerification.kind == kind,
+            models.UserVerification.status == "verified",
+        )
+        .order_by(models.UserVerification.id.desc())
+        .first()
+    )

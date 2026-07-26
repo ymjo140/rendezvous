@@ -156,12 +156,30 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
                 members.append({"id": mu.id, "name": mu.name, "avatar": mu.avatar or "🙂",
                                 "is_host": mid == c.host_id})
 
+    # 인증 크루: 같은 도메인 인증을 가진 멤버 수 (가게에 주는 신뢰 신호)
+    _ctype = getattr(c, "crew_type", None) or "friends"
+    _org_domain = getattr(c, "org_domain", None)
+    verified_members = 0
+    if _org_domain and mids_all:
+        verified_members = (
+            db.query(models.UserVerification)
+            .filter(
+                models.UserVerification.user_id.in_(mids_all),
+                models.UserVerification.domain == _org_domain,
+                models.UserVerification.status == "verified",
+            )
+            .count()
+        )
+
     return {
         "id": c.id,
         "title": c.title or "이름 없는 모임",
         "description": c.description or "",
         "icon": c.icon or "🍽️",
         "visibility": c.visibility,
+        "crew_type": _ctype,
+        "org_name": getattr(c, "org_name", None),
+        "verified_members": int(verified_members),
         "member_count": len(_members(c)),
         "follower_count": followers,
         "like_count": like_total,

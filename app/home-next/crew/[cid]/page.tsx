@@ -7,6 +7,7 @@ import React, { useEffect, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, RotateCw, Users, Plus, BadgeCheck, Bookmark, Share2, Loader2 } from "lucide-react"
 import { shareCrewInvite } from "@/lib/kakao"
+import { VerifySheet, CREW_TYPE_META } from "../../verify-sheet"
 import { fetchWithAuth } from "@/lib/api-client"
 
 type CrewList = {
@@ -17,6 +18,7 @@ type CrewList = {
 }
 type Crew = {
   id: string; title: string; description: string; icon: string; visibility: string
+  crew_type?: string; org_name?: string | null; verified_members?: number
   member_count: number; follower_count: number; like_count: number; list_count: number
   is_following: boolean; is_member: boolean; is_host: boolean
   members: { id: number; name: string; avatar: string; is_host: boolean }[]
@@ -44,6 +46,7 @@ export default function CrewProfilePage() {
   const [loading, setLoading] = useState(true)
   const [joinBusy, setJoinBusy] = useState(false)
   const [shareMsg, setShareMsg] = useState<string | null>(null)
+  const [verifyNeed, setVerifyNeed] = useState<null | { kind: "university" | "company"; org: string }>(null)
 
   const doJoin = async () => {
     if (!params?.cid || joinBusy) return
@@ -51,6 +54,13 @@ export default function CrewProfilePage() {
     try {
       const res = await fetchWithAuth(`/api/crews/${params.cid}/join`, { method: "POST" })
       if (res.status === 401) { router.push(`/login?crew=${params.cid}`); return }
+      if (res.status === 403) {
+        const d = await res.json().catch(() => null)
+        if (d?.detail?.code === "verify_required") {
+          setVerifyNeed({ kind: d.detail.kind, org: d.detail.org_name || d.detail.domain || "" })
+          return
+        }
+      }
       if (res.ok) {
         // 합류 성공 — 멤버 시점으로 다시 로드
         window.location.href = `/home-next/crew/${params.cid}?joined=1`
@@ -137,7 +147,15 @@ export default function CrewProfilePage() {
                   <h1 className="truncate text-lg font-bold text-slate-900">{crew.title}</h1>
                   {crew.visit_verified && <BadgeCheck className="h-5 w-5 shrink-0 text-[#F5A623]" />}
                 </div>
-                <div className="mt-0.5 text-[11px] text-slate-400">{VIS_LABEL[crew.visibility] || crew.visibility}</div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
+                  {crew.crew_type && crew.crew_type !== "friends" && (
+                    <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                      {CREW_TYPE_META[crew.crew_type]?.emoji} {crew.org_name || CREW_TYPE_META[crew.crew_type]?.label}
+                      {(crew.verified_members ?? 0) > 0 && ` · 인증 ${crew.verified_members}명`}
+                    </span>
+                  )}
+                  <span>{VIS_LABEL[crew.visibility] || crew.visibility}</span>
+                </div>
               </div>
               {crew.is_member ? (
                 <button
@@ -267,6 +285,14 @@ export default function CrewProfilePage() {
             </div>
           )}
         </>
+      )}
+      {verifyNeed && (
+        <VerifySheet
+          kind={verifyNeed.kind}
+          requireOrgName={verifyNeed.org}
+          onClose={() => setVerifyNeed(null)}
+          onDone={() => { setVerifyNeed(null); doJoin() }}
+        />
       )}
       {shareMsg && (
         <div className="fixed bottom-6 left-1/2 z-50 max-w-[90%] -translate-x-1/2 rounded-full bg-gray-900 px-4 py-2.5 text-center text-sm font-medium text-white shadow-lg">

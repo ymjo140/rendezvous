@@ -14,7 +14,10 @@ type CrewVisit = { place: string; date: string; amount: number; party: number }
 type Crew = {
   id: string; title: string; icon: string; members: number; lists: number; visibility?: string
   visits?: number; spent?: number; recent?: CrewVisit[]
+  crew_type?: string; org_name?: string | null
 }
+
+const TYPE_EMOJI: Record<string, string> = { university: "🎓", company: "🏢", community: "🏃" }
 
 const VIS_LABEL: Record<string, string> = {
   private: "🔒 우리끼리", list_only: "📋 리스트만 공개", public: "🌟 크루 공개", open: "💬 오픈",
@@ -79,7 +82,8 @@ export default function CrewsTabPage() {
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-2xl">{c.icon}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[14px] font-semibold text-slate-900">{c.title}</span>
-                    <span className="mt-0.5 block text-[11px] text-slate-400">
+                    <span className="mt-0.5 block truncate text-[11px] text-slate-400">
+                      {c.crew_type && TYPE_EMOJI[c.crew_type] && `${TYPE_EMOJI[c.crew_type]} ${c.org_name || ""} · `}
                       멤버 {c.members} · 리스트 {c.lists}
                       {c.visibility && ` · ${VIS_LABEL[c.visibility] || ""}`}
                     </span>

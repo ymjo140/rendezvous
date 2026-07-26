@@ -8,6 +8,7 @@ import React, { useState } from "react"
 import { useRouter } from "next/navigation"
 import { ChevronLeft, Check, Loader2 } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
+import { VerifySheet, CREW_TYPE_META } from "../verify-sheet"
 
 const EMOJIS = ["🍷", "🍜", "🍞", "🍺", "☕", "🍣", "🥩", "🌮", "🍰", "🍲", "🦞", "🍕"]
 
@@ -31,6 +32,9 @@ const TAGS = [
 export default function CrewNewPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
+  const [crewType, setCrewType] = useState("friends")
+  const [verified, setVerified] = useState<Record<string, string>>({})  // kind -> org_name
+  const [verifyOpen, setVerifyOpen] = useState<null | "university" | "company">(null)
   const [title, setTitle] = useState("")
   const [icon, setIcon] = useState("🍷")
   const [visibility, setVisibility] = useState("list_only")
@@ -38,6 +42,24 @@ export default function CrewNewPage() {
   const [listTag, setListTag] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+
+  React.useEffect(() => {
+    fetchWithAuth("/api/verify/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return
+        const m: Record<string, string> = {}
+        for (const v of d.verifications || []) m[v.kind] = v.org_name
+        setVerified(m)
+      })
+      .catch(() => {})
+  }, [])
+
+  const pickType = (t: string) => {
+    setCrewType(t)
+    const need = CREW_TYPE_META[t]?.verify
+    if (need && !verified[need]) setVerifyOpen(need)
+  }
 
   const submit = async () => {
     if (busy) return
@@ -50,6 +72,7 @@ export default function CrewNewPage() {
           title: title.trim(),
           icon,
           visibility,
+          crew_type: crewType,
           first_list: listName.trim()
             ? { name: listName.trim(), icon, context_tag: listTag }
             : null,
@@ -57,7 +80,12 @@ export default function CrewNewPage() {
       })
       if (!res.ok) {
         const d = await res.json().catch(() => null)
-        throw new Error(d?.detail || "크루를 만들지 못했어요.")
+        if (d?.detail?.code === "verify_required") {
+          setVerifyOpen(d.detail.kind)
+          setBusy(false)
+          return
+        }
+        throw new Error(typeof d?.detail === "string" ? d.detail : "크루를 만들지 못했어요.")
       }
       const d = await res.json()
       router.push(`/home-next/crew/${d.id}?created=1`)
@@ -87,8 +115,31 @@ export default function CrewNewPage() {
       {/* STEP 1: 이름 + 이모지 */}
       {step === 1 && (
         <div className="px-4 pt-4">
-          <h2 className="text-lg font-bold text-slate-900">어떤 취향의 크루야?</h2>
-          <p className="mt-1 text-[12px] text-slate-400">맛집 리스트를 함께 쌓을 무리의 이름이에요.</p>
+          <h2 className="text-lg font-bold text-slate-900">어떤 크루야?</h2>
+          <p className="mt-1 text-[12px] text-slate-400">종류에 따라 제휴 혜택 대상이 달라져요.</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {Object.entries(CREW_TYPE_META).map(([t, m]) => {
+              const on = crewType === t
+              const needVerify = m.verify && !verified[m.verify]
+              return (
+                <button
+                  key={t}
+                  onClick={() => pickType(t)}
+                  className={`rounded-2xl border-2 p-3 text-left transition-colors ${on ? "border-[#F5A623] bg-amber-50" : "border-slate-100"}`}
+                >
+                  <span className="text-xl">{m.emoji}</span>
+                  <span className="mt-1 flex items-center gap-1">
+                    <b className="text-[13px] font-semibold text-slate-900">{m.label}</b>
+                    {m.verify && verified[m.verify] && <span className="text-[10px] text-emerald-600">✓ {verified[m.verify]}</span>}
+                  </span>
+                  <span className="mt-0.5 block text-[10.5px] leading-snug text-slate-400">
+                    {m.desc}{needVerify && on ? " · 인증 필요" : ""}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <p className="mt-4 text-[12px] font-medium text-slate-600">크루 이름</p>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -111,7 +162,11 @@ export default function CrewNewPage() {
           </div>
           <button
             disabled={!title.trim()}
-            onClick={() => setStep(2)}
+            onClick={() => {
+              const need = CREW_TYPE_META[crewType]?.verify
+              if (need && !verified[need]) { setVerifyOpen(need); return }
+              setStep(2)
+            }}
             className="mt-6 w-full rounded-2xl bg-[#F5A623] py-3.5 text-[15px] font-semibold text-white disabled:opacity-30"
           >
             다음
@@ -189,6 +244,17 @@ export default function CrewNewPage() {
             {listName.trim() ? "크루 + 첫 리스트 만들기" : "크루만 먼저 만들기"}
           </button>
         </div>
+      )}
+
+      {verifyOpen && (
+        <VerifySheet
+          kind={verifyOpen}
+          onClose={() => setVerifyOpen(null)}
+          onDone={(r) => {
+            setVerified((prev) => ({ ...prev, [verifyOpen]: r.org_name }))
+            setVerifyOpen(null)
+          }}
+        />
       )}
     </div>
   )
