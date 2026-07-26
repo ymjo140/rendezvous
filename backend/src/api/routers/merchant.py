@@ -853,18 +853,25 @@ def store_content(store_id: int, db: Session = Depends(get_db)):
     try:
         crows = db.execute(text(
             """
-            SELECT sf.id, sf.name, u.name AS owner,
-                   (SELECT COUNT(*) FROM list_likes ll WHERE ll.folder_id = sf.id) AS likes
+            SELECT sf.id, sf.name, sf.icon,
+                   COALESCE(c.title, u.name) AS owner,
+                   (c.id IS NOT NULL) AS is_crew,
+                   (SELECT COUNT(*) FROM list_likes ll WHERE ll.folder_id = sf.id) AS likes,
+                   (SELECT COUNT(*) FROM list_saves ls WHERE ls.folder_id = sf.id) AS saves
             FROM saved_items si
             JOIN save_folders sf ON sf.id = si.folder_id AND sf.is_public = TRUE
             JOIN users u ON u.id = sf.user_id
+            LEFT JOIN communities c ON c.id = sf.community_id
             WHERE si.place_id = :pid
-            GROUP BY sf.id, sf.name, u.name
-            ORDER BY likes DESC LIMIT 10
+            GROUP BY sf.id, sf.name, sf.icon, c.title, u.name, c.id
+            ORDER BY saves DESC, likes DESC LIMIT 10
             """
         ), {"pid": pid}).fetchall()
-        for cid, cname, owner, likes in crows:
-            curators.append({"folder_id": cid, "name": cname, "owner": owner, "likes": int(likes or 0)})
+        for cid, cname, cicon, owner, is_crew, likes, saves in crows:
+            curators.append({
+                "folder_id": cid, "name": cname, "icon": cicon or "📁", "owner": owner,
+                "is_crew": bool(is_crew), "likes": int(likes or 0), "saves": int(saves or 0),
+            })
     except Exception as exc:
         print(f"[content] curators skip: {exc}"); db.rollback()
 
