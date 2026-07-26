@@ -5,16 +5,18 @@
 
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Users, Plus, ChevronRight, Sparkles, MessageCircle, Share2 } from "lucide-react"
+import { Users, Plus, ChevronRight, Sparkles, MessageCircle, Share2, Handshake } from "lucide-react"
 import { shareCrewInvite } from "@/lib/kakao"
 import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "../tab-bar"
 
 type CrewVisit = { place: string; date: string; amount: number; party: number }
+type CrewPartnership = { invites: number; active: number; pending: number; unread: boolean }
 type Crew = {
   id: string; title: string; icon: string; members: number; lists: number; visibility?: string
   visits?: number; spent?: number; recent?: CrewVisit[]
   crew_type?: string; org_name?: string | null
+  partnership?: CrewPartnership
 }
 
 const TYPE_EMOJI: Record<string, string> = { university: "🎓", company: "🏢", community: "🏃" }
@@ -110,8 +112,8 @@ export default function CrewsTabPage() {
                   </button>
                 </div>
 
-                {/* 방문 히스토리 · 지출 (분담 결제 완료 건 집계) */}
-                <div className="mt-2.5 grid grid-cols-2 gap-2">
+                {/* 방문 히스토리 · 지출 (분담 결제 완료 건 집계) + 제휴 관리 */}
+                <div className="mt-2.5 grid grid-cols-3 gap-2">
                   <div className="rounded-xl bg-slate-50 py-2 text-center">
                     <div className="text-[14px] font-bold text-slate-900">{c.visits ?? 0}회</div>
                     <div className="text-[10px] text-slate-400">함께 방문</div>
@@ -120,6 +122,19 @@ export default function CrewsTabPage() {
                     <div className="text-[14px] font-bold text-slate-900">{(c.spent ?? 0).toLocaleString()}원</div>
                     <div className="text-[10px] text-slate-400">누적 지출</div>
                   </div>
+                  <button
+                    onClick={() => router.push(`/home-next/crew/${c.id}/partnerships`)}
+                    className="relative rounded-xl bg-slate-50 py-2 text-center"
+                  >
+                    {/* 느낌표 = 새 제안이 왔거나 신청이 승인됨 — 궁금해서 눌러보게 */}
+                    {c.partnership?.unread && (
+                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">!</span>
+                    )}
+                    <div className="flex h-[17px] items-center justify-center text-slate-700">
+                      <Handshake className="h-4 w-4" />
+                    </div>
+                    <div className="text-[10px] text-slate-400">제휴 관리</div>
+                  </button>
                 </div>
                 {(c.recent?.length ?? 0) > 0 && (
                   <div className="mt-2 space-y-1">
