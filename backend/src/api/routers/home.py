@@ -301,7 +301,8 @@ def home_feed(
             by_room.setdefault(r.room_id, []).append(r)
         for e in my_crews:
             rs = by_room.get(e["id"], [])
-            e["visits"] = len(rs)
+            # 방문 = 통합 집계(체크인·피드백 포함), 지출은 실제 결제만
+            e["visits"] = _crew_visits(db, e["id"])
             e["spent"] = int(sum((r.total_amount or 0) for r in rs))
             e["recent"] = [
                 {"place": r.place_name, "date": r.date or "", "amount": int(r.total_amount or 0), "party": int(r.party_size or 0)}
@@ -975,15 +976,166 @@ def _user_verified_domain(db: Session, user_id: int, kind: str) -> Optional[mode
 # 🤝 크루 제휴 딜 (B2C) — 자격 크루가 딜을 탐색·신청
 # ─────────────────────────────────────────────────────────────
 
+def _crew_visit_stats(db: Session, community_id: str) -> dict:
+    """크루의 '함께 방문' 통합 집계.
+
+    한 가지 소스(분담결제)만 세면 그냥 밥만 먹고 온 모임은 영원히 실적이 0이라
+    세 가지 증거를 모두 인정한다. 같은 가게·같은 날은 어느 경로든 1회로 친다.
+      · 분담결제 완료 — 가장 강한 증거(돈이 오감)
+      · QR 체크인 — 크루를 지정한 현장 방문
+      · 모임 방문 피드백 — 방문 후 '또 갈래요?' 응답
+    """
+    keys: set = set()          # (place_id or 이름, 날짜) — 중복 제거 키
+    by_source = {"split": 0, "checkin": 0, "feedback": 0}
+    amount = 0
+
+    for r in (
+        db.query(models.ChatSplitRequest)
+        .filter(models.ChatSplitRequest.room_id == community_id,
+                models.ChatSplitRequest.status == "completed").all()
+    ):
+        keys.add((r.place_id or r.place_name or "", r.date or ""))
+        by_source["split"] += 1
+        amount += int(r.total_amount or 0)
+
+    try:
+        for c in (
+            db.query(models.PlaceCheckin)
+            .filter(models.PlaceCheckin.community_id == community_id).all()
+        ):
+            keys.add((c.place_id, c.date or ""))
+            by_source["checkin"] += 1
+    except Exception:
+        pass  # 테이블 생성 전에도 죽지 않게
+
+    for f in (
+        db.query(models.PlaceVisitFeedback)
+        .filter(models.PlaceVisitFeedback.room_id == community_id).all()
+    ):
+        keys.add((f.place_id, f.created_at.strftime("%Y-%m-%d") if f.created_at else ""))
+        by_source["feedback"] += 1
+
+    return {"visits": len(keys), "amount": amount, "by_source": by_source}
+
+
+def _crew_visits(db: Session, community_id: str) -> int:
+    return _crew_visit_stats(db, community_id)["visits"]
+
+
+@router.get("/api/checkin/{place_id}")
+def checkin_context(
+    place_id: int,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """QR 스캔 직후 화면 — 가게 정보 + 체크인할 내 크루 목록 + 오늘 이미 찍었는지."""
+    place = db.query(models.Place).filter(models.Place.id == place_id).first()
+    if not place:
+        raise HTTPException(status_code=404, detail="가게를 찾을 수 없어요.")
+    out = {
+        "place": {
+            "id": place.id, "name": place.name,
+            "category": place.cuisine_type or place.category or "",
+            "address": place.address or "",
+        },
+        "logged_in": user is not None,
+        "crews": [],
+        "today": [],
+    }
+    if user is None:
+        return out
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    done = set()
+    try:
+        done = {
+            c.community_id for c in db.query(models.PlaceCheckin).filter(
+                models.PlaceCheckin.place_id == place_id,
+                models.PlaceCheckin.user_id == user.id,
+                models.PlaceCheckin.date == today,
+            ).all()
+        }
+    except Exception:
+        pass
+
+    for c in db.query(models.Community).all():
+        members = list(dict.fromkeys(([c.host_id] if c.host_id else []) + list(c.member_ids or [])))
+        if user.id not in members:
+            continue
+        st = _crew_visit_stats(db, c.id)
+        out["crews"].append({
+            "id": c.id, "title": c.title, "icon": c.icon or "👥",
+            "members": len(members),
+            "visits": st["visits"],
+            "checked_today": c.id in done,
+        })
+    out["crews"].sort(key=lambda x: x["visits"], reverse=True)
+    out["today"] = sorted(x for x in done if x)
+    return out
+
+
+@router.post("/api/checkin")
+def create_checkin(
+    req: dict,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """방문 체크인 — 크루를 지정하면 그 크루의 '함께 방문'으로 쌓인다."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    place_id = req.get("place_id")
+    if not place_id:
+        raise HTTPException(status_code=400, detail="가게 정보가 없어요.")
+    place = db.query(models.Place).filter(models.Place.id == int(place_id)).first()
+    if not place:
+        raise HTTPException(status_code=404, detail="가게를 찾을 수 없어요.")
+
+    community_id = req.get("community_id") or None
+    if community_id:
+        crew = db.query(models.Community).filter(models.Community.id == str(community_id)).first()
+        if not crew:
+            raise HTTPException(status_code=404, detail="크루를 찾을 수 없어요.")
+        members = list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or [])))
+        if user.id not in members:
+            raise HTTPException(status_code=403, detail="크루 멤버만 체크인할 수 있어요.")
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    dup = (
+        db.query(models.PlaceCheckin)
+        .filter(
+            models.PlaceCheckin.place_id == place.id,
+            models.PlaceCheckin.user_id == user.id,
+            models.PlaceCheckin.community_id == community_id,
+            models.PlaceCheckin.date == today,
+        ).first()
+    )
+    if dup:
+        stats = _crew_visit_stats(db, community_id) if community_id else {"visits": 0}
+        return {"id": dup.id, "already": True, "crew_visits": stats["visits"]}
+
+    row = models.PlaceCheckin(
+        place_id=place.id, user_id=user.id, community_id=community_id,
+        party_size=int(req.get("party_size") or 1), date=today,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    result = {"id": row.id, "already": False, "crew_visits": 0, "eligible_now": False}
+    if community_id:
+        crew = db.query(models.Community).filter(models.Community.id == str(community_id)).first()
+        stats = _crew_visit_stats(db, community_id)
+        result["crew_visits"] = stats["visits"]
+        if crew is not None:
+            result["eligible_now"] = _crew_eligibility(db, crew)["eligible"]
+    return result
+
+
 def _crew_eligibility(db: Session, crew: models.Community) -> dict:
     """제휴 자격 판정 — org(소속 인증) or activity(멤버 3+ & 함께 방문 3회+)."""
     members = list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or [])))
     org_domain = getattr(crew, "org_domain", None)
-    visits = (
-        db.query(models.ChatSplitRequest)
-        .filter(models.ChatSplitRequest.room_id == crew.id, models.ChatSplitRequest.status == "completed")
-        .count()
-    )
+    visits = _crew_visits(db, crew.id)   # 분담결제 + 체크인 + 방문 피드백 통합
     eligible = bool(org_domain) or (visits >= 3 and len(members) >= 3)
     track = "org" if org_domain else ("activity" if (visits >= 3 and len(members) >= 3) else None)
     return {"eligible": eligible, "track": track, "members": len(members), "visits": visits}

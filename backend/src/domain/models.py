@@ -941,3 +941,18 @@ class CrewPartnershipApp(Base):
     created_at = Column(DateTime, default=datetime.now)
     decided_at = Column(DateTime, nullable=True)
     __table_args__ = (UniqueConstraint("partnership_id", "community_id", name="uq_partnership_app"),)
+
+
+class PlaceCheckin(Base):
+    """가게 QR 체크인 — 방문의 1차 증거. 크루를 고르면 '함께 방문'으로 집계된다.
+
+    분담결제 없이 그냥 밥만 먹고 온 모임도 활동 실적을 쌓을 수 있게 하는 통로.
+    같은 크루가 같은 가게에서 같은 날 여러 번 찍어도 방문 1회로 센다(집계 시 dedupe)."""
+    __tablename__ = "place_checkins"
+    id = Column(Integer, primary_key=True, index=True)
+    place_id = Column(Integer, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    community_id = Column(String, nullable=True, index=True)   # 없으면 개인 방문
+    party_size = Column(Integer, default=1)
+    date = Column(String, index=True)                          # YYYY-MM-DD (KST)
+    created_at = Column(DateTime, default=datetime.now)

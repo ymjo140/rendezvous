@@ -1347,12 +1347,9 @@ def _crew_snapshot(db: Session, cid: str) -> dict:
                 models.UserVerification.status == "verified",
             ).count()
         )
-    # 함께 방문(분담결제 완료) — 크루 전체 활동 실적
-    visits = (
-        db.query(models.ChatSplitRequest)
-        .filter(models.ChatSplitRequest.room_id == cid, models.ChatSplitRequest.status == "completed")
-        .count()
-    )
+    # 함께 방문 — 분담결제·QR 체크인·방문 피드백 통합(가게·날짜 중복 제거)
+    from api.routers.home import _crew_visits
+    visits = _crew_visits(db, cid)
     # 재방문율 — 멤버들이 남긴 방문 피드백 중 "또 갈래요" 비율 (판단 근거)
     revisit_rate = None
     if members:
