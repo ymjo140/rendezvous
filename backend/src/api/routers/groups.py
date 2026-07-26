@@ -194,6 +194,12 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
         "member_visits": int(member_visits),
         "member_revisits": int(member_revisits),
         "visit_verified": member_visits >= 3,
+        # 제휴 자격 — 회비 같은 신고제 대신 검증 가능한 두 트랙만 인정:
+        #   org  = 소속 인증 크루(대학/회사 도메인)   activity = 활동 실적(멤버 3+ & 함께 방문 3회+)
+        **(lambda _mc=len(_members(c)): {
+            "partnership_eligible": bool(_org_domain) or (member_visits >= 3 and _mc >= 3),
+            "partnership_track": ("org" if _org_domain else ("activity" if (member_visits >= 3 and _mc >= 3) else None)),
+        })(),
     }
 
 

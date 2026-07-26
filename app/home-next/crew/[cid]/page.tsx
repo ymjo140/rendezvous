@@ -19,6 +19,7 @@ type CrewList = {
 type Crew = {
   id: string; title: string; description: string; icon: string; visibility: string
   crew_type?: string; org_name?: string | null; verified_members?: number
+  partnership_eligible?: boolean; partnership_track?: "org" | "activity" | null
   member_count: number; follower_count: number; like_count: number; list_count: number
   is_following: boolean; is_member: boolean; is_host: boolean
   members: { id: number; name: string; avatar: string; is_host: boolean }[]
@@ -184,6 +185,26 @@ export default function CrewProfilePage() {
               )}
             </div>
             {crew.description && <p className="mt-2.5 text-[13px] leading-relaxed text-slate-600">{crew.description}</p>}
+
+            {/* 제휴 자격 — 소속 인증 or 활동 실적, 가게 제휴 딜 참여 조건 */}
+            {crew.partnership_eligible ? (
+              <div className="mt-3 flex items-center gap-2 rounded-2xl bg-amber-50 px-3.5 py-2.5">
+                <span className="text-lg">🤝</span>
+                <p className="text-[12.5px] font-medium text-amber-800">
+                  제휴 자격 크루 — 가게 제휴 딜에 참여할 수 있어요
+                  <span className="ml-1 text-[10.5px] font-normal text-amber-600">
+                    {crew.partnership_track === "org" ? "(소속 인증)" : "(활동 인증)"}
+                  </span>
+                </p>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-2xl bg-slate-50 px-3.5 py-2.5">
+                <p className="text-[12px] text-slate-500">
+                  🤝 제휴 자격까지: <b>멤버 3명+ · 함께 방문 3회+</b>가 필요해요.
+                  방문 기록이 쌓이면 자동으로 자격이 생겨요.
+                </p>
+              </div>
+            )}
 
             {/* 방문 인증 배지 — 이 크루의 신뢰 근거 */}
             <div className={`mt-3 rounded-2xl px-3.5 py-3 ${crew.visit_verified ? "bg-emerald-50" : "bg-slate-50"}`}>
