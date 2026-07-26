@@ -237,6 +237,22 @@ export default function HomeNextPage() {
   const openSheet = () => { setDraftCtxs(ctxs); setDraftFoods(foods); setDraftAnchor(anchor); setRegionInput(""); setRegionResults([]); setSheetOpen(true) }
   const applySheet = () => { setCtxs(draftCtxs); setFoods(draftFoods); setAnchor(draftAnchor); setSheetOpen(false) }
 
+  // 섹션 헤더 마커 — '누구 기준인가'를 색+모양으로 고정.
+  // 크루 축: 인디고 원형 / 개인·가게 축: 앰버 사각 / 실시간: 로즈.
+  const SecMark = ({ axis, children }: { axis: "crew" | "me" | "live"; children: React.ReactNode }) => (
+    <span
+      className={
+        axis === "crew"
+          ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600"
+          : axis === "live"
+            ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-rose-50 text-rose-500"
+            : "flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600"
+      }
+    >
+      {children}
+    </span>
+  )
+
   const ListCardView = ({ g }: { g: ListCard }) => (
     <article
       onClick={() => {
@@ -336,7 +352,7 @@ export default function HomeNextPage() {
       {filterCount === 0 && hotDeals.length > 0 && (
         <section className="px-4 pt-4">
           <div className="mb-1 flex items-center gap-1.5">
-            <Flame className="h-4 w-4 text-rose-500" />
+            <SecMark axis="live"><Flame className="h-3.5 w-3.5" /></SecMark>
             <h2 className="min-w-0 flex-1 text-[15px] font-bold text-gray-900">핫딜 — 지금 자리 있는 곳</h2>
             <span className="shrink-0 text-[11px] font-semibold text-rose-500">{hotDeals.length}곳</span>
           </div>
@@ -467,12 +483,12 @@ export default function HomeNextPage() {
         <section className="px-4 pt-5">
           <div className="mb-1 flex items-center justify-between">
             <h2 className="flex items-center gap-1.5 text-[15px] font-bold text-gray-900">
-              <Store className="h-4 w-4" style={{ color: BRAND }} />
+              <SecMark axis="crew"><Users className="h-3.5 w-3.5" /></SecMark>
               {activeCrew ? `${activeCrew}에 어울리는 곳` : "내 크루에 어울리는 곳"}
             </h2>
             {crewNames.length > 1 && (
               <div className="relative">
-                <button onClick={() => setCrewOpen(!crewOpen)} className="flex items-center gap-0.5 text-[12px] font-semibold" style={{ color: BRAND }}>
+                <button onClick={() => setCrewOpen(!crewOpen)} className="flex items-center gap-0.5 text-[12px] font-semibold" style={{ color: CREW }}>
                   크루 바꾸기<ChevronDown className="h-3.5 w-3.5" />
                 </button>
                 {crewOpen && (
@@ -490,7 +506,7 @@ export default function HomeNextPage() {
               </div>
             )}
           </div>
-          <p className="text-[11px] text-gray-400">크루 취향·저장·재방문 기록으로 골랐어요</p>
+          <p className="text-[11px] text-indigo-400">크루 취향·저장·재방문 기록으로 골랐어요</p>
           <div className="mt-2.5 flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
             {shownCrewPlaces.length === 0 ? (
               <div className="w-full rounded-2xl border-2 border-dashed border-gray-200 py-8 text-center text-[12px] text-gray-400">
@@ -524,7 +540,7 @@ export default function HomeNextPage() {
         <section className="px-4 pt-5">
           <div className="mb-1 flex items-center justify-between">
             <h2 className="flex items-center gap-1.5 text-[15px] font-bold text-gray-900">
-              <Store className="h-4 w-4" style={{ color: BRAND }} />오늘 뭐 먹지 — 내 입맛 추천
+              <SecMark axis="me"><Store className="h-3.5 w-3.5" /></SecMark>오늘 뭐 먹지 — 내 입맛 추천
             </h2>
             <button
               onClick={() => {
@@ -561,7 +577,7 @@ export default function HomeNextPage() {
       {filterCount === 0 && crewLists.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
-            <Users className="h-4 w-4" style={{ color: CREW }} />
+            <SecMark axis="crew"><Users className="h-3.5 w-3.5" /></SecMark>
             <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">내 크루와 비슷한 크루의 리스트</h2>
             <button onClick={() => router.push("/home-next/browse?mode=crew")} className="shrink-0 text-[12px] font-semibold" style={{ color: CREW }}>전체 보기</button>
           </div>
@@ -575,7 +591,7 @@ export default function HomeNextPage() {
       {filterCount === 0 && curatorLists.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
-            <Sparkles className="h-4 w-4" style={{ color: CREW }} />
+            <SecMark axis="crew"><Sparkles className="h-3.5 w-3.5" /></SecMark>
             <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">내 입맛과 닮은 큐레이터의 리스트</h2>
             <button onClick={() => router.push("/home-next/browse?mode=curator")} className="shrink-0 text-[12px] font-semibold" style={{ color: CREW }}>전체 보기</button>
           </div>
