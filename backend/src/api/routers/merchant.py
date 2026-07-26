@@ -1508,3 +1508,161 @@ def decide_partnership_app(
     a.decided_at = datetime.now()
     db.commit()
     return {"id": a.id, "status": a.status}
+
+
+# ─────────────────────────────────────────────────────────────
+# 📊 오늘 탭 v2 — 기간 선택(오늘/이번 주/이번 달) KPI + 추이 + 브리핑
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/stores/{store_id}/overview")
+def store_overview(
+    store_id: int,
+    period: str = "today",   # today | week | month
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    """기간별 한눈에 — KPI(예약·예상 손님·정산액) + 직전 기간 대비 + 추이 차트 + 오늘 브리핑.
+    차트 창: today=최근 7일(일별) / week=최근 8주(주별) / month=최근 6개월(월별)."""
+    from datetime import date, timedelta
+
+    place = _assert_merchant_owns(db, store_id, merchant_uid)
+    if period not in ("today", "week", "month"):
+        period = "today"
+
+    today = date.today()
+
+    def ymd(d: date) -> str:
+        return d.strftime("%Y-%m-%d")
+
+    # 기간 경계(KPI 집계용) + 직전 기간
+    if period == "today":
+        cur_from, cur_to = today, today
+        prev_from, prev_to = today - timedelta(days=1), today - timedelta(days=1)
+    elif period == "week":
+        monday = today - timedelta(days=(today.weekday()))
+        cur_from, cur_to = monday, monday + timedelta(days=6)
+        prev_from, prev_to = monday - timedelta(days=7), monday - timedelta(days=1)
+    else:
+        first = today.replace(day=1)
+        cur_from, cur_to = first, today
+        prev_last = first - timedelta(days=1)
+        prev_from, prev_to = prev_last.replace(day=1), prev_last
+
+    # 데이터 로드 창: 차트까지 커버 (최대 6개월)
+    load_from = ymd(today - timedelta(days=190))
+    resvs = (
+        db.query(models.Reservation)
+        .filter(
+            models.Reservation.place_id == place.id,
+            models.Reservation.date >= load_from,
+            models.Reservation.status.in_(["confirmed", "completed"]),
+        ).all()
+    )
+    splits = (
+        db.query(models.ChatSplitRequest)
+        .filter(
+            models.ChatSplitRequest.place_id == place.id,
+            models.ChatSplitRequest.status == "completed",
+            models.ChatSplitRequest.date >= load_from,
+        ).all()
+    )
+
+    def in_range(dstr, a: date, b: date) -> bool:
+        return bool(dstr) and ymd(a) <= dstr <= ymd(b)
+
+    def agg(a: date, b: date):
+        rs = [r for r in resvs if in_range(r.date, a, b)]
+        sp = [x for x in splits if in_range(x.date, a, b)]
+        guests = sum(int(r.party_size or 0) for r in rs) + sum(int(x.party_size or 0) for x in sp)
+        amount = sum(int(r.deposit_amount or 0) for r in rs) + sum(int(x.total_amount or 0) for x in sp)
+        return {"reservations": len(rs) + len(sp), "guests": guests, "amount": amount}
+
+    cur = agg(cur_from, cur_to)
+    prev = agg(prev_from, prev_to)
+
+    def delta_pct(c: int, p: int):
+        if p <= 0:
+            return None
+        return round((c - p) / p * 100, 1)
+
+    # 추이 시리즈
+    series = []
+    if period == "today":
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            a = agg(d, d)
+            series.append({"label": d.strftime("%m/%d"), "guests": a["guests"], "is_current": d == today})
+    elif period == "week":
+        this_monday = today - timedelta(days=today.weekday())
+        for i in range(7, -1, -1):
+            m = this_monday - timedelta(days=7 * i)
+            a = agg(m, m + timedelta(days=6))
+            series.append({"label": m.strftime("%m/%d"), "guests": a["guests"], "is_current": i == 0})
+    else:
+        y, mo = today.year, today.month
+        months = []
+        for i in range(5, -1, -1):
+            mm = mo - i
+            yy = y
+            while mm <= 0:
+                mm += 12
+                yy -= 1
+            months.append((yy, mm))
+        for (yy, mm) in months:
+            first = date(yy, mm, 1)
+            last = (date(yy + (1 if mm == 12 else 0), (mm % 12) + 1, 1) - timedelta(days=1))
+            a = agg(first, last)
+            series.append({"label": f"{mm}월", "guests": a["guests"], "is_current": (yy, mm) == (y, mo)})
+
+    # 오늘 브리핑 — 예약 하이라이트(방문 이력 기반) + 할 일
+    briefing = []
+    todays = sorted(
+        [r for r in resvs if r.date == ymd(today)],
+        key=lambda r: (r.time or ""),
+    )[:3]
+    for r in todays:
+        visits = (
+            db.query(models.Reservation)
+            .filter(
+                models.Reservation.place_id == place.id,
+                models.Reservation.user_id == r.user_id,
+                models.Reservation.status == "completed",
+            ).count()
+        ) if r.user_id else 0
+        tier = "VIP" if visits >= 4 else ("단골" if visits >= 2 else ("재방문" if visits >= 1 else "첫 방문"))
+        briefing.append({"time": r.time or "", "party": int(r.party_size or 0), "tier": tier})
+
+    pending_resv = (
+        db.query(models.Reservation)
+        .filter(
+            models.Reservation.place_id == place.id,
+            models.Reservation.date >= ymd(today),
+            models.Reservation.status == "confirmed",
+        ).count()
+    )
+    pending_apps = (
+        db.query(models.CrewPartnershipApp)
+        .join(models.CrewPartnership, models.CrewPartnership.id == models.CrewPartnershipApp.partnership_id)
+        .filter(
+            models.CrewPartnership.place_id == place.id,
+            models.CrewPartnershipApp.status == "pending",
+        ).count()
+    )
+
+    return {
+        "period": period,
+        "store": {"name": place.name, "category": place.cuisine_type or ""},
+        "kpis": {
+            "reservations": cur["reservations"],
+            "guests": cur["guests"],
+            "amount": cur["amount"],
+            "delta": {
+                "reservations": delta_pct(cur["reservations"], prev["reservations"]),
+                "guests": delta_pct(cur["guests"], prev["guests"]),
+                "amount": delta_pct(cur["amount"], prev["amount"]),
+            },
+        },
+        "series": series,
+        "briefing": briefing,
+        "todo": {"pending_reservations": pending_resv, "pending_partnership_apps": pending_apps},
+    }
