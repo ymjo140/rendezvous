@@ -1458,11 +1458,16 @@ def list_partnerships(
             "id": d.id, "title": d.title, "benefit": d.benefit, "discount_pct": d.discount_pct,
             "target": d.target, "conditions": d.conditions or {}, "status": d.status,
             "expires_at": d.expires_at.isoformat() if d.expires_at else None,
-            "pending": sum(1 for a in das if a.status == "pending"),
+            # 대기 건수는 '크루가 낸 신청'만 — 내가 보낸 제안은 할 일이 아님
+            "pending": sum(
+                1 for a in das
+                if a.status == "pending" and (getattr(a, "direction", None) or "crew_apply") == "crew_apply"
+            ),
             "approved": sum(1 for a in das if a.status == "approved"),
             "applications": [
                 {
                     "id": a.id, "status": a.status, "message": a.message or "",
+                    "direction": getattr(a, "direction", None) or "crew_apply",
                     "created_at": a.created_at.isoformat() if a.created_at else None,
                     "crew": _crew_snapshot(db, a.community_id),
                 }
