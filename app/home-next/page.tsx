@@ -1,18 +1,20 @@
 "use client"
 
 // ─────────────────────────────────────────────────────────────
-// 🧪 [redesign/group-home] 새 홈 v2.1 — "크루·리스트 중심 발견"
-// 검색 → 필터(시트·중복선택) → 랭킹 3줄 → 크루 맞춤 가게 → 크루 리스트 / 큐레이터 리스트 분리 → 맥락 랙
-// 브랜드색 #F5A623. 실데이터 우선 + mock 폴백.
+// 🧪 [redesign/group-home] 새 홈 v2.2 — "크루·리스트 중심 발견"
+// 검색 → 필터(시트·중복선택) → 🔥 핫딜(실시간 빈자리) → 크루 맞춤 가게 → 크루/큐레이터 리스트 → 맥락 랙
+// 랭킹 3줄(급상승·인기 크루·인기 리스트)은 탐색 탭이 담당.
+// 시각 언어: 앰버 #F5A623 = 가게·혜택(사각 썸네일) / 인디고 #5B5BD6 = 사람·크루(원형 아바타)
 // ─────────────────────────────────────────────────────────────
 
 import React, { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Search, Sparkles, RotateCw, MapPin, Bookmark, ChevronRight, ChevronDown, BadgeCheck, Flame, Users, ListOrdered, SlidersHorizontal, X, MessageCircle } from "lucide-react"
+import { Search, Sparkles, RotateCw, MapPin, Bookmark, ChevronRight, ChevronDown, BadgeCheck, Flame, Users, SlidersHorizontal, X, MessageCircle, Store, Clock, Armchair } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "./tab-bar"
 
-const BRAND = "#F5A623"
+const BRAND = "#F5A623"   // 가게·혜택 축
+const CREW = "#5B5BD6"    // 사람·크루 축 — 가게 카드와 한눈에 구분되도록 쿨톤
 
 // ── 타입 ─────────────────────────────────────────────────────
 type ListBy = { kind: "crew" | "curator"; id: string | number | null; name: string; icon: string; members?: number }
@@ -25,6 +27,12 @@ type Rack = { tag: string; label: string; emoji: string; items: ListCard[] }
 type Feed = {
   taste_matched: ListCard[]; racks: Rack[]
   logged_in: boolean; has_taste: boolean
+}
+type HotDeal = {
+  place_id: number; name: string; category: string; address: string; image: string | null
+  dist_km: number; remain_min: number; empty_tables: number; empty_seats: number
+  best_deal: number | null; match: number | null; crew_match: number | null
+  reason: string; reason_kind: string; benefit: string | null
 }
 type CrewPlace = {
   id?: number; place_id?: number; name: string; category?: string; address?: string
@@ -93,10 +101,8 @@ export default function HomeNextPage() {
   const [regionResults, setRegionResults] = useState<{ title: string; address?: string; lat: number; lng: number }[]>([])
   const regionTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // 랭킹 3줄
-  const [hotPlaces, setHotPlaces] = useState<{ name: string; place_id?: number }[]>([])
-  const [hotCrews, setHotCrews] = useState<{ id: string; title: string }[]>([])
-  const [hotLists, setHotLists] = useState<{ folder_id: number; name: string }[]>([])
+  // 🔥 핫딜 — 지금 빈자리 있는 가게(내 취향·크루 취향 순)
+  const [hotDeals, setHotDeals] = useState<HotDeal[]>([])
 
   // 내 크루 어울리는 가게
   const [crewPlaces, setCrewPlaces] = useState<CrewPlace[]>([])
@@ -119,19 +125,7 @@ export default function HomeNextPage() {
         if (alive && d) setFeed(d)
       })
       .catch(() => {})
-    fetchWithAuth("/api/trending/places?days=7&limit=4")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: any) => { if (alive && d?.items?.length) setHotPlaces(d.items.map((x: any) => ({ name: x.name || x.place_name || "장소", place_id: x.place_id }))) })
-      .catch(() => {})
-    fetchWithAuth("/api/group-ranking")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: any) => { if (alive && d?.items?.length) setHotCrews(d.items.slice(0, 4).map((x: any) => ({ id: x.id, title: x.title || x.name || "크루" }))) })
-      .catch(() => {})
-    fetchWithAuth("/api/list-ranking?limit=4")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: any) => { if (alive && d?.items?.length) setHotLists(d.items.map((x: any) => ({ folder_id: x.folder_id, name: x.name }))) })
-      .catch(() => {})
-    // 개인 취향 추천 — 위치 확보(실패 시 성수) 후 기존 /api/recommend
+    // 개인 취향 추천 + 핫딜 — 위치 확보(실패 시 성수) 후
     const loadMine = (lat: number, lng: number) => {
       fetchWithAuth("/api/recommend", {
         method: "POST",
@@ -139,6 +133,10 @@ export default function HomeNextPage() {
       })
         .then((r) => (r.ok ? r.json() : null))
         .then((regions: any) => { if (alive) setMyPlaces(regions?.[0]?.places || []) })
+        .catch(() => {})
+      fetchWithAuth(`/api/home/hot-deals?lat=${lat}&lng=${lng}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: any) => { if (alive) setHotDeals(d?.items || []) })
         .catch(() => {})
     }
     if (typeof navigator !== "undefined" && navigator.geolocation) {
@@ -239,31 +237,26 @@ export default function HomeNextPage() {
   const openSheet = () => { setDraftCtxs(ctxs); setDraftFoods(foods); setDraftAnchor(anchor); setRegionInput(""); setRegionResults([]); setSheetOpen(true) }
   const applySheet = () => { setCtxs(draftCtxs); setFoods(draftFoods); setAnchor(draftAnchor); setSheetOpen(false) }
 
-  const rankRows = [
-    { label: "급상승", icon: <Flame className="h-3.5 w-3.5 text-rose-500" />, items: hotPlaces.map((p) => ({ name: p.name, go: p.place_id ? () => router.push(`/places/${p.place_id}`) : undefined })), goAll: () => router.push("/trending") },
-    { label: "인기 크루", icon: <Users className="h-3.5 w-3.5" style={{ color: BRAND }} />, items: hotCrews.map((c) => ({ name: c.title, go: () => router.push(`/home-next/crew/${c.id}`) })), goAll: undefined as (() => void) | undefined },
-    { label: "인기 리스트", icon: <ListOrdered className="h-3.5 w-3.5 text-emerald-600" />, items: hotLists.map((l) => ({ name: l.name, go: () => router.push(`/lists/${l.folder_id}`) })), goAll: undefined as (() => void) | undefined },
-  ]
-
   const ListCardView = ({ g }: { g: ListCard }) => (
     <article
       onClick={() => {
         if (g.by.kind === "crew" && g.by.id) router.push(`/home-next/crew/${g.by.id}`)
         else if (g.folder_id > 0) router.push(`/lists/${g.folder_id}`)
       }}
-      className="w-[250px] shrink-0 cursor-pointer rounded-2xl border border-gray-100 p-3.5"
+      className="w-[250px] shrink-0 cursor-pointer rounded-2xl border border-indigo-100 bg-indigo-50/30 p-3.5"
     >
       <div className="flex items-center gap-2.5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-xl">{g.by.icon}</div>
+        {/* 사람 축은 원형 아바타 — 사각 썸네일의 가게 카드와 구분 */}
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl ring-2 ring-indigo-200">{g.by.icon}</div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             <span className="truncate text-sm font-semibold text-gray-900">{g.by.name}</span>
-            {g.by.kind === "crew" && <BadgeCheck className="h-3.5 w-3.5 shrink-0" style={{ color: BRAND }} />}
+            {g.by.kind === "crew" && <BadgeCheck className="h-3.5 w-3.5 shrink-0" style={{ color: CREW }} />}
           </div>
           <div className="text-[11px] text-gray-400">{g.by.kind === "crew" ? `멤버 ${g.by.members}명 · 크루` : "큐레이터"}</div>
         </div>
         {g.match !== null && (
-          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">{g.match}%</span>
+          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">{g.match}%</span>
         )}
       </div>
       <div className="mt-2.5 flex items-center gap-1.5 text-sm font-medium text-gray-800">
@@ -275,7 +268,7 @@ export default function HomeNextPage() {
         <Bookmark className="h-3 w-3" />{g.saves}
       </div>
       {g.revisit > 0 && (
-        <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+        <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
           <RotateCw className="h-2.5 w-2.5" />재방문 의사 {g.revisit}명
         </div>
       )}
@@ -339,25 +332,58 @@ export default function HomeNextPage() {
         )}
       </div>
 
-      {/* ② 랭킹 3줄 */}
-      <div className="mx-4 mt-1 divide-y divide-gray-100 rounded-2xl border border-gray-100">
-        {rankRows.map((row) => (
-          <div key={row.label} className="flex items-center gap-2 px-3 py-2.5">
-            <span className="flex w-[74px] shrink-0 items-center gap-1 text-[11px] font-bold text-gray-700">{row.icon}{row.label}</span>
-            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden whitespace-nowrap">
-              {row.items.length === 0 ? (
-                <span className="text-[11px] text-gray-300">집계 중</span>
-              ) : row.items.slice(0, 3).map((it, i) => (
-                <button key={i} onClick={it.go} className="flex shrink-0 items-center gap-1 text-[11.5px] text-gray-800">
-                  <em className="not-italic font-bold" style={{ color: BRAND }}>{i + 1}</em>
-                  <span className="max-w-[92px] truncate font-medium">{it.name}</span>
-                </button>
-              ))}
-            </div>
-            {row.goAll && <button onClick={row.goAll} className="shrink-0 text-gray-300"><ChevronRight className="h-4 w-4" /></button>}
+      {/* ② 🔥 핫딜 — 지금 빈자리 있는 가게(내 취향·크루 취향 순) */}
+      {filterCount === 0 && hotDeals.length > 0 && (
+        <section className="px-4 pt-4">
+          <div className="mb-1 flex items-center gap-1.5">
+            <Flame className="h-4 w-4 text-rose-500" />
+            <h2 className="min-w-0 flex-1 text-[15px] font-bold text-gray-900">핫딜 — 지금 자리 있는 곳</h2>
+            <span className="shrink-0 text-[11px] font-semibold text-rose-500">{hotDeals.length}곳</span>
           </div>
-        ))}
-      </div>
+          <p className="text-[11px] text-gray-400">내 입맛·우리 크루 취향으로 고른 실시간 빈자리</p>
+          <div className="mt-2.5 flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+            {hotDeals.map((d) => (
+              <article
+                key={d.place_id}
+                onClick={() => router.push(`/places/${d.place_id}`)}
+                className="w-[168px] shrink-0 cursor-pointer overflow-hidden rounded-2xl border border-amber-200 bg-white"
+              >
+                <div className="relative">
+                  {d.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={d.image} alt="" className="h-[84px] w-full object-cover" />
+                  ) : (
+                    <div className="flex h-[84px] w-full items-center justify-center bg-amber-50 text-3xl">{catEmoji(`${d.category} ${d.name}`)}</div>
+                  )}
+                  {d.best_deal ? (
+                    <span className="absolute left-1.5 top-1.5 rounded-md bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      {d.best_deal}% 할인
+                    </span>
+                  ) : d.benefit ? (
+                    <span className="absolute left-1.5 top-1.5 rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      제휴
+                    </span>
+                  ) : null}
+                  <span className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                    <Clock className="h-2.5 w-2.5" />{d.remain_min}분
+                  </span>
+                </div>
+                <div className="p-2.5">
+                  <div className="truncate text-[12.5px] font-semibold text-gray-900">{d.name}</div>
+                  <div className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-400">
+                    <Armchair className="h-3 w-3" />
+                    {d.empty_tables > 0 ? `${d.empty_tables}테이블 · ${d.empty_seats}석` : "자리 있음"}
+                    {d.dist_km > 0 && <span>· {d.dist_km}km</span>}
+                  </div>
+                  <div className="mt-1.5 truncate rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                    {d.reason}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ②-b 필터 결과 — 서버에서 전체 공개 리스트 검색 */}
       {filterCount > 0 && (
@@ -440,8 +466,9 @@ export default function HomeNextPage() {
       {crewNames.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-1 flex items-center justify-between">
-            <h2 className="text-[15px] font-bold text-gray-900">
-              {catEmoji(shownCrewPlaces[0]?.category)} {activeCrew ? `${activeCrew}에 어울리는 곳` : "내 크루에 어울리는 곳"}
+            <h2 className="flex items-center gap-1.5 text-[15px] font-bold text-gray-900">
+              <Store className="h-4 w-4" style={{ color: BRAND }} />
+              {activeCrew ? `${activeCrew}에 어울리는 곳` : "내 크루에 어울리는 곳"}
             </h2>
             {crewNames.length > 1 && (
               <div className="relative">
@@ -496,7 +523,9 @@ export default function HomeNextPage() {
       {filterCount === 0 && myPlaces.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-1 flex items-center justify-between">
-            <h2 className="text-[15px] font-bold text-gray-900">🍽 오늘 뭐 먹지 — 내 입맛 추천</h2>
+            <h2 className="flex items-center gap-1.5 text-[15px] font-bold text-gray-900">
+              <Store className="h-4 w-4" style={{ color: BRAND }} />오늘 뭐 먹지 — 내 입맛 추천
+            </h2>
             <button
               onClick={() => {
                 try { sessionStorage.setItem("picks_view_state_v1", JSON.stringify({ tab: "taste", scrollY: 0 })) } catch { /* noop */ }
@@ -532,9 +561,9 @@ export default function HomeNextPage() {
       {filterCount === 0 && crewLists.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
-            <Users className="h-4 w-4" style={{ color: BRAND }} />
+            <Users className="h-4 w-4" style={{ color: CREW }} />
             <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">내 크루와 비슷한 크루의 리스트</h2>
-            <button onClick={() => router.push("/home-next/browse?mode=crew")} className="shrink-0 text-[12px] font-semibold" style={{ color: BRAND }}>전체 보기</button>
+            <button onClick={() => router.push("/home-next/browse?mode=crew")} className="shrink-0 text-[12px] font-semibold" style={{ color: CREW }}>전체 보기</button>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
             {crewLists.map((g) => <ListCardView key={g.folder_id} g={g} />)}
@@ -546,9 +575,9 @@ export default function HomeNextPage() {
       {filterCount === 0 && curatorLists.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
-            <Sparkles className="h-4 w-4" style={{ color: BRAND }} />
+            <Sparkles className="h-4 w-4" style={{ color: CREW }} />
             <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">내 입맛과 닮은 큐레이터의 리스트</h2>
-            <button onClick={() => router.push("/home-next/browse?mode=curator")} className="shrink-0 text-[12px] font-semibold" style={{ color: BRAND }}>전체 보기</button>
+            <button onClick={() => router.push("/home-next/browse?mode=curator")} className="shrink-0 text-[12px] font-semibold" style={{ color: CREW }}>전체 보기</button>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
             {curatorLists.map((g) => <ListCardView key={g.folder_id} g={g} />)}

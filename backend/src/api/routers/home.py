@@ -976,6 +976,159 @@ def _user_verified_domain(db: Session, user_id: int, kind: str) -> Optional[mode
 # 🤝 크루 제휴 딜 (B2C) — 자격 크루가 딜을 탐색·신청
 # ─────────────────────────────────────────────────────────────
 
+@router.get("/api/home/hot-deals")
+def home_hot_deals(
+    lat: float = 37.5665,
+    lng: float = 126.978,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """🔥 핫딜 — 지금 빈자리가 있는 가게를 '내 취향'과 '우리 크루 취향'으로 정렬.
+
+    공실은 사장님에겐 손실, 손님에겐 기회다. 거리순으로만 뿌리면 광고지가 되니
+    ① 우리 크루가 다녀온 곳 ② 제휴 중인 곳 ③ 취향 매칭 순으로 이유를 붙여 내보낸다.
+    """
+    from sqlalchemy import text as _t
+
+    rows = db.execute(_t("""
+        SELECT p.id, p.name, COALESCE(p.cuisine_type, p.category), p.address, p.hero_image,
+               (6371 * acos(LEAST(1, cos(radians(:lat)) * cos(radians(p.lat))
+                    * cos(radians(p.lng) - radians(:lng))
+                    + sin(radians(:lat)) * sin(radians(p.lat))))) AS dist_km,
+               EXTRACT(EPOCH FROM (p.vacancy_until - NOW()))/60 AS remain_min,
+               (SELECT COUNT(*) FROM store_tables t WHERE t.place_id = p.id AND t.status = 'empty') AS empty_tables,
+               (SELECT COALESCE(SUM(t.capacity),0) FROM store_tables t WHERE t.place_id = p.id AND t.status = 'empty') AS empty_seats,
+               (SELECT MAX(t.deal_percent) FROM store_tables t WHERE t.place_id = p.id AND t.status = 'empty') AS best_deal
+        FROM places p
+        WHERE p.vacancy_until IS NOT NULL AND p.vacancy_until > NOW()
+        ORDER BY dist_km ASC
+        LIMIT 30
+    """), {"lat": lat, "lng": lng}).fetchall()
+
+    if not rows:
+        return {"items": [], "count": 0, "logged_in": user is not None}
+
+    pids = [r[0] for r in rows]
+    uid = user.id if user else None
+
+    # 내 취향 / 크루 취향 centroid
+    taste = _user_taste_centroid(db, uid) if uid else None
+    my_crews = []
+    crew_taste = None
+    crew_visited: dict[int, tuple[str, int]] = {}   # place_id → (크루명, 방문수)
+    if uid:
+        for c in db.query(models.Community).all():
+            members = list(dict.fromkeys(([c.host_id] if c.host_id else []) + list(c.member_ids or [])))
+            if uid in members:
+                my_crews.append(c)
+        crew_ids = [c.id for c in my_crews]
+        if crew_ids:
+            # 크루 리스트에 담긴 장소 = 크루 취향
+            folders = (
+                db.query(models.SaveFolder)
+                .filter(models.SaveFolder.community_id.in_(crew_ids)).all()
+            )
+            fpids = _folder_place_ids(db, [f.id for f in folders])
+            crew_pids = list({p for v in fpids.values() for p in v[:50]})
+            if crew_pids:
+                cembs = _embeddings_for(db, crew_pids)
+                crew_taste = _centroid(list(cembs.values()))
+            # 크루가 실제로 다녀온 곳 — 가장 강한 신호
+            titles = {c.id: c.title for c in my_crews}
+            for r in (
+                db.query(models.ChatSplitRequest)
+                .filter(models.ChatSplitRequest.room_id.in_(crew_ids),
+                        models.ChatSplitRequest.status == "completed",
+                        models.ChatSplitRequest.place_id.in_(pids)).all()
+            ):
+                name, n = crew_visited.get(r.place_id, (titles.get(r.room_id, "우리 크루"), 0))
+                crew_visited[r.place_id] = (name, n + 1)
+            try:
+                for c in (
+                    db.query(models.PlaceCheckin)
+                    .filter(models.PlaceCheckin.community_id.in_(crew_ids),
+                            models.PlaceCheckin.place_id.in_(pids)).all()
+                ):
+                    name, n = crew_visited.get(c.place_id, (titles.get(c.community_id, "우리 크루"), 0))
+                    crew_visited[c.place_id] = (name, n + 1)
+            except Exception:
+                pass
+
+    # 우리 크루가 제휴 중인 가게
+    partnered: dict[int, str] = {}
+    if my_crews:
+        crew_ids = [c.id for c in my_crews]
+        apps = (
+            db.query(models.CrewPartnershipApp)
+            .filter(models.CrewPartnershipApp.community_id.in_(crew_ids),
+                    models.CrewPartnershipApp.status == "approved").all()
+        )
+        if apps:
+            deals = {
+                d.id: d for d in db.query(models.CrewPartnership)
+                .filter(models.CrewPartnership.id.in_([a.partnership_id for a in apps]),
+                        models.CrewPartnership.status == "active").all()
+            }
+            for a in apps:
+                d = deals.get(a.partnership_id)
+                if d and d.place_id in pids:
+                    partnered[d.place_id] = d.benefit
+
+    embs = _embeddings_for(db, pids) if (taste is not None or crew_taste is not None) else {}
+
+    items = []
+    for r in rows:
+        pid = r[0]
+        emb = embs.get(pid)
+        match = int(round(max(0.0, float(np.dot(taste, emb))) * 100)) if (taste is not None and emb is not None) else None
+        cmatch = int(round(max(0.0, float(np.dot(crew_taste, emb))) * 100)) if (crew_taste is not None and emb is not None) else None
+
+        visited = crew_visited.get(pid)
+        benefit = partnered.get(pid)
+        best_deal = int(r[9]) if r[9] else None
+
+        # 이유 — 강한 연고부터
+        if visited:
+            reason, kind = f"{visited[0]}가 {visited[1]}번 간 곳", "crew_visit"
+        elif benefit:
+            reason, kind = f"제휴 혜택 · {benefit}", "partner"
+        elif cmatch is not None and cmatch >= 55:
+            reason, kind = f"우리 크루 취향과 {cmatch}% 맞아요", "crew_taste"
+        elif match is not None and match >= 55:
+            reason, kind = f"내 입맛과 {match}% 맞아요", "taste"
+        else:
+            reason, kind = "지금 자리 있어요", "vacancy"
+
+        items.append({
+            "place_id": pid,
+            "name": r[1],
+            "category": r[2] or "",
+            "address": r[3] or "",
+            "image": r[4],
+            "dist_km": round(float(r[5] or 0), 1),
+            "remain_min": max(0, int(r[6] or 0)),
+            "empty_tables": int(r[7] or 0),
+            "empty_seats": int(r[8] or 0),
+            "best_deal": best_deal,
+            "match": match,
+            "crew_match": cmatch,
+            "reason": reason,
+            "reason_kind": kind,
+            "benefit": benefit,
+        })
+
+    # 연고 > 제휴 > 할인폭 > 취향 > 거리
+    rank = {"crew_visit": 4, "partner": 3, "crew_taste": 2, "taste": 1, "vacancy": 0}
+    items.sort(key=lambda x: (
+        rank[x["reason_kind"]],
+        x["best_deal"] or 0,
+        max(x["crew_match"] or 0, x["match"] or 0),
+        -x["dist_km"],
+    ), reverse=True)
+
+    return {"items": items[:12], "count": len(items), "logged_in": user is not None}
+
+
 def _crew_visit_stats(db: Session, community_id: str) -> dict:
     """크루의 '함께 방문' 통합 집계.
 

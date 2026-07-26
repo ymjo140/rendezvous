@@ -70,7 +70,8 @@ const getGridClass = (_index: number) => "col-span-1 row-span-1";
 interface DiscoveryTabProps {
     sharedPostId?: string | null;
     onBackFromShared?: () => void;
-    hideRankStrips?: boolean;  // 새 홈(v2)이 랭킹을 품게 되어 피드 탭에서는 숨김
+    hideRankStrips?: boolean;  // 랭킹 스트립 숨김(레거시 옵션)
+    crewMode?: boolean;        // v2: '모임'→'크루' 용어 + 크루 프로필로 이동(v1 페이지 점프 방지)
 }
 
 // 실시간 급상승 — 최근 관여(예약·재방문·저장·게시물) velocity 순위 + ▲/NEW
@@ -181,8 +182,8 @@ function CuratorStrip() {
     );
 }
 
-// 인기 모임 — 채팅 모임(공개)이 큐레이션한 맛집. 팔로워·리스트좋아요로 랭크
-function GroupStrip() {
+// 인기 모임/크루 — 공개 집단이 큐레이션한 맛집. 팔로워·리스트좋아요로 랭크
+function GroupStrip({ crewMode }: { crewMode?: boolean }) {
     const router = useRouter();
     const [items, setItems] = useState<any[]>([]);
     useEffect(() => {
@@ -197,9 +198,9 @@ function GroupStrip() {
             <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-1">
                     <span className="text-[11px]">👥</span>
-                    <span className="font-bold text-gray-800 text-[11px]">인기 모임</span>
+                    <span className="font-bold text-gray-800 text-[11px]">{crewMode ? "인기 크루" : "인기 모임"}</span>
                 </div>
-                <button onClick={() => router.push("/groups")} className="text-[10px] font-medium text-amber-600 flex items-center">
+                <button onClick={() => router.push(crewMode ? "/home-next/crews" : "/groups")} className="text-[10px] font-medium text-amber-600 flex items-center">
                     전체 <ChevronRight className="w-3 h-3" />
                 </button>
             </div>
@@ -207,7 +208,7 @@ function GroupStrip() {
                 {items.map((g) => (
                     <button
                         key={g.community_id}
-                        onClick={() => router.push(`/groups/${g.community_id}`)}
+                        onClick={() => router.push(crewMode ? `/home-next/crew/${g.community_id}` : `/groups/${g.community_id}`)}
                         className="flex-shrink-0 flex items-center gap-1 bg-white border border-amber-100 rounded-full px-2 py-1 transition-colors hover:bg-amber-50"
                     >
                         <span className={`text-[10px] font-extrabold ${g.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{g.rank}</span>
@@ -257,7 +258,7 @@ function ListRankingStrip() {
     );
 }
 
-export function DiscoveryTab({ sharedPostId, onBackFromShared, hideRankStrips }: DiscoveryTabProps = {}) {
+export function DiscoveryTab({ sharedPostId, onBackFromShared, hideRankStrips, crewMode }: DiscoveryTabProps = {}) {
     const router = useRouter();
     const { decisionCell, requestId } = useDecisionCell();
     const [searchQuery, setSearchQuery] = useState("");
@@ -1596,11 +1597,11 @@ export function DiscoveryTab({ sharedPostId, onBackFromShared, hideRankStrips }:
 
             {/* 3. 게시물 — 그리드(인스타 탐색) ↔ 피드(인스타 홈) */}
             <div className="flex-1 overflow-y-auto bg-white">
-                {/* 급상승/인기 모임/인기 리스트 — 새 홈(v2)에서는 홈이 품으므로 숨김 */}
+                {/* 급상승 · 인기 크루 · 인기 리스트 — 발견의 입구라 탐색 탭이 담당 */}
                 {!hideRankStrips && (
                     <>
                         <TrendingStrip />
-                        <GroupStrip />
+                        <GroupStrip crewMode={crewMode} />
                         <ListRankingStrip />
                     </>
                 )}
