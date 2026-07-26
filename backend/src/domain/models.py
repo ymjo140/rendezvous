@@ -927,14 +927,17 @@ class CrewPartnership(Base):
 
 
 class CrewPartnershipApp(Base):
-    """제휴 신청 — 크루 단위, 가게가 승인/거절."""
+    """제휴 성사 기록 — 양방향. 크루가 신청(crew_apply)하거나 가게가 제안(store_invite)."""
     __tablename__ = "crew_partnership_apps"
     id = Column(Integer, primary_key=True, index=True)
     partnership_id = Column(Integer, ForeignKey("crew_partnerships.id", ondelete="CASCADE"), nullable=False, index=True)
     community_id = Column(String, nullable=False, index=True)
-    applicant_id = Column(Integer, nullable=False)
-    status = Column(String, default="pending")        # pending | approved | rejected
-    message = Column(String, nullable=True)
+    applicant_id = Column(Integer, nullable=False)    # crew_apply=신청 멤버, store_invite=0
+    status = Column(String, default="pending")        # pending | approved | rejected | canceled
+    message = Column(String, nullable=True)           # crew_apply=크루 한마디, store_invite=사장님 한마디
+    # 결정권자가 다름 — crew_apply는 가게가, store_invite는 크루가 수락/거절
+    direction = Column(String, default="crew_apply", index=True)
+    seen_at = Column(DateTime, nullable=True)         # 크루가 제휴 관리 화면에서 확인한 시각(느낌표 해제)
     created_at = Column(DateTime, default=datetime.now)
     decided_at = Column(DateTime, nullable=True)
     __table_args__ = (UniqueConstraint("partnership_id", "community_id", name="uq_partnership_app"),)

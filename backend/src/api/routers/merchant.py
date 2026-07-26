@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -1548,6 +1548,113 @@ def decide_partnership_app(
     a.decided_at = datetime.now()
     db.commit()
     return {"id": a.id, "status": a.status}
+
+
+@router.get("/stores/{store_id}/crew-candidates")
+def crew_candidates(
+    store_id: int,
+    partnership_id: Optional[int] = None,
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    """제안을 보낼 크루 후보 — 우리 가게에 온 적 있는 크루가 위로, 그다음 근처 활동 크루."""
+    place = _assert_merchant_owns(db, store_id, merchant_uid)
+
+    # 우리 가게 방문(분담결제 완료) 크루 집계
+    visit_rows = (
+        db.query(
+            models.ChatSplitRequest.room_id,
+            func.count(models.ChatSplitRequest.id),
+            func.coalesce(func.sum(models.ChatSplitRequest.total_amount), 0),
+            func.max(models.ChatSplitRequest.date),
+        )
+        .filter(
+            models.ChatSplitRequest.place_id == place.id,
+            models.ChatSplitRequest.status == "completed",
+        )
+        .group_by(models.ChatSplitRequest.room_id)
+        .all()
+    )
+    visits = {r[0]: {"visits": int(r[1]), "amount": int(r[2] or 0), "last": r[3] or ""} for r in visit_rows}
+
+    crews = db.query(models.Community).all()
+    # 이미 관계가 있는 크루는 제외(같은 딜에 중복 제안 방지)
+    taken: set = set()
+    if partnership_id:
+        taken = {
+            a.community_id for a in db.query(models.CrewPartnershipApp)
+            .filter(
+                models.CrewPartnershipApp.partnership_id == partnership_id,
+                models.CrewPartnershipApp.status.in_(("pending", "approved")),
+            ).all()
+        }
+
+    items = []
+    for c in crews:
+        if c.id in taken:
+            continue
+        members = list(dict.fromkeys(([c.host_id] if c.host_id else []) + list(c.member_ids or [])))
+        v = visits.get(c.id)
+        # 방문 이력이 없고 멤버도 적은 크루는 제안 대상에서 제외(스팸 방지)
+        if not v and len(members) < 3:
+            continue
+        items.append({
+            "id": c.id,
+            "title": c.title or "크루",
+            "icon": c.icon or "👥",
+            "members": len(members),
+            "crew_type": getattr(c, "crew_type", None) or "friends",
+            "org_name": getattr(c, "org_name", None),
+            "visits": (v or {}).get("visits", 0),
+            "amount": (v or {}).get("amount", 0),
+            "last_visit": (v or {}).get("last", ""),
+        })
+    items.sort(key=lambda x: (x["visits"], x["members"]), reverse=True)
+    return {"items": items[:30], "visited_count": len([i for i in items if i["visits"] > 0])}
+
+
+@router.post("/partnerships/{pid}/invite")
+def invite_crew_to_partnership(
+    pid: int,
+    req: dict,
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    """가게 → 크루 제휴 제안. 크루의 '제휴 관리'에 받은 제안으로 뜨고 수락하면 성사."""
+    d = db.query(models.CrewPartnership).filter(models.CrewPartnership.id == pid).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="딜을 찾을 수 없어요.")
+    _assert_merchant_owns(db, d.place_id, merchant_uid)
+
+    cids = req.get("community_ids") or ([req.get("community_id")] if req.get("community_id") else [])
+    cids = [str(c) for c in cids if c]
+    if not cids:
+        raise HTTPException(status_code=400, detail="제안할 크루를 선택해주세요.")
+    message = (req.get("message") or "").strip()[:200] or None
+
+    sent, skipped = 0, 0
+    for cid in cids:
+        crew = db.query(models.Community).filter(models.Community.id == cid).first()
+        if not crew:
+            skipped += 1
+            continue
+        exists = (
+            db.query(models.CrewPartnershipApp)
+            .filter(
+                models.CrewPartnershipApp.partnership_id == pid,
+                models.CrewPartnershipApp.community_id == cid,
+            ).first()
+        )
+        if exists:
+            skipped += 1
+            continue
+        db.add(models.CrewPartnershipApp(
+            partnership_id=pid, community_id=cid, applicant_id=0,
+            direction="store_invite", message=message,
+        ))
+        sent += 1
+    db.commit()
+    return {"sent": sent, "skipped": skipped}
 
 
 # ─────────────────────────────────────────────────────────────

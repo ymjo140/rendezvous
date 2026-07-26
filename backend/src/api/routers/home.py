@@ -308,6 +308,31 @@ def home_feed(
                 for r in rs[:3]
             ]
 
+    # 크루별 제휴 배지 — 느낌표(안읽은 제안·승인)와 상태 한 줄
+    if my_crews:
+        crew_ids = [e["id"] for e in my_crews]
+        p_rows = (
+            db.query(models.CrewPartnershipApp)
+            .filter(models.CrewPartnershipApp.community_id.in_(crew_ids))
+            .all()
+        )
+        by_crew_apps: dict[str, list] = {}
+        for r in p_rows:
+            by_crew_apps.setdefault(r.community_id, []).append(r)
+        for e in my_crews:
+            rows = by_crew_apps.get(e["id"], [])
+            invites = [r for r in rows if _direction(r) == "store_invite" and r.status == "pending"]
+            approved = [r for r in rows if r.status == "approved"]
+            pending = [r for r in rows if _direction(r) == "crew_apply" and r.status == "pending"]
+            # 느낌표 = 아직 안 본 '받은 제안' 또는 '승인된 제휴'
+            unread = any(getattr(r, "seen_at", None) is None for r in invites + approved)
+            e["partnership"] = {
+                "invites": len(invites),
+                "active": len(approved),
+                "pending": len(pending),
+                "unread": bool(unread),
+            }
+
     # ── ③ 맥락 랙: 태그별 인기 리스트 (저장 태그 + 이름/설명 힌트 매칭) ──
     racks = []
     used_in_rack: set = set()
@@ -962,6 +987,209 @@ def _crew_eligibility(db: Session, crew: models.Community) -> dict:
     eligible = bool(org_domain) or (visits >= 3 and len(members) >= 3)
     track = "org" if org_domain else ("activity" if (visits >= 3 and len(members) >= 3) else None)
     return {"eligible": eligible, "track": track, "members": len(members), "visits": visits}
+
+
+def _direction(app_row) -> str:
+    """구 데이터(컬럼 추가 전 행)는 direction이 비어 있음 → 크루 신청으로 간주."""
+    return getattr(app_row, "direction", None) or "crew_apply"
+
+
+def _assert_crew_member(db: Session, community_id: str, user) -> models.Community:
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    crew = db.query(models.Community).filter(models.Community.id == str(community_id or "")).first()
+    if not crew:
+        raise HTTPException(status_code=404, detail="크루를 찾을 수 없어요.")
+    members = list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or [])))
+    if user.id not in members:
+        raise HTTPException(status_code=403, detail="크루 멤버만 볼 수 있어요.")
+    return crew
+
+
+def _deal_payload(d: models.CrewPartnership, place: Optional[models.Place]) -> dict:
+    return {
+        "partnership_id": d.id,
+        "title": d.title,
+        "benefit": d.benefit,
+        "discount_pct": d.discount_pct,
+        "target": d.target,
+        "conditions": d.conditions or {},
+        "expires_at": d.expires_at.isoformat() if d.expires_at else None,
+        "store": {
+            "place_id": d.place_id,
+            "name": place.name if place else "가게",
+            "address": (place.address or "") if place else "",
+            "category": (place.cuisine_type or "") if place else "",
+        },
+    }
+
+
+@router.get("/api/crew-partnerships/summary")
+def crew_partnership_summary(
+    community_id: str,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """제휴 관리 화면 — 받은 제안 / 제휴 중 / 신청 중 / 신청 가능 / 지난 기록."""
+    crew = _assert_crew_member(db, community_id, user)
+    elig = _crew_eligibility(db, crew)
+
+    apps = (
+        db.query(models.CrewPartnershipApp)
+        .filter(models.CrewPartnershipApp.community_id == crew.id)
+        .order_by(models.CrewPartnershipApp.created_at.desc())
+        .all()
+    )
+    app_deal_ids = [a.partnership_id for a in apps]
+    deals_by_id = {
+        d.id: d for d in db.query(models.CrewPartnership)
+        .filter(models.CrewPartnership.id.in_(app_deal_ids)).all()
+    } if app_deal_ids else {}
+
+    # 신청 가능 후보 — 활성 딜 중 이미 관계가 없는 것
+    open_deals = (
+        db.query(models.CrewPartnership)
+        .filter(models.CrewPartnership.status == "active")
+        .order_by(models.CrewPartnership.created_at.desc())
+        .limit(60)
+        .all()
+    )
+    related = {a.partnership_id for a in apps if a.status in ("pending", "approved")}
+    pids = list({d.place_id for d in open_deals} | {d.place_id for d in deals_by_id.values()})
+    places = {p.id: p for p in db.query(models.Place).filter(models.Place.id.in_(pids)).all()} if pids else {}
+
+    # 우리 크루가 가본 가게 — '신청 가능' 정렬의 연고 신호
+    visited = dict(
+        db.query(models.ChatSplitRequest.place_id, func.count(models.ChatSplitRequest.id))
+        .filter(
+            models.ChatSplitRequest.room_id == crew.id,
+            models.ChatSplitRequest.status == "completed",
+            models.ChatSplitRequest.place_id.isnot(None),
+        )
+        .group_by(models.ChatSplitRequest.place_id)
+        .all()
+    )
+
+    now = datetime.now()
+    invites, active, pending, past = [], [], [], []
+    for a in apps:
+        d = deals_by_id.get(a.partnership_id)
+        if not d:
+            continue
+        item = _deal_payload(d, places.get(d.place_id))
+        item.update({
+            "app_id": a.id,
+            "status": a.status,
+            "direction": _direction(a),
+            "message": a.message,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+            "is_new": getattr(a, "seen_at", None) is None,
+        })
+        if a.status == "approved":
+            days_left = None
+            if d.expires_at:
+                days_left = max(0, (d.expires_at - now).days)
+            item["days_left"] = days_left
+            item["ended"] = d.status != "active"
+            item["uses"] = int(visited.get(d.place_id, 0))
+            (past if item["ended"] else active).append(item)
+        elif a.status == "pending":
+            (invites if _direction(a) == "store_invite" else pending).append(item)
+        else:
+            past.append(item)
+
+    available = []
+    for d in open_deals:
+        if d.id in related:
+            continue
+        if d.target in ("university", "company") and getattr(crew, "crew_type", None) != d.target:
+            continue
+        item = _deal_payload(d, places.get(d.place_id))
+        item["visits"] = int(visited.get(d.place_id, 0))  # 가본 가게가 위로
+        available.append(item)
+    available.sort(key=lambda x: x["visits"], reverse=True)
+
+    return {
+        "crew": {
+            "id": crew.id, "title": crew.title, "icon": crew.icon or "👥",
+            "crew_type": getattr(crew, "crew_type", None) or "friends",
+        },
+        "eligibility": elig,
+        "invites": invites,
+        "active": active,
+        "pending": pending,
+        "available": available[:12],
+        "past": past,
+        "unread": any(i["is_new"] for i in invites) or any(a["is_new"] for a in active),
+    }
+
+
+@router.post("/api/crew-partnerships/{app_id}/respond")
+def respond_crew_invite(
+    app_id: int,
+    req: dict,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """가게가 보낸 제안에 크루가 수락/거절."""
+    a = db.query(models.CrewPartnershipApp).filter(models.CrewPartnershipApp.id == app_id).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="제안을 찾을 수 없어요.")
+    _assert_crew_member(db, a.community_id, user)
+    if _direction(a) != "store_invite":
+        raise HTTPException(status_code=400, detail="크루가 응답할 제안이 아니에요.")
+    if a.status != "pending":
+        return {"id": a.id, "status": a.status, "already": True}
+    action = (req.get("action") or "").strip()
+    if action not in ("accept", "decline"):
+        raise HTTPException(status_code=400, detail="action은 accept 또는 decline이어야 해요.")
+    a.status = "approved" if action == "accept" else "rejected"
+    a.decided_at = datetime.now()
+    a.seen_at = datetime.now()
+    db.commit()
+    return {"id": a.id, "status": a.status, "already": False}
+
+
+@router.post("/api/crew-partnerships/{app_id}/cancel")
+def cancel_crew_application(
+    app_id: int,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """크루가 낸 신청을 승인 전에 취소."""
+    a = db.query(models.CrewPartnershipApp).filter(models.CrewPartnershipApp.id == app_id).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="신청을 찾을 수 없어요.")
+    _assert_crew_member(db, a.community_id, user)
+    if _direction(a) != "crew_apply":
+        raise HTTPException(status_code=400, detail="크루가 낸 신청이 아니에요.")
+    if a.status != "pending":
+        raise HTTPException(status_code=400, detail="이미 처리된 신청이에요.")
+    db.delete(a)   # 같은 딜에 다시 신청할 수 있도록 삭제(유니크 제약 회피)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/api/crew-partnerships/seen")
+def mark_partnerships_seen(
+    req: dict,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """제휴 관리 화면 진입 — 느낌표 해제."""
+    crew = _assert_crew_member(db, req.get("community_id"), user)
+    rows = (
+        db.query(models.CrewPartnershipApp)
+        .filter(
+            models.CrewPartnershipApp.community_id == crew.id,
+            models.CrewPartnershipApp.seen_at.is_(None),
+        ).all()
+    )
+    now = datetime.now()
+    for r in rows:
+        r.seen_at = now
+    db.commit()
+    return {"ok": True, "marked": len(rows)}
 
 
 @router.get("/api/crew-deals")
