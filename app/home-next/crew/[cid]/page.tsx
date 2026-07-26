@@ -48,6 +48,8 @@ export default function CrewProfilePage() {
   const [joinBusy, setJoinBusy] = useState(false)
   const [shareMsg, setShareMsg] = useState<string | null>(null)
   const [verifyNeed, setVerifyNeed] = useState<null | { kind: "university" | "company"; org: string }>(null)
+  const [deals, setDeals] = useState<any[] | null>(null)
+  const [dealBusy, setDealBusy] = useState<number | null>(null)
 
   const doJoin = async () => {
     if (!params?.cid || joinBusy) return
@@ -76,8 +78,34 @@ export default function CrewProfilePage() {
     else if (result === "none") { setShareMsg("공유를 지원하지 않는 환경이에요."); setTimeout(() => setShareMsg(null), 3000) }
   }
 
+  const applyDeal = async (pid: number) => {
+    if (!params?.cid || dealBusy) return
+    setDealBusy(pid)
+    try {
+      const res = await fetchWithAuth(`/api/crew-deals/${pid}/apply`, {
+        method: "POST",
+        body: JSON.stringify({ community_id: params.cid }),
+      })
+      const d = await res.json().catch(() => null)
+      if (res.status === 401) { router.push("/login"); return }
+      if (!res.ok) {
+        const msg = typeof d?.detail === "string" ? d.detail : d?.detail?.need ? `자격이 아직이에요 — ${d.detail.need}` : "신청에 실패했어요."
+        setShareMsg(msg); setTimeout(() => setShareMsg(null), 3500)
+        return
+      }
+      setDeals((prev) => (prev || []).map((x) => (x.id === pid ? { ...x, my_status: d.status } : x)))
+      setShareMsg("신청 완료! 사장님 승인 후 혜택을 쓸 수 있어요 🤝")
+      setTimeout(() => setShareMsg(null), 3500)
+    } catch { /* ignore */ } finally { setDealBusy(null) }
+  }
+
   useEffect(() => {
     if (!params?.cid) return
+    // 제휴 딜(멤버에게만 표시) — 크루 자격·신청 상태 포함
+    fetchWithAuth(`/api/crew-deals?community_id=${params.cid}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setDeals(d?.items || []))
+      .catch(() => setDeals([]))
     fetchWithAuth(`/api/groups/${params.cid}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setCrew(d))
@@ -234,6 +262,50 @@ export default function CrewProfilePage() {
               ))}
             </div>
           </div>
+
+          {/* 🤝 제휴 혜택 — 멤버 전용 */}
+          {crew.is_member && (deals?.length || 0) > 0 && (
+            <div className="mt-5 px-4">
+              <h2 className="mb-2 text-[15px] font-semibold text-slate-900">🤝 제휴 혜택</h2>
+              <div className="space-y-2">
+                {deals!.map((d: any) => {
+                  const st = d.my_status as string | undefined
+                  const cond = d.conditions || {}
+                  const condParts: string[] = []
+                  if (Array.isArray(cond.days) && cond.days.length) condParts.push(cond.days.map((x: string) => ({ mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일" } as any)[x] || x).join("·"))
+                  if (cond.time_from || cond.time_to) condParts.push(`${cond.time_from || ""}~${cond.time_to || ""}`)
+                  if (cond.min_party) condParts.push(`${cond.min_party}인+`)
+                  return (
+                    <div key={d.id} className="rounded-2xl border border-amber-200 bg-amber-50/50 p-3.5">
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1">
+                          <b className="block truncate text-[13.5px] font-semibold text-slate-900">{d.store?.name}</b>
+                          <span className="block truncate text-[11px] text-slate-400">{d.store?.category}{d.store?.address ? ` · ${d.store.address.split(" ").slice(1, 3).join(" ")}` : ""}</span>
+                        </span>
+                        {st === "approved" ? (
+                          <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-700">✓ 제휴 중</span>
+                        ) : st === "pending" ? (
+                          <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-700">승인 대기</span>
+                        ) : st === "rejected" ? (
+                          <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-400">거절됨</span>
+                        ) : (
+                          <button
+                            onClick={() => applyDeal(d.id)}
+                            disabled={dealBusy === d.id || !d.target_ok}
+                            className="shrink-0 rounded-full bg-[#F5A623] px-3.5 py-1.5 text-[11px] font-bold text-white disabled:opacity-40"
+                          >
+                            {d.target_ok ? "제휴 신청" : d.target === "university" ? "대학 크루 전용" : "직장 크루 전용"}
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-1.5 text-[13px] font-medium text-amber-800">🎁 {d.benefit}{d.discount_pct ? ` (${d.discount_pct}%)` : ""}</div>
+                      {condParts.length > 0 && <div className="mt-0.5 text-[11px] text-slate-400">{condParts.join(" · ")}</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 리스트 */}
           <div className="mt-5 px-4">

@@ -909,3 +909,32 @@ class UserVerification(Base):
     expires_at = Column(DateTime, nullable=True)
     verified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class CrewPartnership(Base):
+    """크루-가게 제휴 딜 — 가게(place)가 발행, 자격 크루가 신청. 대학가 제휴 문화의 플랫폼화."""
+    __tablename__ = "crew_partnerships"
+    id = Column(Integer, primary_key=True, index=True)
+    place_id = Column(Integer, ForeignKey("places.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    benefit = Column(String, nullable=False)          # 혜택 설명
+    discount_pct = Column(Integer, nullable=True)
+    target = Column(String, default="all")            # all | university | company
+    conditions = Column(JSON, default={})             # {days, time_from, time_to, min_party}
+    status = Column(String, default="active", index=True)  # active | paused | ended
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class CrewPartnershipApp(Base):
+    """제휴 신청 — 크루 단위, 가게가 승인/거절."""
+    __tablename__ = "crew_partnership_apps"
+    id = Column(Integer, primary_key=True, index=True)
+    partnership_id = Column(Integer, ForeignKey("crew_partnerships.id", ondelete="CASCADE"), nullable=False, index=True)
+    community_id = Column(String, nullable=False, index=True)
+    applicant_id = Column(Integer, nullable=False)
+    status = Column(String, default="pending")        # pending | approved | rejected
+    message = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    decided_at = Column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint("partnership_id", "community_id", name="uq_partnership_app"),)

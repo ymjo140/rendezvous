@@ -944,3 +944,132 @@ def _user_verified_domain(db: Session, user_id: int, kind: str) -> Optional[mode
         .order_by(models.UserVerification.id.desc())
         .first()
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# 🤝 크루 제휴 딜 (B2C) — 자격 크루가 딜을 탐색·신청
+# ─────────────────────────────────────────────────────────────
+
+def _crew_eligibility(db: Session, crew: models.Community) -> dict:
+    """제휴 자격 판정 — org(소속 인증) or activity(멤버 3+ & 함께 방문 3회+)."""
+    members = list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or [])))
+    org_domain = getattr(crew, "org_domain", None)
+    visits = (
+        db.query(models.ChatSplitRequest)
+        .filter(models.ChatSplitRequest.room_id == crew.id, models.ChatSplitRequest.status == "completed")
+        .count()
+    )
+    eligible = bool(org_domain) or (visits >= 3 and len(members) >= 3)
+    track = "org" if org_domain else ("activity" if (visits >= 3 and len(members) >= 3) else None)
+    return {"eligible": eligible, "track": track, "members": len(members), "visits": visits}
+
+
+@router.get("/api/crew-deals")
+def crew_deals(
+    community_id: Optional[str] = None,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """활성 제휴 딜 목록. community_id를 주면 그 크루의 자격·대상 매칭·신청 상태 포함."""
+    deals = (
+        db.query(models.CrewPartnership)
+        .filter(models.CrewPartnership.status == "active")
+        .order_by(models.CrewPartnership.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    pids = [d.place_id for d in deals]
+    places = {p.id: p for p in db.query(models.Place).filter(models.Place.id.in_(pids)).all()} if pids else {}
+
+    crew = None
+    elig = None
+    my_apps: dict = {}
+    if community_id:
+        crew = db.query(models.Community).filter(models.Community.id == community_id).first()
+        if crew:
+            elig = _crew_eligibility(db, crew)
+            rows = (
+                db.query(models.CrewPartnershipApp)
+                .filter(models.CrewPartnershipApp.community_id == community_id)
+                .all()
+            )
+            my_apps = {r.partnership_id: r.status for r in rows}
+
+    items = []
+    for d in deals:
+        p = places.get(d.place_id)
+        target_ok = True
+        if crew is not None and d.target in ("university", "company"):
+            target_ok = (getattr(crew, "crew_type", None) == d.target)
+        items.append({
+            "id": d.id,
+            "title": d.title,
+            "benefit": d.benefit,
+            "discount_pct": d.discount_pct,
+            "target": d.target,
+            "conditions": d.conditions or {},
+            "store": {
+                "place_id": d.place_id,
+                "name": p.name if p else "가게",
+                "address": (p.address or "") if p else "",
+                "category": (p.cuisine_type or "") if p else "",
+            },
+            "target_ok": target_ok,
+            "my_status": my_apps.get(d.id),
+        })
+
+    return {
+        "items": items,
+        "crew_eligibility": elig,
+        "count": len(items),
+    }
+
+
+@router.post("/api/crew-deals/{pid}/apply")
+def apply_crew_deal(
+    pid: int,
+    req: dict,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """크루로 제휴 신청 — 멤버만, 자격·대상 충족 필수."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    community_id = req.get("community_id")
+    crew = db.query(models.Community).filter(models.Community.id == str(community_id or "")).first()
+    if not crew:
+        raise HTTPException(status_code=404, detail="크루를 찾을 수 없어요.")
+    members = list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or [])))
+    if user.id not in members:
+        raise HTTPException(status_code=403, detail="크루 멤버만 신청할 수 있어요.")
+
+    d = db.query(models.CrewPartnership).filter(
+        models.CrewPartnership.id == pid, models.CrewPartnership.status == "active"
+    ).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="진행 중인 딜이 아니에요.")
+
+    elig = _crew_eligibility(db, crew)
+    if not elig["eligible"]:
+        raise HTTPException(status_code=403, detail={"code": "not_eligible", "need": "멤버 3명+ · 함께 방문 3회+ 또는 소속 인증"})
+    if d.target in ("university", "company") and getattr(crew, "crew_type", None) != d.target:
+        raise HTTPException(status_code=403, detail="이 딜의 대상 크루 종류가 아니에요.")
+
+    exists = (
+        db.query(models.CrewPartnershipApp)
+        .filter(
+            models.CrewPartnershipApp.partnership_id == pid,
+            models.CrewPartnershipApp.community_id == crew.id,
+        ).first()
+    )
+    if exists:
+        return {"id": exists.id, "status": exists.status, "already": True}
+
+    a = models.CrewPartnershipApp(
+        partnership_id=pid, community_id=crew.id, applicant_id=user.id,
+        message=(req.get("message") or "").strip()[:200] or None,
+    )
+    db.add(a)
+    db.commit()
+    db.refresh(a)
+    return {"id": a.id, "status": a.status, "already": False}

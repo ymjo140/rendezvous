@@ -1317,3 +1317,194 @@ def save_customer_memo(store_id: int, user_id: int, body: dict, db: Session = De
     ), {"s": store_id, "u": user_id, "m": memo})
     db.commit()
     return {"ok": True}
+
+
+# ─────────────────────────────────────────────────────────────
+# 🤝 크루 제휴 — 딜 발행/신청 검토/성과 (대학가 제휴의 플랫폼화)
+# ─────────────────────────────────────────────────────────────
+
+def _crew_snapshot(db: Session, cid: str) -> dict:
+    """신청 검토용 크루 요약 — 인증·규모·활동 실적."""
+    c = db.query(models.Community).filter(models.Community.id == cid).first()
+    if not c:
+        return {"id": cid, "title": "(삭제된 크루)", "icon": "👥", "members": 0}
+    members = list(dict.fromkeys(([c.host_id] if c.host_id else []) + list(c.member_ids or [])))
+    org_domain = getattr(c, "org_domain", None)
+    verified = 0
+    if org_domain and members:
+        verified = (
+            db.query(models.UserVerification)
+            .filter(
+                models.UserVerification.user_id.in_(members),
+                models.UserVerification.domain == org_domain,
+                models.UserVerification.status == "verified",
+            ).count()
+        )
+    # 함께 방문(분담결제 완료) — 크루 전체 활동 실적
+    visits = (
+        db.query(models.ChatSplitRequest)
+        .filter(models.ChatSplitRequest.room_id == cid, models.ChatSplitRequest.status == "completed")
+        .count()
+    )
+    return {
+        "id": c.id, "title": c.title or "이름 없는 크루", "icon": c.icon or "👥",
+        "members": len(members),
+        "crew_type": getattr(c, "crew_type", None) or "friends",
+        "org_name": getattr(c, "org_name", None),
+        "verified_members": int(verified),
+        "visits_total": int(visits),
+    }
+
+
+@router.get("/stores/{store_id}/partnerships")
+def list_partnerships(
+    store_id: int,
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    place = _assert_merchant_owns(db, store_id, merchant_uid)
+    deals = (
+        db.query(models.CrewPartnership)
+        .filter(models.CrewPartnership.place_id == place.id)
+        .order_by(models.CrewPartnership.created_at.desc())
+        .all()
+    )
+    deal_ids = [d.id for d in deals]
+    apps = (
+        db.query(models.CrewPartnershipApp)
+        .filter(models.CrewPartnershipApp.partnership_id.in_(deal_ids))
+        .order_by(models.CrewPartnershipApp.created_at.desc())
+        .all()
+    ) if deal_ids else []
+
+    approved_cids = list({a.community_id for a in apps if a.status == "approved"})
+    # 성과: 승인 크루가 "이 가게에서" 완료한 분담결제 + 재방문 의사
+    perf_visits = 0
+    perf_amount = 0
+    perf_revisits = 0
+    if approved_cids:
+        rows = (
+            db.query(models.ChatSplitRequest)
+            .filter(
+                models.ChatSplitRequest.room_id.in_(approved_cids),
+                models.ChatSplitRequest.place_id == place.id,
+                models.ChatSplitRequest.status == "completed",
+            ).all()
+        )
+        perf_visits = len(rows)
+        perf_amount = int(sum(r.total_amount or 0 for r in rows))
+        member_ids = set()
+        for cid in approved_cids:
+            c = db.query(models.Community).filter(models.Community.id == cid).first()
+            if c:
+                member_ids.update(c.member_ids or [])
+        if member_ids:
+            perf_revisits = (
+                db.query(models.PlaceVisitFeedback)
+                .filter(
+                    models.PlaceVisitFeedback.user_id.in_(list(member_ids)),
+                    models.PlaceVisitFeedback.place_id == place.id,
+                    models.PlaceVisitFeedback.personal_revisit == True,  # noqa: E712
+                ).count()
+            )
+
+    apps_by_deal: dict = {}
+    for a in apps:
+        apps_by_deal.setdefault(a.partnership_id, []).append(a)
+
+    out_deals = []
+    for d in deals:
+        das = apps_by_deal.get(d.id, [])
+        out_deals.append({
+            "id": d.id, "title": d.title, "benefit": d.benefit, "discount_pct": d.discount_pct,
+            "target": d.target, "conditions": d.conditions or {}, "status": d.status,
+            "expires_at": d.expires_at.isoformat() if d.expires_at else None,
+            "pending": sum(1 for a in das if a.status == "pending"),
+            "approved": sum(1 for a in das if a.status == "approved"),
+            "applications": [
+                {
+                    "id": a.id, "status": a.status, "message": a.message or "",
+                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                    "crew": _crew_snapshot(db, a.community_id),
+                }
+                for a in das
+            ],
+        })
+
+    return {
+        "deals": out_deals,
+        "performance": {
+            "approved_crews": len(approved_cids),
+            "visits": perf_visits,
+            "amount": perf_amount,
+            "revisits": perf_revisits,
+        },
+    }
+
+
+@router.post("/stores/{store_id}/partnerships")
+def create_partnership(
+    store_id: int,
+    req: dict,
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    place = _assert_merchant_owns(db, store_id, merchant_uid)
+    title = (req.get("title") or "").strip()
+    benefit = (req.get("benefit") or "").strip()
+    if not title or not benefit:
+        raise HTTPException(status_code=400, detail="제목과 혜택을 입력해주세요.")
+    target = req.get("target") or "all"
+    if target not in ("all", "university", "company"):
+        raise HTTPException(status_code=400, detail="대상이 올바르지 않아요.")
+    d = models.CrewPartnership(
+        place_id=place.id,
+        title=title[:60],
+        benefit=benefit[:120],
+        discount_pct=req.get("discount_pct"),
+        target=target,
+        conditions=req.get("conditions") or {},
+        status="active",
+    )
+    db.add(d)
+    db.commit()
+    db.refresh(d)
+    return {"id": d.id, "created": True}
+
+
+@router.post("/partnerships/{pid}/status")
+def set_partnership_status(
+    pid: int,
+    req: dict,
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    d = db.query(models.CrewPartnership).filter(models.CrewPartnership.id == pid).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="딜을 찾을 수 없어요.")
+    _assert_merchant_owns(db, d.place_id, merchant_uid)
+    st = req.get("status")
+    if st not in ("active", "paused", "ended"):
+        raise HTTPException(status_code=400, detail="상태가 올바르지 않아요.")
+    d.status = st
+    db.commit()
+    return {"id": d.id, "status": st}
+
+
+@router.post("/partnership-apps/{aid}/decide")
+def decide_partnership_app(
+    aid: int,
+    req: dict,
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    a = db.query(models.CrewPartnershipApp).filter(models.CrewPartnershipApp.id == aid).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="신청을 찾을 수 없어요.")
+    d = db.query(models.CrewPartnership).filter(models.CrewPartnership.id == a.partnership_id).first()
+    _assert_merchant_owns(db, d.place_id, merchant_uid)
+    approve = bool(req.get("approve"))
+    a.status = "approved" if approve else "rejected"
+    a.decided_at = datetime.now()
+    db.commit()
+    return {"id": a.id, "status": a.status}
