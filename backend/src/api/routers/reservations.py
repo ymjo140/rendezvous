@@ -29,6 +29,33 @@ def create_reservation(
 ):
     if user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+
+    # ⚙ 영업·브레이크 타임 검증 — 사장님 설정(places.features.hours) 밖 시간대는 차단
+    try:
+        pid = getattr(req, "place_id", None)
+        t = (getattr(req, "time", None) or "").strip()
+        dstr = (getattr(req, "date", None) or "").strip()
+        if pid and t:
+            place = db.query(models.Place).filter(models.Place.id == int(pid)).first()
+            h = ((place.features or {}).get("hours") or {}) if place else {}
+            open_t, close_t = h.get("open"), h.get("close")
+            bf, bt, bd = h.get("break_from"), h.get("break_to"), h.get("break_days") or "everyday"
+            if open_t and close_t and not (open_t <= t < close_t):
+                raise HTTPException(status_code=400, detail=f"영업 시간({open_t}~{close_t}) 안에서만 예약할 수 있어요.")
+            if bf and bt and bf <= t < bt:
+                import datetime as _dt
+                is_weekday = True
+                try:
+                    is_weekday = _dt.date.fromisoformat(dstr).weekday() < 5
+                except Exception:
+                    pass
+                if bd == "everyday" or (bd == "weekday" and is_weekday):
+                    raise HTTPException(status_code=400, detail=f"브레이크 타임({bf}~{bt})에는 예약할 수 없어요.")
+    except HTTPException:
+        raise
+    except Exception as _e:
+        print(f"[reservation] hours check skip: {_e}")
+
     result = service.create(db, user, req)
     return result["reservation"]
 

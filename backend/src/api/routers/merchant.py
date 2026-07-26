@@ -1666,3 +1666,66 @@ def store_overview(
         "briefing": briefing,
         "todo": {"pending_reservations": pending_resv, "pending_partnership_apps": pending_apps},
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# ⚙ 영업·브레이크 타임 — places.features["hours"]에 저장(무마이그레이션)
+# 스케줄러 표시 범위 + B2C 앱 예약 차단의 단일 소스
+# ─────────────────────────────────────────────────────────────
+
+_HOURS_DEFAULT = {"open": "09:00", "close": "24:00", "break_from": "", "break_to": "", "break_days": "everyday"}
+
+
+def _valid_hhmm(v: str) -> bool:
+    import re
+    return bool(re.fullmatch(r"([01]\d|2[0-4]):[0-5]\d", v or ""))
+
+
+@router.get("/stores/{store_id}/hours")
+def get_store_hours(
+    store_id: int,
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    place = _assert_merchant_owns(db, store_id, merchant_uid)
+    h = (place.features or {}).get("hours") or {}
+    return {**_HOURS_DEFAULT, **h}
+
+
+@router.post("/stores/{store_id}/hours")
+def set_store_hours(
+    store_id: int,
+    req: dict,
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    place = _assert_merchant_owns(db, store_id, merchant_uid)
+    open_t = req.get("open") or "09:00"
+    close_t = req.get("close") or "24:00"
+    bf = (req.get("break_from") or "").strip()
+    bt = (req.get("break_to") or "").strip()
+    bd = req.get("break_days") or "everyday"
+    if not _valid_hhmm(open_t) or not _valid_hhmm(close_t):
+        raise HTTPException(status_code=400, detail="영업 시간 형식이 올바르지 않아요. (HH:MM)")
+    if open_t >= close_t:
+        raise HTTPException(status_code=400, detail="영업 종료가 시작보다 빨라요.")
+    if (bf and not bt) or (bt and not bf):
+        raise HTTPException(status_code=400, detail="브레이크 시작·종료를 모두 입력해주세요.")
+    if bf and bt:
+        if not _valid_hhmm(bf) or not _valid_hhmm(bt) or bf >= bt:
+            raise HTTPException(status_code=400, detail="브레이크 시간이 올바르지 않아요.")
+        if bf < open_t or bt > close_t:
+            raise HTTPException(status_code=400, detail="브레이크는 영업 시간 안에 있어야 해요.")
+    if bd not in ("everyday", "weekday"):
+        bd = "everyday"
+
+    feats = dict(place.features or {})
+    feats["hours"] = {"open": open_t, "close": close_t, "break_from": bf, "break_to": bt, "break_days": bd}
+    place.features = feats
+    try:
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(place, "features")
+    except Exception:
+        pass
+    db.commit()
+    return feats["hours"]
