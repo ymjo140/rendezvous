@@ -960,6 +960,26 @@ def verify_email_diag():
     }
 
 
+@router.post("/api/verify/email/test")
+def verify_email_test(to: str, token: str = ""):
+    """임의 주소로 테스트 발송 — 학교 메일이 격리하는지, 우리 발송이 실패하는지 가른다.
+
+    MAIL_TEST_TOKEN env와 일치해야 동작(미설정이면 비활성). 진단용이라 본문은 고정.
+    """
+    import os
+
+    expected = os.getenv("MAIL_TEST_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=404, detail="테스트 발송이 비활성 상태입니다.")
+    if token != expected:
+        raise HTTPException(status_code=403, detail="토큰이 올바르지 않아요.")
+    if "@" not in to:
+        raise HTTPException(status_code=400, detail="수신 주소가 올바르지 않아요.")
+
+    ok, reason = _send_verify_email(to.strip().lower(), "000000")
+    return {"to": to, "sent": ok, "reason": reason}
+
+
 @router.post("/api/verify/email/request")
 def verify_email_request(
     req: dict,
