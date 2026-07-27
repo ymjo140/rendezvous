@@ -1022,12 +1022,18 @@ def verify_email_request(
     db.add(v)
     db.commit()
 
+    import os
+
     sent, reason = _send_verify_email(email, code)
     out = {"requested": True, "email": email, "domain": domain, "org_name": v.org_name, "sent": sent}
-    if not sent:
-        # ⚠️ dev 모드(베타): 발송이 안 되면 코드를 응답으로 반환. 정식 오픈 전 SMTP_* env 필수.
+    # 베타: 자체 도메인 인증 전에는 대학·기업 메일이 gmail 발신을 격리해 코드가 도착하지 않는다.
+    # 발송 성공이어도 VERIFY_DEV_CODE=1이면 코드를 함께 내려 인증 흐름이 막히지 않게 한다.
+    beta_open = os.getenv("VERIFY_DEV_CODE") == "1"
+    if not sent or beta_open:
         out["dev_code"] = code
-        out["smtp"] = reason
+        out["beta"] = beta_open and sent
+        if not sent:
+            out["smtp"] = reason
     return out
 
 
