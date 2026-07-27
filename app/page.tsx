@@ -24,9 +24,11 @@ type ListCard = {
   area: string; match: number | null; by: ListBy
 }
 type Rack = { tag: string; label: string; emoji: string; items: ListCard[] }
+type CrewBrief = { id: string; title: string; icon: string; members: number; lists: number }
 type Feed = {
   taste_matched: ListCard[]; racks: Rack[]
   logged_in: boolean; has_taste: boolean
+  my_crews?: CrewBrief[]; crew_suggestions?: CrewBrief[]
 }
 type HotDeal = {
   place_id: number; name: string; category: string; address: string; image: string | null
@@ -88,6 +90,7 @@ const catEmoji = (c?: string) => {
 export default function HomeNextPage() {
   const router = useRouter()
   const [feed, setFeed] = useState<Feed>({ taste_matched: [], racks: [], logged_in: false, has_taste: false })
+  const [feedReady, setFeedReady] = useState(false)   // 로딩 중에 빈 상태 CTA가 깜빡이지 않도록
 
   // 필터(중복 선택) — 시트에서 고르고 적용
   const [ctxs, setCtxs] = useState<string[]>([])
@@ -124,6 +127,7 @@ export default function HomeNextPage() {
       .then((d: any) => {
         if (alive && d) setFeed(d)
       })
+      .finally(() => { if (alive) setFeedReady(true) })
       .catch(() => {})
     // 개인 취향 추천 + 핫딜 — 위치 확보(실패 시 성수) 후
     const loadMine = (lat: number, lng: number) => {
@@ -347,6 +351,62 @@ export default function HomeNextPage() {
           </div>
         )}
       </div>
+
+      {/* ①-b 크루가 없는 사람에게 — 이 앱의 핵심 행동은 '크루 만들기'다.
+          데이터가 없으면 아래 섹션이 전부 비므로 여기서 다음 행동을 준다. */}
+      {feedReady && filterCount === 0 && (feed.my_crews?.length ?? 0) === 0 && (
+        <section className="px-4 pt-4">
+          <div className="rounded-3xl border border-indigo-100 bg-indigo-50/40 p-5">
+            <div className="flex items-center gap-1.5">
+              <Users className="h-4 w-4" style={{ color: CREW }} />
+              <span className="text-[12px] font-bold" style={{ color: CREW }}>크루로 시작하기</span>
+            </div>
+            <h2 className="mt-1.5 text-[17px] font-bold leading-snug text-gray-900">
+              같이 먹는 사람들과<br />우리만의 맛집 지도를 만들어요
+            </h2>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-gray-500">
+              동아리·회사 팀·친구 모임으로 크루를 만들면 우리 취향에 맞는 가게를 추천받고,
+              함께 방문이 쌓이면 가게와 <b className="font-semibold text-gray-700">제휴</b>도 맺을 수 있어요.
+            </p>
+            <button
+              onClick={() => router.push(feed.logged_in ? "/crew-new" : "/login")}
+              className="mt-3.5 w-full rounded-2xl py-3 text-[14px] font-bold text-white"
+              style={{ backgroundColor: CREW }}
+            >
+              {feed.logged_in ? "우리 크루 만들기" : "로그인하고 시작하기"}
+            </button>
+          </div>
+
+          {(feed.crew_suggestions?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <div className="mb-2 flex items-center gap-1.5">
+                <SecMark axis="crew"><Users className="h-3.5 w-3.5" /></SecMark>
+                <h3 className="text-[15px] font-bold text-gray-900">이미 활동 중인 크루</h3>
+                <button onClick={() => router.push("/crews")} className="ml-auto text-[12px] font-semibold" style={{ color: CREW }}>
+                  전체 보기
+                </button>
+              </div>
+              <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+                {feed.crew_suggestions!.slice(0, 8).map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => router.push(`/crew/${c.id}`)}
+                    className="flex w-[168px] shrink-0 items-center gap-2.5 rounded-2xl border border-indigo-100 bg-white p-3 text-left"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xl ring-2 ring-indigo-100">
+                      {c.icon}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-semibold text-gray-900">{c.title}</span>
+                      <span className="block text-[11px] text-gray-400">멤버 {c.members} · 리스트 {c.lists}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ② 🔥 핫딜 — 지금 빈자리 있는 가게(내 취향·크루 취향 순) */}
       {filterCount === 0 && hotDeals.length > 0 && (
