@@ -152,6 +152,51 @@ def _user_taste_centroid(db: Session, user_id: int) -> Optional[np.ndarray]:
     return _centroid(list(embs.values()))
 
 
+def _crew_axis(db: Session, uid):
+    """크루 축 재료 — (내 크루 id들, 크루 취향 centroid, 우리가 다녀온 place 집합).
+
+    개인 취향(_user_taste_centroid)과 다른 근거를 쓰기 위한 것.
+    담은 곳은 '집단 취향', 다녀온 곳은 '행동' — 후자가 더 강한 신호라 정렬에서 앞선다.
+    """
+    my_crew_ids: list = []
+    crew_taste = None
+    crew_visited: set = set()
+    if not uid:
+        return my_crew_ids, crew_taste, crew_visited
+
+    for c in db.query(models.Community).all():
+        members = list(dict.fromkeys(([c.host_id] if c.host_id else []) + list(c.member_ids or [])))
+        if uid in members:
+            my_crew_ids.append(c.id)
+    if not my_crew_ids:
+        return my_crew_ids, crew_taste, crew_visited
+
+    mine = db.query(models.SaveFolder).filter(
+        models.SaveFolder.community_id.in_(my_crew_ids)).all()
+    fp = _folder_place_ids(db, [f.id for f in mine])
+    cp = list({p for v in fp.values() for p in v[:50]})
+    if cp:
+        embs = _embeddings_for(db, cp)
+        crew_taste = _centroid(list(embs.values()))
+
+    for r in (
+        db.query(models.ChatSplitRequest)
+        .filter(models.ChatSplitRequest.room_id.in_(my_crew_ids),
+                models.ChatSplitRequest.status == "completed",
+                models.ChatSplitRequest.place_id.isnot(None)).all()
+    ):
+        crew_visited.add(r.place_id)
+    try:
+        for k in (
+            db.query(models.PlaceCheckin)
+            .filter(models.PlaceCheckin.community_id.in_(my_crew_ids)).all()
+        ):
+            crew_visited.add(k.place_id)
+    except Exception:
+        pass
+    return my_crew_ids, crew_taste, crew_visited
+
+
 @router.get("/api/home/feed")
 def home_feed(
     user: Optional[models.User] = Depends(get_current_user),
@@ -220,39 +265,7 @@ def home_feed(
 
     taste = _user_taste_centroid(db, uid) if uid else None
 
-    # 크루 축은 개인 취향과 다른 근거를 써야 한다 — 우리 크루가 담은 곳(집단 취향)과
-    # 실제로 같이 다녀온 곳(행동). "우리랑 비슷한 모임은 어디 가지?"에 답하는 축.
-    my_crew_ids: list = []
-    crew_taste = None
-    crew_visited: set = set()
-    if uid:
-        for _c in db.query(models.Community).all():
-            _mem = list(dict.fromkeys(([_c.host_id] if _c.host_id else []) + list(_c.member_ids or [])))
-            if uid in _mem:
-                my_crew_ids.append(_c.id)
-    if my_crew_ids:
-        _mine = db.query(models.SaveFolder).filter(
-            models.SaveFolder.community_id.in_(my_crew_ids)).all()
-        _fp = _folder_place_ids(db, [f.id for f in _mine])
-        _cp = list({p for v in _fp.values() for p in v[:50]})
-        if _cp:
-            _ce = _embeddings_for(db, _cp)
-            crew_taste = _centroid(list(_ce.values()))
-        for _r in (
-            db.query(models.ChatSplitRequest)
-            .filter(models.ChatSplitRequest.room_id.in_(my_crew_ids),
-                    models.ChatSplitRequest.status == "completed",
-                    models.ChatSplitRequest.place_id.isnot(None)).all()
-        ):
-            crew_visited.add(_r.place_id)
-        try:
-            for _k in (
-                db.query(models.PlaceCheckin)
-                .filter(models.PlaceCheckin.community_id.in_(my_crew_ids)).all()
-            ):
-                crew_visited.add(_k.place_id)
-        except Exception:
-            pass
+    my_crew_ids, crew_taste, crew_visited = _crew_axis(db, uid)
 
     def _list_card(f: models.SaveFolder) -> dict:
         pids = fplaces.get(f.id, [])[:50]
@@ -650,6 +663,7 @@ def home_search(
     owners = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()} if owner_ids else {}
 
     taste = _user_taste_centroid(db, uid) if uid else None
+    my_crew_ids, crew_taste, crew_visited = _crew_axis(db, uid)
 
     items = []
     for f in heavy:
@@ -659,6 +673,11 @@ def home_search(
         match = None
         if taste is not None and cen is not None:
             match = int(round(max(0.0, float(np.dot(taste, cen))) * 100))
+        # 검색 결과에도 크루 축을 실어 보낸다 — 크루가 만든 리스트는 크루 기준으로 보여야 한다
+        crew_match = None
+        if crew_taste is not None and cen is not None:
+            crew_match = int(round(max(0.0, float(np.dot(crew_taste, cen))) * 100))
+        shared_visits = len(crew_visited.intersection(pids)) if crew_visited else 0
         crew = comms.get(f.community_id) if f.community_id else None
         owner = owners.get(f.user_id)
         revisit = sum(revisit_by_place.get(p, 0) for p in pids)
@@ -675,6 +694,9 @@ def home_search(
             "revisit": int(revisit),
             "area": _area_of([addr.get(p) for p in pids]),
             "match": match,
+            "crew_match": crew_match,
+            "shared_visits": shared_visits,
+            "is_my_crew": bool(f.community_id and f.community_id in my_crew_ids),
             "by": (
                 {"kind": "crew", "id": crew.id, "name": crew.title, "icon": crew.icon or "👥",
                  "members": len(crew.member_ids or [])}
@@ -684,9 +706,20 @@ def home_search(
             ),
         })
 
-    eff_sort = sort or ("match" if taste is not None else "saves")
+    def _axis_score(c):
+        """리스트를 만든 주체에 맞는 점수. 크루 리스트를 내 개인 취향으로 줄 세우면
+        '우리랑 비슷한 크루'가 아니라 '내 입맛에 맞는 크루'가 올라온다."""
+        if c["by"]["kind"] == "crew":
+            v = c.get("crew_match")
+            if v is None:
+                v = c.get("match")
+            # 같이 다녀온 가게가 겹치면 그게 가장 강한 신호
+            return (v if v is not None else -1) + min(c.get("shared_visits") or 0, 5) * 10
+        return c["match"] if c["match"] is not None else -1
+
+    eff_sort = sort or ("match" if (taste is not None or crew_taste is not None) else "saves")
     if eff_sort == "match":
-        items.sort(key=lambda c: ((c["match"] if c["match"] is not None else -1), c["saves"]), reverse=True)
+        items.sort(key=lambda c: (_axis_score(c), c["saves"]), reverse=True)
     elif eff_sort == "revisit":
         items.sort(key=lambda c: (c["revisit"], c["saves"]), reverse=True)
     else:

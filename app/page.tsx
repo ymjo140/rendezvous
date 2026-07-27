@@ -625,7 +625,11 @@ export default function HomeNextPage() {
               <p className="mb-1.5 mt-1 text-[12px] font-semibold text-gray-500">믿을 리스트</p>
             )}
             <div className="space-y-2">
-              {(filterResults || []).map((it) => (
+              {(filterResults || []).map((it) => {
+                // 크루가 만든 리스트는 크루 축(우리 크루 취향·같이 간 가게)으로 읽어야 한다
+                const isCrew = it.by.kind === "crew"
+                const pct = isCrew ? it.crew_match : it.match
+                return (
                 <article
                   key={it.folder_id}
                   onClick={() => router.push(`/lists/${it.folder_id}`)}
@@ -635,17 +639,23 @@ export default function HomeNextPage() {
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
                       <b className="truncate text-[13px] font-semibold text-gray-900">{it.name}</b>
-                      {it.match !== null && <em className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold not-italic text-amber-700">{it.match}%</em>}
+                      {pct != null && (
+                        <em className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold not-italic ${isCrew ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"}`}>{pct}%</em>
+                      )}
                     </span>
                     <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400">
                       <span className="truncate">by {it.by.name}</span>
                       <span>·</span><span className="shrink-0">{it.item_count}곳</span>
+                      {isCrew && (it.shared_visits ?? 0) > 0 && (
+                        <span className="shrink-0 font-medium text-indigo-600">같은 가게 {it.shared_visits}곳</span>
+                      )}
                       {it.revisit > 0 && <span className="shrink-0 font-medium text-amber-700">🔁 {it.revisit}</span>}
                     </span>
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
                 </article>
-              ))}
+                )
+              })}
             </div>
             </>
           )}

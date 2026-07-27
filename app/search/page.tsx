@@ -13,6 +13,7 @@ type ListCard = {
   folder_id: number; name: string; icon: string; description: string
   context_tag: string | null; item_count: number; saves: number; revisit: number
   area: string; match: number | null; by: ListBy
+  crew_match?: number | null; shared_visits?: number
 }
 
 const TAGS = [
@@ -159,7 +160,11 @@ export default function HomeSearchPage() {
           </div>
         )}
         <div className="space-y-2.5">
-          {items.map((it) => (
+          {items.map((it) => {
+            // 크루가 만든 리스트는 크루 축으로 읽는다 (우리 크루 취향·같이 간 가게)
+            const isCrew = it.by.kind === "crew"
+            const pct = isCrew ? it.crew_match : it.match
+            return (
             <article
               key={it.folder_id}
               onClick={() => router.push(`/lists/${it.folder_id}`)}
@@ -170,15 +175,18 @@ export default function HomeSearchPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-[14px] font-semibold text-slate-900">{it.name}</span>
-                    {it.match !== null && (
-                      <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">{it.match}%</span>
+                    {pct != null && (
+                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${isCrew ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"}`}>{pct}%</span>
                     )}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
                     <span className="flex items-center gap-0.5">
-                      {it.by.kind === "crew" && <BadgeCheck className="h-3 w-3 text-amber-400" />}
+                      {isCrew && <BadgeCheck className="h-3 w-3 text-indigo-400" />}
                       by {it.by.name}
                     </span>
+                    {isCrew && (it.shared_visits ?? 0) > 0 && (
+                      <span className="shrink-0 font-medium text-indigo-600">· 같은 가게 {it.shared_visits}곳</span>
+                    )}
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {it.area && (
@@ -199,7 +207,8 @@ export default function HomeSearchPage() {
                 </div>
               </div>
             </article>
-          ))}
+            )
+          })}
         </div>
       </div>
     </div>
