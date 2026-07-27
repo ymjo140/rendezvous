@@ -2,8 +2,8 @@
 
 // ─────────────────────────────────────────────────────────────
 // 🏠 메인 홈 — "크루·리스트 중심 발견" (구 /home-next, 2026-07-26 루트로 승격)
-// 검색 → 필터(시트·중복선택) → 🔥 핫딜(실시간 빈자리) → 크루 맞춤 가게 → 크루/큐레이터 리스트 → 맥락 랙
-// 랭킹 3줄(급상승·인기 크루·인기 리스트)은 탐색 탭이 담당.
+// 검색 → 필터 → 🔥 핫딜(실시간 빈자리) → 맥락 랙(스와이프) → 크루 맞춤 가게 → 크루/큐레이터 리스트
+// 랭킹 3줄(급상승·인기 크루·인기 리스트)은 탐색 탭이 담당. 맥락 랙은 한 슬라이드=한 맥락.
 // 시각 언어: 앰버 #F5A623 = 가게·혜택(사각 썸네일) / 인디고 #5B5BD6 = 사람·크루(원형 아바타)
 // ─────────────────────────────────────────────────────────────
 
@@ -103,6 +103,10 @@ export default function HomeNextPage() {
   const [regionInput, setRegionInput] = useState("")
   const [regionResults, setRegionResults] = useState<{ title: string; address?: string; lat: number; lng: number }[]>([])
   const regionTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 맥락 랙 캐러셀 — 한 화면에 한 맥락만, 스와이프로 넘긴다(세로 공간 절약 + 의도 어휘 노출)
+  const rackRef = React.useRef<HTMLDivElement>(null)
+  const [rackIdx, setRackIdx] = useState(0)
 
   // 🔥 핫딜 — 지금 빈자리 있는 가게(내 취향·크루 취향 순)
   const [hotDeals, setHotDeals] = useState<HotDeal[]>([])
@@ -461,7 +465,104 @@ export default function HomeNextPage() {
         </section>
       )}
 
-      {/* ②-b 필터 결과 — 서버에서 전체 공개 리스트 검색 */}
+      {/* ③ 맥락 랙 — 한 슬라이드에 한 맥락, 대표 리스트 하나. 전체 보기로 그 맥락 전부 */}
+      {filterCount === 0 && shownRacks.length > 0 && (
+        <section className="pt-5">
+          <div
+            ref={rackRef}
+            onScroll={(e) => {
+              const el = e.currentTarget
+              const i = Math.round(el.scrollLeft / (el.clientWidth * 0.88))
+              if (i !== rackIdx) setRackIdx(Math.max(0, Math.min(shownRacks.length - 1, i)))
+            }}
+            className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {shownRacks.map((rack) => {
+              const top = rack.items[0]
+              return (
+                <div key={rack.tag} className="w-[88%] shrink-0 snap-start">
+                  <button
+                    onClick={() => router.push(`/browse?mode=tag&tag=${rack.tag}`)}
+                    className="mb-2 flex w-full items-center gap-1.5"
+                  >
+                    <span className="text-[17px]">{rack.emoji}</span>
+                    <h2 className="min-w-0 flex-1 truncate text-left text-[15px] font-bold text-gray-900">{rack.label}</h2>
+                    <span className="flex shrink-0 items-center text-[12px] font-semibold" style={{ color: CREW }}>
+                      전체 보기<ChevronRight className="h-4 w-4" />
+                    </span>
+                  </button>
+
+                  {top ? (
+                    <article
+                      onClick={() => { if (top.folder_id > 0) router.push(`/lists/${top.folder_id}`) }}
+                      className="cursor-pointer rounded-2xl border border-indigo-100 bg-indigo-50/30 p-3.5"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-xl ring-2 ring-indigo-200">
+                          {top.by.icon}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1">
+                            <span className="truncate text-[13px] font-semibold text-gray-900">{top.by.name}</span>
+                            {top.by.kind === "crew" && <BadgeCheck className="h-3.5 w-3.5 shrink-0" style={{ color: CREW }} />}
+                          </div>
+                          <div className="text-[11px] text-gray-400">
+                            {top.by.kind === "crew" ? `크루 · 멤버 ${top.by.members ?? 0}명` : "큐레이터"}
+                          </div>
+                        </div>
+                        {top.match !== null && (
+                          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
+                            {top.match}%
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2.5 flex items-center gap-1.5 text-[14px] font-semibold text-gray-900">
+                        <span>{top.icon}</span><span className="truncate">{top.name}</span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-400">
+                        <MapPin className="h-3 w-3" />{top.area || "여러 지역"} · {top.item_count}곳
+                        <span className="mx-0.5">·</span>
+                        <Bookmark className="h-3 w-3" />{top.saves}
+                      </div>
+                      {top.revisit > 0 && (
+                        <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+                          <RotateCw className="h-2.5 w-2.5" />재방문 의사 {top.revisit}명
+                        </div>
+                      )}
+                      {rack.items.length > 1 && (
+                        <div className="mt-2 text-[11px] text-gray-400">
+                          이 맥락에 {rack.items.length}개 더 있어요
+                        </div>
+                      )}
+                    </article>
+                  ) : (
+                    <div className="rounded-2xl border-2 border-dashed border-gray-200 py-8 text-center text-[12px] text-gray-400">
+                      아직 이 맥락의 리스트가 없어요
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {shownRacks.length > 1 && (
+            <div className="mt-2.5 flex justify-center gap-1">
+              {shownRacks.map((r, i) => (
+                <span
+                  key={r.tag}
+                  className="h-1 rounded-full transition-all"
+                  style={{
+                    width: i === rackIdx ? 14 : 4,
+                    backgroundColor: i === rackIdx ? CREW : "#E5E7EB",
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ④ 필터 결과 — 서버에서 전체 공개 리스트 검색 */}
       {filterCount > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
@@ -538,7 +639,7 @@ export default function HomeNextPage() {
         </section>
       )}
 
-      {/* ③ 내 크루에 어울리는 곳 */}
+      {/* ⑤ 내 크루에 어울리는 곳 */}
       {crewNames.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-1 flex items-center justify-between">
@@ -595,7 +696,7 @@ export default function HomeNextPage() {
         </section>
       )}
 
-      {/* ③-b 내 입맛 저격 — 개인 축 (크루 없어도 즐찾/저장 루프) */}
+      {/* ⑥ 내 입맛 저격 — 개인 축 (크루 없어도 즐찾/저장 루프) */}
       {filterCount === 0 && myPlaces.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-1 flex items-center justify-between">
@@ -633,7 +734,7 @@ export default function HomeNextPage() {
         </section>
       )}
 
-      {/* ④ 내 크루와 비슷한 크루의 리스트 — 필터 중엔 '필터 결과'가 대신함 */}
+      {/* ⑦ 내 크루와 비슷한 크루의 리스트 — 필터 중엔 '필터 결과'가 대신함 */}
       {filterCount === 0 && crewLists.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
@@ -647,7 +748,7 @@ export default function HomeNextPage() {
         </section>
       )}
 
-      {/* ⑤ 내 입맛과 닮은 큐레이터의 리스트 — 필터 중엔 '필터 결과'가 대신함 */}
+      {/* ⑧ 내 입맛과 닮은 큐레이터의 리스트 — 필터 중엔 '필터 결과'가 대신함 */}
       {filterCount === 0 && curatorLists.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
@@ -660,42 +761,6 @@ export default function HomeNextPage() {
           </div>
         </section>
       )}
-
-      {/* ⑥ 맥락별 랙 — 필터 중엔 숨김 */}
-      {filterCount === 0 && shownRacks.map((rack) => (
-        <section key={rack.tag} className="px-4 pt-5">
-          <button
-            onClick={() => router.push(`/browse?mode=tag&tag=${rack.tag}`)}
-            className="mb-2 flex w-full items-center justify-between"
-          >
-            <h2 className="text-[15px] font-bold text-gray-900">{rack.emoji} {rack.label}</h2>
-            <span className="flex items-center text-[12px] font-semibold" style={{ color: BRAND }}>전체 보기<ChevronRight className="h-4 w-4" /></span>
-          </button>
-          <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
-            {rack.items.map((it) => (
-              <article
-                key={it.folder_id}
-                onClick={() => { if (it.folder_id > 0) router.push(`/lists/${it.folder_id}`) }}
-                className="w-[185px] shrink-0 cursor-pointer rounded-2xl border border-gray-100 p-3"
-              >
-                <div className="flex h-24 w-full items-center justify-center rounded-xl bg-gray-50 text-4xl">{it.icon}</div>
-                <div className="mt-2 truncate text-[13px] font-semibold leading-tight text-gray-900">{it.name}</div>
-                <div className="mt-1 truncate text-[11px] text-gray-400">by {it.by.name}</div>
-                <div className="mt-1.5 flex items-center gap-1.5">
-                  {it.revisit > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                      <RotateCw className="h-2.5 w-2.5" />재방문 {it.revisit}명
-                    </span>
-                  )}
-                  <span className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-500">
-                    <Bookmark className="h-2.5 w-2.5" />{it.saves}
-                  </span>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      ))}
 
       {/* 필터 시트 (기존 필터 설정 UI 스타일 · 중복 선택) */}
       {sheetOpen && (
