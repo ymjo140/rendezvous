@@ -22,6 +22,8 @@ type ListCard = {
   folder_id: number; name: string; icon: string; description: string
   context_tag: string | null; item_count: number; saves: number; revisit: number
   area: string; match: number | null; by: ListBy
+  // 크루 축(집단 취향·같이 간 가게)과 개인 축(내 입맛)은 근거가 다르다
+  crew_match?: number | null; shared_visits?: number; is_my_crew?: boolean
 }
 type Rack = { tag: string; label: string; emoji: string; items: ListCard[] }
 type CrewBrief = { id: string; title: string; icon: string; members: number; lists: number }
@@ -29,6 +31,7 @@ type Feed = {
   taste_matched: ListCard[]; racks: Rack[]
   logged_in: boolean; has_taste: boolean
   my_crews?: CrewBrief[]; crew_suggestions?: CrewBrief[]
+  crew_matched?: ListCard[]; has_crew_taste?: boolean
 }
 type HotDeal = {
   place_id: number; name: string; category: string; address: string; image: string | null
@@ -228,9 +231,10 @@ export default function HomeNextPage() {
     () => crewPlaces.filter((p) => (!activeCrew || p.room_name === activeCrew) && foodTest(p.category)).slice(0, 12),
     [crewPlaces, activeCrew, foods] // eslint-disable-line react-hooks/exhaustive-deps
   )
+  // 크루 축은 서버에서 '우리 크루 취향 + 같이 간 가게'로 정렬해 내려준다
   const crewLists = useMemo(
-    () => feed.taste_matched.filter((l) => l.by.kind === "crew" && ctxTest(l.context_tag)).slice(0, 8),
-    [feed.taste_matched, ctxs] // eslint-disable-line react-hooks/exhaustive-deps
+    () => (feed.crew_matched ?? []).filter((l) => ctxTest(l.context_tag)).slice(0, 8),
+    [feed.crew_matched, ctxs] // eslint-disable-line react-hooks/exhaustive-deps
   )
   const curatorLists = useMemo(
     () => feed.taste_matched.filter((l) => l.by.kind === "curator" && ctxTest(l.context_tag)).slice(0, 8),
@@ -261,7 +265,7 @@ export default function HomeNextPage() {
     </span>
   )
 
-  const ListCardView = ({ g }: { g: ListCard }) => (
+  const ListCardView = ({ g, axis = "taste" }: { g: ListCard; axis?: "crew" | "taste" }) => (
     <article
       onClick={() => {
         if (g.by.kind === "crew" && g.by.id) router.push(`/crew/${g.by.id}`)
@@ -279,8 +283,10 @@ export default function HomeNextPage() {
           </div>
           <div className="text-[11px] text-gray-400">{g.by.kind === "crew" ? `멤버 ${g.by.members}명 · 크루` : "큐레이터"}</div>
         </div>
-        {g.match !== null && (
-          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">{g.match}%</span>
+        {(axis === "crew" ? g.crew_match : g.match) != null && (
+          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
+            {axis === "crew" ? g.crew_match : g.match}%
+          </span>
         )}
       </div>
       <div className="mt-2.5 flex items-center gap-1.5 text-sm font-medium text-gray-800">
@@ -291,11 +297,18 @@ export default function HomeNextPage() {
         <span className="mx-0.5">·</span>
         <Bookmark className="h-3 w-3" />{g.saves}
       </div>
-      {g.revisit > 0 && (
-        <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
-          <RotateCw className="h-2.5 w-2.5" />재방문 의사 {g.revisit}명
-        </div>
-      )}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        {axis === "crew" && (g.shared_visits ?? 0) > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+            <MapPin className="h-2.5 w-2.5" />같은 가게 {g.shared_visits}곳 방문
+          </span>
+        )}
+        {g.revisit > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+            <RotateCw className="h-2.5 w-2.5" />재방문 의사 {g.revisit}명
+          </span>
+        )}
+      </div>
     </article>
   )
 
@@ -739,11 +752,12 @@ export default function HomeNextPage() {
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
             <SecMark axis="crew"><Users className="h-3.5 w-3.5" /></SecMark>
-            <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">내 크루와 비슷한 크루의 리스트</h2>
+            <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">우리 크루와 취향이 겹치는 크루</h2>
             <button onClick={() => router.push("/browse?mode=crew")} className="shrink-0 text-[12px] font-semibold" style={{ color: CREW }}>전체 보기</button>
           </div>
+          <p className="mb-2 text-[11px] text-indigo-400">우리 크루가 담은 곳·같이 다녀온 가게를 기준으로 골랐어요</p>
           <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
-            {crewLists.map((g) => <ListCardView key={g.folder_id} g={g} />)}
+            {crewLists.map((g) => <ListCardView key={g.folder_id} g={g} axis="crew" />)}
           </div>
         </section>
       )}
@@ -753,9 +767,10 @@ export default function HomeNextPage() {
         <section className="px-4 pt-5">
           <div className="mb-2 flex items-center gap-1.5">
             <SecMark axis="crew"><Sparkles className="h-3.5 w-3.5" /></SecMark>
-            <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">내 입맛과 닮은 큐레이터의 리스트</h2>
+            <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">내 입맛과 닮은 큐레이터</h2>
             <button onClick={() => router.push("/browse?mode=curator")} className="shrink-0 text-[12px] font-semibold" style={{ color: CREW }}>전체 보기</button>
           </div>
+          <p className="mb-2 text-[11px] text-indigo-400">내 저장·재방문 기록과 겹치는 사람들의 리스트예요</p>
           <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
             {curatorLists.map((g) => <ListCardView key={g.folder_id} g={g} />)}
           </div>
