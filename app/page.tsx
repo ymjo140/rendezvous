@@ -14,6 +14,13 @@ import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "./tab-bar"
 
 const BRAND = "#F5A623"   // 가게·혜택 축
+// 뒤로가기 재진입마다 홈 API 4개를 다시 부르면 빈 화면부터 다시 시작한다.
+// 마지막 응답을 들고 있다가 즉시 그리고, 뒤에서 조용히 갱신한다(stale-while-revalidate).
+const homeCache: {
+  feed?: Feed; hotDeals?: HotDeal[]; crewPlaces?: CrewPlace[]; myPlaces?: CrewPlace[]
+  coords?: { lat: number; lng: number }
+} = {}
+
 const CREW = "#5B5BD6"    // 사람·크루 축 — 가게 카드와 한눈에 구분되도록 쿨톤
 
 // ── 타입 ─────────────────────────────────────────────────────
@@ -65,6 +72,14 @@ const QUICK_REGIONS: Anchor[] = [
   { name: "잠실", lat: 37.5133, lng: 127.1001 },
 ]
 type PlaceHit = { id: number; name: string; cuisine: string; category: string; address: string; rating: number; review_count: number; image: string | null; dist_km: number | null }
+/** 빈자리 마감까지 남은 시간 — 임박한 경우만 배지로 띄운다. null이면 표시하지 않음. */
+function remainLabel(min: number): { text: string; urgent: boolean } | null {
+  if (!min || min <= 0) return null
+  if (min < 60) return { text: `${min}분 남음`, urgent: true }
+  if (min < 720) return { text: `${Math.floor(min / 60)}시간 남음`, urgent: min < 180 }
+  return null   // 12시간 넘게 남은 건 '지금 빈자리'가 아니다
+}
+
 const FOOD_CHIPS = ["한식", "일식", "양식", "중식", "카페", "빵", "술집", "분식"]
 const FOOD_EMOJI: Record<string, string> = { 한식: "🍜", 일식: "🍣", 양식: "🍝", 중식: "🥟", 카페: "☕", 빵: "🥐", 술집: "🍺", 분식: "🍢" }
 const FOOD_MATCH: Record<string, string[]> = {
@@ -92,8 +107,8 @@ const catEmoji = (c?: string) => {
 
 export default function HomeNextPage() {
   const router = useRouter()
-  const [feed, setFeed] = useState<Feed>({ taste_matched: [], racks: [], logged_in: false, has_taste: false })
-  const [feedReady, setFeedReady] = useState(false)   // 로딩 중에 빈 상태 CTA가 깜빡이지 않도록
+  const [feed, setFeed] = useState<Feed>(homeCache.feed ?? { taste_matched: [], racks: [], logged_in: false, has_taste: false })
+  const [feedReady, setFeedReady] = useState(!!homeCache.feed)   // 로딩 중에 빈 상태 CTA가 깜빡이지 않도록
 
   // 필터(중복 선택) — 시트에서 고르고 적용
   const [ctxs, setCtxs] = useState<string[]>([])
@@ -112,15 +127,15 @@ export default function HomeNextPage() {
   const [rackIdx, setRackIdx] = useState(0)
 
   // 🔥 핫딜 — 지금 빈자리 있는 가게(내 취향·크루 취향 순)
-  const [hotDeals, setHotDeals] = useState<HotDeal[]>([])
+  const [hotDeals, setHotDeals] = useState<HotDeal[]>(homeCache.hotDeals ?? [])
 
   // 내 크루 어울리는 가게
-  const [crewPlaces, setCrewPlaces] = useState<CrewPlace[]>([])
+  const [crewPlaces, setCrewPlaces] = useState<CrewPlace[]>(homeCache.crewPlaces ?? [])
   const [crewSel, setCrewSel] = useState<string | null>(null)
   const [crewOpen, setCrewOpen] = useState(false)
 
   // 개인 맛집 추천 — 크루 없이도 "오늘 뭐 먹지"를 해결하는 개인 축 (기존 취향 추천 API 재활용)
-  const [myPlaces, setMyPlaces] = useState<CrewPlace[]>([])
+  const [myPlaces, setMyPlaces] = useState<CrewPlace[]>(homeCache.myPlaces ?? [])
 
   // 필터 결과 — 필터가 걸리면 화면 데이터가 아니라 서버(전체 공개 리스트)를 검색
   const [filterResults, setFilterResults] = useState<ListCard[] | null>(null)
@@ -132,6 +147,7 @@ export default function HomeNextPage() {
     fetchWithAuth("/api/home/feed")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
+        if (d) homeCache.feed = d
         if (alive && d) setFeed(d)
       })
       .finally(() => { if (alive) setFeedReady(true) })
@@ -143,25 +159,39 @@ export default function HomeNextPage() {
         body: JSON.stringify({ purpose: "식사", user_selected_tags: [], current_lat: lat, current_lng: lng, member_user_ids: [], top_k: 12 }),
       })
         .then((r) => (r.ok ? r.json() : null))
-        .then((regions: any) => { if (alive) setMyPlaces(regions?.[0]?.places || []) })
+        .then((regions: any) => {
+          homeCache.myPlaces = regions?.[0]?.places || []
+          if (alive) setMyPlaces(homeCache.myPlaces)
+        })
         .catch(() => {})
       fetchWithAuth(`/api/home/hot-deals?lat=${lat}&lng=${lng}`)
         .then((r) => (r.ok ? r.json() : null))
-        .then((d: any) => { if (alive) setHotDeals(d?.items || []) })
+        .then((d: any) => {
+          homeCache.hotDeals = d?.items || []
+          if (alive) setHotDeals(homeCache.hotDeals)
+        })
         .catch(() => {})
     }
-    if (typeof navigator !== "undefined" && navigator.geolocation) {
+    const useCoords = (lat: number, lng: number) => {
+      homeCache.coords = { lat, lng }
+      loadMine(lat, lng)
+    }
+    if (homeCache.coords) {
+      // 한 번 잡은 좌표는 세션 안에서 재사용 — 위치 확보를 기다리느라 핫딜이 늦게 뜨지 않게
+      loadMine(homeCache.coords.lat, homeCache.coords.lng)
+    } else if (typeof navigator !== "undefined" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => loadMine(pos.coords.latitude, pos.coords.longitude),
-        () => loadMine(37.5446, 127.0559),
-        { timeout: 3000 }
+        (pos) => useCoords(pos.coords.latitude, pos.coords.longitude),
+        () => useCoords(37.5446, 127.0559),
+        { timeout: 3000, maximumAge: 600000 }
       )
-    } else loadMine(37.5446, 127.0559)
+    } else useCoords(37.5446, 127.0559)
 
     fetchWithAuth("/api/recommend/my-meetings?per_room=12")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
-        if (alive) setCrewPlaces(d?.places || [])
+        homeCache.crewPlaces = d?.places || []
+        if (alive) setCrewPlaces(homeCache.crewPlaces)
       })
       .catch(() => {})
     return () => { alive = false }
@@ -457,9 +487,14 @@ export default function HomeNextPage() {
                       제휴
                     </span>
                   ) : null}
-                  <span className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                    <Clock className="h-2.5 w-2.5" />{d.remain_min}분
-                  </span>
+                  {(() => {
+                    const r = remainLabel(d.remain_min)
+                    return r ? (
+                      <span className={`absolute bottom-1.5 right-1.5 flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-white ${r.urgent ? "bg-rose-500" : "bg-black/60"}`}>
+                        <Clock className="h-2.5 w-2.5" />{r.text}
+                      </span>
+                    ) : null
+                  })()}
                 </div>
                 <div className="p-2.5">
                   <div className="truncate text-[12.5px] font-semibold text-gray-900">{d.name}</div>
