@@ -825,12 +825,13 @@ def _org_name_for(kind: str, domain: str) -> str:
     return domain
 
 
-def _send_verify_email(to_email: str, code: str) -> bool:
-    """SMTP env가 있으면 발송, 없으면 False(dev 모드)."""
+def _send_verify_email(to_email: str, code: str):
+    """(성공여부, 사유) — 'off'=SMTP 미설정, 'error: ...'=발송 실패.
+    둘을 구분해야 env를 안 넣은 건지, 넣었는데 실패한 건지 알 수 있다."""
     import os
     host = os.getenv("SMTP_HOST")
     if not host:
-        return False
+        return False, "off"
     try:
         import smtplib
         from email.mime.text import MIMEText
@@ -857,10 +858,10 @@ def _send_verify_email(to_email: str, code: str) -> bool:
             if user_:
                 sv.login(user_, pw)
             sv.sendmail(sender, [to_email], msg.as_string())
-        return True
+        return True, "sent"
     except Exception as e:
-        print(f"[verify] SMTP send failed: {e}")
-        return False
+        print(f"[verify] SMTP send failed: {type(e).__name__}: {e}")
+        return False, "error: %s: %s" % (type(e).__name__, str(e)[:120])
 
 
 @router.post("/api/verify/email/request")
@@ -905,11 +906,12 @@ def verify_email_request(
     db.add(v)
     db.commit()
 
-    sent = _send_verify_email(email, code)
+    sent, reason = _send_verify_email(email, code)
     out = {"requested": True, "email": email, "domain": domain, "org_name": v.org_name, "sent": sent}
     if not sent:
-        # ⚠️ dev 모드(베타): SMTP 미설정이라 코드를 응답으로 반환. 정식 오픈 전 SMTP_* env 필수.
+        # ⚠️ dev 모드(베타): 발송이 안 되면 코드를 응답으로 반환. 정식 오픈 전 SMTP_* env 필수.
         out["dev_code"] = code
+        out["smtp"] = reason
     return out
 
 
