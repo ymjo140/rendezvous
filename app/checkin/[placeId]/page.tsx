@@ -5,14 +5,57 @@
 
 import React, { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { Check, MapPin, Users } from "lucide-react"
+import { Check, MapPin, Users, Minus, Plus, Clock, AlertCircle } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
-type Crew = { id: string; title: string; icon: string; members: number; visits: number; checked_today: boolean }
+type DealConditions = {
+  days?: string[] | null; time_from?: string | null; time_to?: string | null; min_party?: number | null
+}
+type Benefit = {
+  app_id: number; title: string; benefit: string; discount_pct: number | null
+  used_this_month: number; monthly_uses: number | null
+  conditions?: DealConditions
+}
+type Blocked = {
+  reason: "limit" | "expired" | "members" | "days" | "time" | "party"
+  title: string; monthly_uses?: number | null; max_members?: number | null
+  conditions?: DealConditions
+}
+type Crew = {
+  id: string; title: string; icon: string; members: number; visits: number; checked_today: boolean
+  partnership?: (Benefit & { blocked: string | null }) | null
+}
 type Ctx = {
   place: { id: number; name: string; category: string; address: string }
   logged_in: boolean
   crews: Crew[]
+}
+
+const DOW_KO: Record<string, string> = {
+  mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일",
+}
+
+/** 왜 혜택이 안 붙었는지 — 손님이 사장님께 따질 일이 없도록 사유를 정확히 말한다. */
+function blockedText(b: Blocked): string {
+  const c = b.conditions || {}
+  switch (b.reason) {
+    case "limit":
+      return `이번 달 한도(${b.monthly_uses}회)를 다 썼어요 · 다음 달 1일에 초기화돼요`
+    case "expired":
+      return "제휴 기간이 끝났어요 · 크루 제휴 관리에서 다시 신청할 수 있어요"
+    case "members":
+      return `크루 인원이 약속한 ${b.max_members}명을 넘었어요`
+    case "days": {
+      const d = (c.days || []).map((x) => DOW_KO[x] || x).join("·")
+      return `이 혜택은 ${d}요일에만 쓸 수 있어요`
+    }
+    case "time":
+      return `이 혜택은 ${c.time_from}~${c.time_to}에만 쓸 수 있어요`
+    case "party":
+      return `${c.min_party}명 이상일 때 쓸 수 있어요`
+    default:
+      return "지금은 혜택을 쓸 수 없어요"
+  }
 }
 
 export default function CheckinPage() {
@@ -22,7 +65,18 @@ export default function CheckinPage() {
   const [loading, setLoading] = useState(true)
   const [picked, setPicked] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<{ crew: Crew | null; visits: number; eligible: boolean } | null>(null)
+  const [partySize, setPartySize] = useState(2)
+  const [done, setDone] = useState<{
+    crew: Crew | null; visits: number; eligible: boolean
+    benefit: Benefit | null; blocked: Blocked | null; issuedAt: number
+  } | null>(null)
+  // 확인증은 5분만 유효 — 캡처해두고 나중에 다시 쓰는 걸 막는다
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    if (!done) return
+    const t = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [done])
 
   useEffect(() => {
     if (!params?.placeId) return
@@ -45,7 +99,9 @@ export default function CheckinPage() {
       const r = await fetchWithAuth("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ place_id: ctx.place.id, community_id: picked }),
+        body: JSON.stringify({
+          place_id: ctx.place.id, community_id: picked, party_size: partySize,
+        }),
       })
       if (r.status === 401) { router.push("/login"); return }
       const d = await r.json().catch(() => null)
@@ -54,6 +110,9 @@ export default function CheckinPage() {
         crew: ctx.crews.find((c) => c.id === picked) || null,
         visits: d?.crew_visits ?? 0,
         eligible: !!d?.eligible_now,
+        benefit: d?.benefit ?? null,
+        blocked: d?.benefit_blocked ?? null,
+        issuedAt: Date.now(),
       })
     } catch { /* ignore */ } finally { setBusy(false) }
   }
@@ -80,6 +139,57 @@ export default function CheckinPage() {
         </div>
         <h1 className="mt-4 text-[18px] font-bold text-slate-900">체크인 완료!</h1>
         <p className="mt-1 text-[13px] text-slate-500">{ctx.place.name}</p>
+
+        {/* 🎟 혜택 확인증 — 이 화면에서 가장 큰 요소. 사장님께 그대로 보여준다. */}
+        {done.benefit && (() => {
+          const leftMs = done.issuedAt + 5 * 60 * 1000 - nowMs
+          const expired = leftMs <= 0
+          const mm = Math.max(0, Math.floor(leftMs / 60000))
+          const ss = Math.max(0, Math.floor((leftMs % 60000) / 1000))
+          return (
+            <div className={`mt-6 overflow-hidden rounded-3xl border-2 text-left ${
+              expired ? "border-slate-200 bg-slate-50" : "border-[#F5A623] bg-amber-50"
+            }`}>
+              <div className="px-5 pt-5">
+                <p className={`text-[12px] font-semibold ${expired ? "text-slate-400" : "text-amber-700"}`}>
+                  {ctx.place.name}
+                </p>
+                <p className={`mt-1 text-[22px] font-extrabold leading-tight ${
+                  expired ? "text-slate-400" : "text-amber-900"
+                }`}>
+                  {done.benefit.benefit}
+                </p>
+                <p className={`mt-1.5 text-[12px] ${expired ? "text-slate-400" : "text-amber-700"}`}>
+                  {done.crew?.icon} {done.crew?.title}
+                  {done.benefit.monthly_uses != null && (
+                    <> · 이번 달 {done.benefit.used_this_month}/{done.benefit.monthly_uses}회</>
+                  )}
+                </p>
+              </div>
+              <div className={`mt-4 flex items-center gap-1.5 px-5 py-3 text-[11.5px] font-semibold ${
+                expired ? "bg-slate-100 text-slate-400" : "bg-[#F5A623] text-white"
+              }`}>
+                <Clock className="h-3.5 w-3.5" />
+                {expired ? (
+                  <>확인증이 만료됐어요 — 다시 체크인해주세요</>
+                ) : (
+                  <>사장님께 보여주세요 · {mm}:{String(ss).padStart(2, "0")} 남음</>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {done.blocked && (
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-left">
+            <div className="flex items-center gap-1.5">
+              <AlertCircle className="h-3.5 w-3.5 text-slate-400" />
+              <b className="text-[12.5px] font-bold text-slate-600">{done.blocked.title}</b>
+            </div>
+            <p className="mt-1 text-[11.5px] leading-relaxed text-slate-500">{blockedText(done.blocked)}</p>
+            <p className="mt-1.5 text-[11px] text-slate-400">방문 기록은 정상적으로 쌓였어요.</p>
+          </div>
+        )}
 
         {done.crew ? (
           <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-left">
@@ -167,6 +277,15 @@ export default function CheckinPage() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13.5px] font-semibold text-slate-900">{c.title}</span>
                   <span className="block text-[11px] text-slate-400">멤버 {c.members} · 함께 방문 {c.visits}회</span>
+                  {c.partnership && (
+                    <span className={`mt-1 inline-block rounded-md px-1.5 py-0.5 text-[10.5px] font-bold ${
+                      c.partnership.blocked
+                        ? "bg-slate-100 text-slate-400"
+                        : "bg-[#F5A623] text-white"
+                    }`}>
+                      {c.partnership.blocked ? "제휴 있음 (지금은 사용 불가)" : `🎟 ${c.partnership.benefit}`}
+                    </span>
+                  )}
                 </span>
                 <span className={`text-[18px] ${picked === c.id ? "text-[#F5A623]" : "text-slate-200"}`}>
                   {picked === c.id ? "✓" : "○"}
@@ -191,6 +310,34 @@ export default function CheckinPage() {
                 {picked === null ? "✓" : "○"}
               </span>
             </button>
+          </div>
+
+          {/* 몇 명인지 — 최소 인원 조건이 걸린 제휴가 있어서 필요하다 */}
+          <div className="mt-3 flex items-center gap-3 rounded-2xl border border-slate-100 p-3.5">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-50">
+              <Users className="h-5 w-5 text-slate-400" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13.5px] font-semibold text-slate-900">몇 명이서 왔나요?</span>
+              <span className="block text-[11px] text-slate-400">혜택 조건 확인에 쓰여요</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={() => setPartySize((n) => Math.max(1, n - 1))}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500"
+                aria-label="인원 줄이기"
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+              <b className="w-6 text-center text-[15px] font-bold text-slate-900">{partySize}</b>
+              <button
+                onClick={() => setPartySize((n) => Math.min(30, n + 1))}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500"
+                aria-label="인원 늘리기"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </span>
           </div>
 
           {already.length > 0 && (

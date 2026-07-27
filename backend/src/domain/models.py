@@ -351,6 +351,7 @@ class Review(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     place_name = Column(String, index=True)
+    place_id = Column(Integer, nullable=True, index=True)   # 이름만으로는 동명 가게가 섞인다
     rating = Column(Float)
     comment = Column(String, nullable=True)
     tags = Column(JSON, default=[])
@@ -417,6 +418,8 @@ class Reservation(Base):
     offer_rule_id = Column(Integer, nullable=True)  # 핫딜 예약이면 해당 offer_rule(수량 차감용)
     table_id = Column(Integer, nullable=True)       # 손님이 지정한 테이블(store_tables.id)
     table_label = Column(String, nullable=True)     # 지정 테이블 라벨 스냅샷(예: '창가 T1')
+    # 크루 예약이면 그 크루 — 체크인 때 크루를 다시 고르지 않아도 되고, 제휴가 자동으로 걸린다
+    community_id = Column(String, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class Campaign(Base):
@@ -957,4 +960,7 @@ class PlaceCheckin(Base):
     community_id = Column(String, nullable=True, index=True)   # 없으면 개인 방문
     party_size = Column(Integer, default=1)
     date = Column(String, index=True)                          # YYYY-MM-DD (KST)
+    # 이 방문에 적용된 제휴(crew_partnership_apps.id). 딜이 아니라 '성사 기록'을 가리킨다 —
+    # 계약 사본(terms_snapshot)이 거기 붙어 있어서 딜을 나중에 고쳐도 소급되지 않는다.
+    partnership_app_id = Column(Integer, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)

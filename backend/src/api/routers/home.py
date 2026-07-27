@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
+from services import visit_service
 from api.dependencies import get_current_user
 
 router = APIRouter()
@@ -1351,49 +1352,109 @@ def home_hot_deals(
 
 
 def _crew_visit_stats(db: Session, community_id: str) -> dict:
-    """크루의 '함께 방문' 통합 집계.
-
-    한 가지 소스(분담결제)만 세면 그냥 밥만 먹고 온 모임은 영원히 실적이 0이라
-    세 가지 증거를 모두 인정한다. 같은 가게·같은 날은 어느 경로든 1회로 친다.
-      · 분담결제 완료 — 가장 강한 증거(돈이 오감)
-      · QR 체크인 — 크루를 지정한 현장 방문
-      · 모임 방문 피드백 — 방문 후 '또 갈래요?' 응답
-    """
-    keys: set = set()          # (place_id or 이름, 날짜) — 중복 제거 키
-    by_source = {"split": 0, "checkin": 0, "feedback": 0}
-    amount = 0
-
-    for r in (
-        db.query(models.ChatSplitRequest)
-        .filter(models.ChatSplitRequest.room_id == community_id,
-                models.ChatSplitRequest.status == "completed").all()
-    ):
-        keys.add((r.place_id or r.place_name or "", r.date or ""))
-        by_source["split"] += 1
-        amount += int(r.total_amount or 0)
-
-    try:
-        for c in (
-            db.query(models.PlaceCheckin)
-            .filter(models.PlaceCheckin.community_id == community_id).all()
-        ):
-            keys.add((c.place_id, c.date or ""))
-            by_source["checkin"] += 1
-    except Exception:
-        pass  # 테이블 생성 전에도 죽지 않게
-
-    for f in (
-        db.query(models.PlaceVisitFeedback)
-        .filter(models.PlaceVisitFeedback.room_id == community_id).all()
-    ):
-        keys.add((f.place_id, f.created_at.strftime("%Y-%m-%d") if f.created_at else ""))
-        by_source["feedback"] += 1
-
-    return {"visits": len(keys), "amount": amount, "by_source": by_source}
+    """크루의 '함께 방문' — 사장님 콘솔과 같은 규칙을 쓰도록 공용 서비스에 위임."""
+    return visit_service.crew_visit_stats(db, community_id)
 
 
 def _crew_visits(db: Session, community_id: str) -> int:
-    return _crew_visit_stats(db, community_id)["visits"]
+    return visit_service.crew_visits(db, community_id)
+
+
+_DOW = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def _crew_deal_at(db: Session, place_id: int, community_id: str,
+                  party_size: Optional[int] = None) -> Optional[dict]:
+    """이 크루가 이 가게에서 지금 쓸 수 있는 제휴. 없으면 None.
+
+    조건 판정은 딜(crew_partnerships)이 아니라 수락 시점 사본(terms_snapshot)으로 한다.
+    사장님이 나중에 할인율을 낮춰도 이미 맺은 제휴는 그때 약속대로 간다.
+    """
+    if not community_id:
+        return None
+    deals = (db.query(models.CrewPartnership)
+             .filter(models.CrewPartnership.place_id == place_id,
+                     models.CrewPartnership.status == "active").all())
+    if not deals:
+        return None
+    app = (db.query(models.CrewPartnershipApp)
+           .filter(models.CrewPartnershipApp.partnership_id.in_([d.id for d in deals]),
+                   models.CrewPartnershipApp.community_id == str(community_id),
+                   models.CrewPartnershipApp.status == "approved")
+           .order_by(models.CrewPartnershipApp.decided_at.desc().nullslast()).first())
+    if app is None:
+        return None
+
+    deal = next((d for d in deals if d.id == app.partnership_id), None)
+    terms = dict(getattr(app, "terms_snapshot", None) or {})
+    cond = dict(terms.get("conditions") or (deal.conditions if deal else {}) or {})
+    now_ = datetime.now()
+    month = now_.strftime("%Y-%m")
+
+    monthly_uses = cond.get("monthly_uses")
+    used = visit_service.partnership_month_uses(db, app.id, month)
+    out = {
+        "app_id": app.id,
+        "title": terms.get("title") or (deal.title if deal else "제휴"),
+        "benefit": terms.get("benefit") or (deal.benefit if deal else ""),
+        "discount_pct": terms.get("discount_pct") if terms.get("discount_pct") is not None
+                        else (deal.discount_pct if deal else None),
+        "used_this_month": used,
+        "monthly_uses": monthly_uses,
+        "conditions": {
+            "days": cond.get("days"),
+            "time_from": cond.get("time_from"),
+            "time_to": cond.get("time_to"),
+            "min_party": cond.get("min_party"),
+        },
+        "blocked": None,
+    }
+
+    # 만료 — 스냅샷 기준(딜을 연장해도 이 제휴의 약속 기간은 그대로)
+    exp = terms.get("expires_at") or (deal.expires_at.isoformat() if deal and deal.expires_at else None)
+    if exp:
+        try:
+            if datetime.fromisoformat(exp) < now_:
+                out["blocked"] = "expired"
+                return out
+        except (TypeError, ValueError):
+            pass
+
+    # 인원 상한 — 크루가 약속보다 커졌으면 사장님이 감당하기로 한 범위를 넘는다
+    max_members = cond.get("max_members")
+    if max_members:
+        crew = db.query(models.Community).filter(models.Community.id == str(community_id)).first()
+        if crew is not None:
+            n = len(list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or []))))
+            if n > int(max_members):
+                out["blocked"] = "members"
+                out["max_members"] = int(max_members)
+                return out
+
+    # 요일 — 사장님이 한가한 날만 열어둔 경우
+    days = cond.get("days") or []
+    if days and _DOW[now_.weekday()] not in days:
+        out["blocked"] = "days"
+        return out
+
+    # 시간대 — 피크 타임을 피해 발행한 딜이 대부분이다
+    tf, tt = cond.get("time_from"), cond.get("time_to")
+    if tf and tt:
+        hm = now_.strftime("%H:%M")
+        inside = (tf <= hm < tt) if tf <= tt else (hm >= tf or hm < tt)   # 자정 넘김 허용
+        if not inside:
+            out["blocked"] = "time"
+            return out
+
+    # 최소 인원 — 체크인 시점에만 알 수 있다(조회 단계에서는 안내만)
+    min_party = cond.get("min_party")
+    if min_party and party_size is not None and int(party_size) < int(min_party):
+        out["blocked"] = "party"
+        return out
+
+    if monthly_uses and used >= int(monthly_uses):
+        out["blocked"] = "limit"
+    return out
 
 
 @router.get("/api/checkin/{place_id}")
@@ -1442,6 +1503,8 @@ def checkin_context(
             "members": len(members),
             "visits": st["visits"],
             "checked_today": c.id in done,
+            # 이 크루로 찍으면 어떤 혜택이 붙는지 미리 보여준다 — 크루를 고를 이유가 된다
+            "partnership": _crew_deal_at(db, place_id, c.id),
         })
     out["crews"].sort(key=lambda x: x["visits"], reverse=True)
     out["today"] = sorted(x for x in done if x)
@@ -1485,17 +1548,52 @@ def create_checkin(
     )
     if dup:
         stats = _crew_visit_stats(db, community_id) if community_id else {"visits": 0}
-        return {"id": dup.id, "already": True, "crew_visits": stats["visits"]}
+        prev = _crew_deal_at(db, place.id, community_id) if community_id else None
+        return {
+            "id": dup.id, "already": True, "crew_visits": stats["visits"],
+            # 오늘 이미 찍었어도 확인증은 다시 보여준다(계산할 때 다시 열어야 하므로)
+            "issued_at": datetime.now().isoformat(),
+            "benefit": prev if (prev and getattr(dup, "partnership_app_id", None)) else None,
+            "benefit_blocked": ({"reason": prev["blocked"], "title": prev["title"],
+                                 "monthly_uses": prev.get("monthly_uses"),
+                                 "max_members": prev.get("max_members"),
+                                 "conditions": prev.get("conditions")}
+                                if (prev and prev.get("blocked")) else None),
+        }
+
+    # 어떤 제휴가 붙는지는 서버가 정한다. 클라이언트가 보내면 한도를 우회할 수 있다.
+    party_size = int(req.get("party_size") or 1)
+    deal = _crew_deal_at(db, place.id, community_id, party_size) if community_id else None
+    apply_deal = deal is not None and deal.get("blocked") is None
 
     row = models.PlaceCheckin(
         place_id=place.id, user_id=user.id, community_id=community_id,
-        party_size=int(req.get("party_size") or 1), date=today,
+        party_size=party_size, date=today,
+        partnership_app_id=(deal["app_id"] if apply_deal else None),
     )
     db.add(row)
     db.commit()
     db.refresh(row)
 
-    result = {"id": row.id, "already": False, "crew_visits": 0, "eligible_now": False}
+    result = {
+        "id": row.id, "already": False, "crew_visits": 0, "eligible_now": False,
+        "issued_at": datetime.now().isoformat(),
+        "benefit": None, "benefit_blocked": None,
+    }
+    if deal is not None:
+        if apply_deal:
+            # 방금 이 체크인이 한 번을 쓴 것 — 화면에 3/4처럼 보이도록 다시 센다
+            deal["used_this_month"] = visit_service.partnership_month_uses(
+                db, deal["app_id"], datetime.now().strftime("%Y-%m"))
+            result["benefit"] = deal
+        else:
+            result["benefit_blocked"] = {
+                "reason": deal["blocked"],
+                "title": deal["title"],
+                "monthly_uses": deal.get("monthly_uses"),
+                "max_members": deal.get("max_members"),
+                "conditions": deal.get("conditions"),
+            }
     if community_id:
         crew = db.query(models.Community).filter(models.Community.id == str(community_id)).first()
         stats = _crew_visit_stats(db, community_id)
