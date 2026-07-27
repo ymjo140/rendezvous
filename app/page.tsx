@@ -210,17 +210,19 @@ export default function HomeNextPage() {
       })
         .then((r) => (r.ok ? r.json() : null))
         .then((regions: any) => {
-          homeCache.myPlaces = regions?.[0]?.places || []
+          const mine = regions?.[0]?.places || []
+          homeCache.myPlaces = mine
           saveHomeCache()
-          if (alive) setMyPlaces(homeCache.myPlaces)
+          if (alive) setMyPlaces(mine)
         })
         .catch(() => {})
       fetchWithAuth(`/api/home/hot-deals?lat=${lat}&lng=${lng}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((d: any) => {
-          homeCache.hotDeals = d?.items || []
+          const deals: HotDeal[] = d?.items || []
+          homeCache.hotDeals = deals
           saveHomeCache()
-          if (alive) setHotDeals(homeCache.hotDeals)
+          if (alive) setHotDeals(deals)
         })
         .catch(() => {})
     }
@@ -243,9 +245,10 @@ export default function HomeNextPage() {
     fetchWithAuth("/api/recommend/my-meetings?per_room=12")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
-        homeCache.crewPlaces = d?.places || []
+        const cps: CrewPlace[] = d?.places || []
+        homeCache.crewPlaces = cps
         saveHomeCache()
-        if (alive) setCrewPlaces(homeCache.crewPlaces)
+        if (alive) setCrewPlaces(cps)
       })
       .catch(() => {})
     return () => { alive = false }
