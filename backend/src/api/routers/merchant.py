@@ -1499,14 +1499,36 @@ def create_partnership(
     target = req.get("target") or "all"
     if target not in ("all", "university", "company"):
         raise HTTPException(status_code=400, detail="대상이 올바르지 않아요.")
+
+    # 기간 없는 제휴는 사실상 영구 할인이 된다 — 기본 3개월, 최대 12개월
+    from datetime import timedelta
+    months = req.get("duration_months")
+    try:
+        months = int(months) if months else 3
+    except (TypeError, ValueError):
+        months = 3
+    months = max(1, min(12, months))
+    expires_at = datetime.now() + timedelta(days=30 * months)
+
+    # 사장님이 감당할 범위를 정할 수 있어야 한다(예측 가능성)
+    conditions = dict(req.get("conditions") or {})
+    for key in ("max_members", "monthly_uses"):
+        v = req.get(key)
+        if v:
+            try:
+                conditions[key] = max(1, int(v))
+            except (TypeError, ValueError):
+                pass
+
     d = models.CrewPartnership(
         place_id=place.id,
         title=title[:60],
         benefit=benefit[:120],
         discount_pct=req.get("discount_pct"),
         target=target,
-        conditions=req.get("conditions") or {},
+        conditions=conditions,
         status="active",
+        expires_at=expires_at,
     )
     db.add(d)
     db.commit()
@@ -1548,6 +1570,8 @@ def decide_partnership_app(
     approve = bool(req.get("approve"))
     a.status = "approved" if approve else "rejected"
     a.decided_at = datetime.now()
+    if approve:
+        a.terms_snapshot = _terms_of(d)
     db.commit()
 
     crew = db.query(models.Community).filter(models.Community.id == a.community_id).first()
@@ -1565,6 +1589,18 @@ def decide_partnership_app(
                 "%s 제휴가 이번엔 성사되지 않았어요." % name,
                 data={"type": "partnership_rejected", "community_id": crew.id})
     return {"id": a.id, "status": a.status}
+
+
+def _terms_of(d) -> dict:
+    """수락 시점의 계약 내용 — 이후 딜이 수정돼도 이 사본이 기준이 된다."""
+    return {
+        "title": d.title,
+        "benefit": d.benefit,
+        "discount_pct": d.discount_pct,
+        "conditions": d.conditions or {},
+        "expires_at": d.expires_at.isoformat() if d.expires_at else None,
+        "agreed_at": datetime.now().isoformat(),
+    }
 
 
 def _notify_crew_members(crew, title: str, body: str, data: dict = None):

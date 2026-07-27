@@ -14,7 +14,7 @@ type Deal = {
   target: string; conditions: any; expires_at: string | null; store: Store
   app_id?: number; status?: string; direction?: string; message?: string | null
   created_at?: string; is_new?: boolean; days_left?: number | null; ended?: boolean
-  uses?: number; visits?: number
+  uses?: number; visits?: number; agreed_at?: string
 }
 type Summary = {
   crew: { id: string; title: string; icon: string; crew_type: string }
@@ -31,6 +31,8 @@ function condText(c: any): string {
   if (Array.isArray(c?.days) && c.days.length) parts.push(c.days.map((d: string) => DAY_LABEL[d] || d).join("·"))
   if (c?.time_from || c?.time_to) parts.push(`${c.time_from || ""}~${c.time_to || ""}`)
   if (c?.min_party) parts.push(`${c.min_party}인 이상`)
+  if (c?.max_members) parts.push(`크루 ${c.max_members}명까지`)
+  if (c?.monthly_uses) parts.push(`월 ${c.monthly_uses}회`)
   return parts.join(" · ")
 }
 
@@ -265,6 +267,7 @@ export default function CrewPartnershipsPage() {
                   <span className="text-[11px] text-slate-400">
                     우리 크루 {d.uses ?? 0}번 방문
                     {d.expires_at ? ` · ${d.expires_at.slice(0, 10)}까지` : ""}
+                    {d.agreed_at ? ` · ${d.agreed_at.slice(0, 10)} 합의` : ""}
                   </span>
                   <button
                     onClick={() => router.push(`/places/${d.store.place_id}`)}
@@ -384,6 +387,8 @@ export default function CrewPartnershipsPage() {
           <p className="text-[11.5px] leading-relaxed text-slate-500">
             제휴는 크루 단위로 맺어요. 승인되면 멤버 누구나 가게에서 혜택을 쓸 수 있고,
             우리 크루가 자주 간 가게일수록 제안이 잘 들어와요.
+            <br />
+            성사된 제휴는 <b className="font-semibold text-slate-600">수락한 시점의 조건</b>이 기간이 끝날 때까지 그대로 유지돼요.
           </p>
         </div>
       </div>

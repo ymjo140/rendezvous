@@ -1366,14 +1366,19 @@ def crew_partnership_summary(
         .filter(models.CrewPartnership.id.in_(app_deal_ids)).all()
     } if app_deal_ids else {}
 
+    now_ = datetime.now()
+    now = now_
     # 신청 가능 후보 — 활성 딜 중 이미 관계가 없는 것
-    open_deals = (
-        db.query(models.CrewPartnership)
-        .filter(models.CrewPartnership.status == "active")
-        .order_by(models.CrewPartnership.created_at.desc())
-        .limit(60)
-        .all()
-    )
+    open_deals = [
+        d for d in (
+            db.query(models.CrewPartnership)
+            .filter(models.CrewPartnership.status == "active")
+            .order_by(models.CrewPartnership.created_at.desc())
+            .limit(60)
+            .all()
+        )
+        if d.expires_at is None or d.expires_at > now_
+    ]
     related = {a.partnership_id for a in apps if a.status in ("pending", "approved")}
     pids = list({d.place_id for d in open_deals} | {d.place_id for d in deals_by_id.values()})
     places = {p.id: p for p in db.query(models.Place).filter(models.Place.id.in_(pids)).all()} if pids else {}
@@ -1390,7 +1395,6 @@ def crew_partnership_summary(
         .all()
     )
 
-    now = datetime.now()
     invites, active, pending, past = [], [], [], []
     for a in apps:
         d = deals_by_id.get(a.partnership_id)
@@ -1406,9 +1410,24 @@ def crew_partnership_summary(
             "is_new": getattr(a, "seen_at", None) is None,
         })
         if a.status == "approved":
+            snap = getattr(a, "terms_snapshot", None) or {}
+            if snap:
+                # 수락 당시 조건이 계약 내용 — 딜이 나중에 바뀌어도 여기 표시는 고정
+                item["benefit"] = snap.get("benefit", item["benefit"])
+                item["discount_pct"] = snap.get("discount_pct", item["discount_pct"])
+                item["conditions"] = snap.get("conditions", item["conditions"])
+                item["agreed_at"] = snap.get("agreed_at")
+                if snap.get("expires_at"):
+                    item["expires_at"] = snap["expires_at"]
             days_left = None
-            if d.expires_at:
-                days_left = max(0, (d.expires_at - now).days)
+            exp = d.expires_at
+            if snap.get("expires_at"):
+                try:
+                    exp = datetime.fromisoformat(snap["expires_at"])
+                except ValueError:
+                    pass
+            if exp:
+                days_left = max(0, (exp - now).days)
             item["days_left"] = days_left
             item["ended"] = d.status != "active"
             item["uses"] = int(visited.get(d.place_id, 0))
@@ -1471,6 +1490,14 @@ def respond_crew_invite(
     crew = db.query(models.Community).filter(models.Community.id == a.community_id).first()
     if crew is not None and action == "accept":
         d = db.query(models.CrewPartnership).filter(models.CrewPartnership.id == a.partnership_id).first()
+        if d is not None:
+            a.terms_snapshot = {
+                "title": d.title, "benefit": d.benefit, "discount_pct": d.discount_pct,
+                "conditions": d.conditions or {},
+                "expires_at": d.expires_at.isoformat() if d.expires_at else None,
+                "agreed_at": datetime.now().isoformat(),
+            }
+            db.commit()
         place = db.query(models.Place).filter(models.Place.id == d.place_id).first() if d else None
         _notify_crew(
             crew,
@@ -1532,13 +1559,16 @@ def crew_deals(
     db: Session = Depends(get_db),
 ):
     """활성 제휴 딜 목록. community_id를 주면 그 크루의 자격·대상 매칭·신청 상태 포함."""
-    deals = (
-        db.query(models.CrewPartnership)
-        .filter(models.CrewPartnership.status == "active")
-        .order_by(models.CrewPartnership.created_at.desc())
-        .limit(50)
-        .all()
-    )
+    deals = [
+        d for d in (
+            db.query(models.CrewPartnership)
+            .filter(models.CrewPartnership.status == "active")
+            .order_by(models.CrewPartnership.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        if d.expires_at is None or d.expires_at > datetime.now()
+    ]
     pids = [d.place_id for d in deals]
     places = {p.id: p for p in db.query(models.Place).filter(models.Place.id.in_(pids)).all()} if pids else {}
 
@@ -1615,6 +1645,14 @@ def apply_crew_deal(
         raise HTTPException(status_code=403, detail={"code": "not_eligible", "need": "멤버 3명+ · 함께 방문 3회+ 또는 소속 인증"})
     if d.target in ("university", "company") and getattr(crew, "crew_type", None) != d.target:
         raise HTTPException(status_code=403, detail="이 딜의 대상 크루 종류가 아니에요.")
+    if d.expires_at is not None and d.expires_at <= datetime.now():
+        raise HTTPException(status_code=400, detail="기간이 끝난 제휴예요.")
+    cap = (d.conditions or {}).get("max_members")
+    if cap and len(members) > int(cap):
+        raise HTTPException(
+            status_code=403,
+            detail="이 제휴는 %s명까지예요. (우리 크루 %d명)" % (cap, len(members)),
+        )
 
     exists = (
         db.query(models.CrewPartnershipApp)

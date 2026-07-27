@@ -938,6 +938,8 @@ class CrewPartnershipApp(Base):
     # 결정권자가 다름 — crew_apply는 가게가, store_invite는 크루가 수락/거절
     direction = Column(String, default="crew_apply", index=True)
     seen_at = Column(DateTime, nullable=True)         # 크루가 제휴 관리 화면에서 확인한 시각(느낌표 해제)
+    # 수락 시점의 혜택·조건·기간을 굳힌 사본. 딜을 나중에 고쳐도 기존 제휴에 소급되지 않는다.
+    terms_snapshot = Column(JSON, default={})
     created_at = Column(DateTime, default=datetime.now)
     decided_at = Column(DateTime, nullable=True)
     __table_args__ = (UniqueConstraint("partnership_id", "community_id", name="uq_partnership_app"),)
