@@ -14,12 +14,51 @@ import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "./tab-bar"
 
 const BRAND = "#F5A623"   // 가게·혜택 축
-// 뒤로가기 재진입마다 홈 API 4개를 다시 부르면 빈 화면부터 다시 시작한다.
-// 마지막 응답을 들고 있다가 즉시 그리고, 뒤에서 조용히 갱신한다(stale-while-revalidate).
-const homeCache: {
+// 홈 API 4개 중 feed 하나가 1.4초쯤 걸린다. 쿼리를 줄이는 대신, 직전 응답을 들고 있다가
+// 먼저 그리고 뒤에서 조용히 갱신한다(stale-while-revalidate). 모듈 스코프는 같은 세션의
+// 뒤로가기를, localStorage는 앱을 새로 연 경우를 덮는다.
+type HomeCache = {
   feed?: Feed; hotDeals?: HotDeal[]; crewPlaces?: CrewPlace[]; myPlaces?: CrewPlace[]
   coords?: { lat: number; lng: number }
-} = {}
+}
+const homeCache: HomeCache = {}
+
+const CACHE_KEY = "home:v1"
+const CACHE_TTL = 30 * 60 * 1000
+
+/** 캐시는 계정에 묶인다 — 로그아웃/계정 전환 뒤 남의 홈이 잠깐 보이면 안 된다. */
+const cacheOwner = () => {
+  try { return (localStorage.getItem("token") || "guest").slice(-16) } catch { return "guest" }
+}
+
+/** 저장된 홈 화면을 꺼내 homeCache에 채운다. 성공하면 true. */
+function loadHomeCache(): boolean {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return false
+    const p = JSON.parse(raw)
+    if (p.owner !== cacheOwner() || Date.now() - (p.at || 0) > CACHE_TTL) return false
+    Object.assign(homeCache, p.data || {})
+    // 남은 시간은 저장 시점 기준이라 그대로 쓰면 과장된다 — 흐른 만큼 깎고 끝난 건 버린다
+    const ageMin = Math.floor((Date.now() - (p.at || 0)) / 60000)
+    if (ageMin > 0 && homeCache.hotDeals) {
+      homeCache.hotDeals = homeCache.hotDeals
+        .map((d) => ({ ...d, remain_min: d.remain_min - ageMin }))
+        .filter((d) => d.remain_min > 0)
+    }
+    return !!homeCache.feed
+  } catch { return false }
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+function saveHomeCache() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ owner: cacheOwner(), at: Date.now(), data: homeCache }))
+    } catch { /* 용량 초과 등 — 캐시는 없어도 동작한다 */ }
+  }, 300)
+}
 
 const CREW = "#5B5BD6"    // 사람·크루 축 — 가게 카드와 한눈에 구분되도록 쿨톤
 
@@ -142,12 +181,23 @@ export default function HomeNextPage() {
   const [placeResults, setPlaceResults] = useState<PlaceHit[] | null>(null)
   const [filterLoading, setFilterLoading] = useState(false)
 
+  // 저장된 홈이 있으면 먼저 그린다 — 서버 렌더와 어긋나지 않게 마운트 직후에만.
+  useEffect(() => {
+    if (homeCache.feed || !loadHomeCache()) return
+    setFeed(homeCache.feed!)
+    setFeedReady(true)
+    if (homeCache.hotDeals) setHotDeals(homeCache.hotDeals)
+    if (homeCache.crewPlaces) setCrewPlaces(homeCache.crewPlaces)
+    if (homeCache.myPlaces) setMyPlaces(homeCache.myPlaces)
+  }, [])
+
   useEffect(() => {
     let alive = true
     fetchWithAuth("/api/home/feed")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
         if (d) homeCache.feed = d
+        saveHomeCache()
         if (alive && d) setFeed(d)
       })
       .finally(() => { if (alive) setFeedReady(true) })
@@ -161,6 +211,7 @@ export default function HomeNextPage() {
         .then((r) => (r.ok ? r.json() : null))
         .then((regions: any) => {
           homeCache.myPlaces = regions?.[0]?.places || []
+          saveHomeCache()
           if (alive) setMyPlaces(homeCache.myPlaces)
         })
         .catch(() => {})
@@ -168,12 +219,14 @@ export default function HomeNextPage() {
         .then((r) => (r.ok ? r.json() : null))
         .then((d: any) => {
           homeCache.hotDeals = d?.items || []
+          saveHomeCache()
           if (alive) setHotDeals(homeCache.hotDeals)
         })
         .catch(() => {})
     }
     const useCoords = (lat: number, lng: number) => {
       homeCache.coords = { lat, lng }
+      saveHomeCache()
       loadMine(lat, lng)
     }
     if (homeCache.coords) {
@@ -191,6 +244,7 @@ export default function HomeNextPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
         homeCache.crewPlaces = d?.places || []
+        saveHomeCache()
         if (alive) setCrewPlaces(homeCache.crewPlaces)
       })
       .catch(() => {})
@@ -398,6 +452,27 @@ export default function HomeNextPage() {
           </div>
         )}
       </div>
+
+      {/* 캐시가 없는 첫 진입 — feed가 1.4초쯤 걸리는 동안 빈 화면 대신 자리를 잡아둔다.
+          레이아웃이 미리 서 있으면 내용이 채워질 때 화면이 튀지 않는다. */}
+      {!feedReady && filterCount === 0 && (
+        <div className="animate-pulse px-4 pt-4">
+          <div className="mb-2 h-3.5 w-28 rounded bg-gray-100" />
+          <div className="flex gap-2 overflow-hidden">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="w-[168px] shrink-0 overflow-hidden rounded-2xl border border-gray-100">
+                <div className="h-[84px] w-full bg-gray-100" />
+                <div className="space-y-1.5 p-2.5">
+                  <div className="h-3 w-3/4 rounded bg-gray-100" />
+                  <div className="h-2.5 w-1/2 rounded bg-gray-100" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mb-2 mt-5 h-3.5 w-32 rounded bg-gray-100" />
+          <div className="h-[132px] rounded-2xl border border-gray-100 bg-gray-50" />
+        </div>
+      )}
 
       {/* ①-b 크루가 없는 사람에게 — 이 앱의 핵심 행동은 '크루 만들기'다.
           데이터가 없으면 아래 섹션이 전부 비므로 여기서 다음 행동을 준다. */}
