@@ -838,9 +838,19 @@ def _send_verify_email(to_email: str, code: str) -> bool:
         user_ = os.getenv("SMTP_USER", "")
         pw = os.getenv("SMTP_PASS", "")
         sender = os.getenv("SMTP_FROM", user_)
-        msg = MIMEText(f"랑데부 소속 인증 코드: {code}\n10분 안에 입력해주세요.")
-        msg["Subject"] = f"[랑데부] 인증 코드 {code}"
-        msg["From"] = sender
+        from email.header import Header
+        from email.utils import formataddr
+
+        body = (
+            f"랑데부 소속 인증 코드는 {code} 입니다."
+            "\n\n앱으로 돌아가 10분 안에 입력해주세요."
+            "\n본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다."
+            "\n\n— 랑데부"
+        )
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = Header(f"[랑데부] 인증 코드 {code}", "utf-8")
+        # 표시명을 붙여야 수신함에 계정 아이디가 그대로 노출되지 않는다
+        msg["From"] = formataddr((str(Header("랑데부", "utf-8")), sender))
         msg["To"] = to_email
         with smtplib.SMTP(host, port, timeout=10) as sv:
             sv.starttls()
