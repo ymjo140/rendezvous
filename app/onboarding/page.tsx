@@ -83,7 +83,7 @@ export default function OnboardingPage() {
     else setList([...list, item])
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (dest: string = "/") => {
     if (selectedFoods.length === 0) return alert("선호 음식은 최소 1개 선택해주세요.")
 
     setLoading(true)
@@ -114,8 +114,7 @@ export default function OnboardingPage() {
         body: JSON.stringify(payload)
       })
       if (res.ok) {
-        alert("설정이 완료되었습니다! 🎉")
-        router.push("/")
+        router.push(dest)
       } else {
         alert("저장 중 오류가 발생했습니다.")
       }
@@ -274,16 +273,63 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      <Button className="w-full h-14 rounded-xl bg-gradient-to-r from-[#F5A623] to-[#14B8A6] text-white font-bold text-lg shadow-lg mt-6" onClick={handleSubmit} disabled={loading}>
-        {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : "랑데부 시작하기! 🚀"}
+      <Button className="w-full h-14 rounded-xl bg-gradient-to-r from-[#F5A623] to-[#14B8A6] text-white font-bold text-lg shadow-lg mt-6" onClick={() => setStep(4)}>
+        다음
       </Button>
+    </div>
+  )
+
+  // 4단계 — 이 앱의 핵심 행동은 '크루 만들기'인데 온보딩이 한 번도 언급하지 않았다.
+  const renderStep4 = () => (
+    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5">
+        <p className="text-[13px] font-bold text-indigo-600">크루가 뭔가요?</p>
+        <p className="mt-1.5 text-[15px] font-bold leading-snug text-gray-900">
+          같이 먹는 사람들과 만드는<br />우리만의 맛집 지도예요
+        </p>
+        <p className="mt-2 text-[12.5px] leading-relaxed text-gray-500">
+          동아리·회사 팀·친구 모임 단위로 만들어요. 혼자 저장한 맛집은 나에게만 남지만,
+          크루에 쌓으면 멤버 전원이 함께 씁니다.
+        </p>
+      </div>
+
+      <div className="space-y-2.5">
+        {[
+          ["🍜", "우리 취향으로 추천받아요", "크루의 저장·재방문 기록으로 '우리 모임에 맞는 곳'을 골라줘요"],
+          ["📥", "함께 방문이 기록돼요", "가게 QR을 찍으면 '같이 왔다'가 크루 실적으로 쌓여요"],
+          ["🤝", "가게와 제휴를 맺어요", "방문이 쌓이면 사장님이 우리 크루에게 단체 혜택을 제안해요"],
+        ].map(([emoji, title, desc]) => (
+          <div key={title} className="flex gap-3 rounded-2xl border border-gray-100 p-3.5">
+            <span className="text-xl">{emoji}</span>
+            <div className="min-w-0">
+              <p className="text-[13.5px] font-bold text-gray-900">{title}</p>
+              <p className="mt-0.5 text-[12px] leading-relaxed text-gray-500">{desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Button
+        className="w-full h-14 rounded-xl bg-gradient-to-r from-[#F5A623] to-[#14B8A6] text-white font-bold text-lg shadow-lg"
+        onClick={() => handleSubmit("/crew-new")}
+        disabled={loading}
+      >
+        {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : "우리 크루 만들기 🚀"}
+      </Button>
+      <button
+        onClick={() => handleSubmit("/")}
+        disabled={loading}
+        className="w-full py-2 text-[13px] font-semibold text-gray-400 disabled:opacity-50"
+      >
+        나중에 할게요
+      </button>
     </div>
   )
 
   return (
     <div className="flex min-h-screen flex-col bg-white font-['Pretendard']">
       <div className="w-full h-1 bg-gray-100 fixed top-0 left-0 z-10">
-        <div className="h-full bg-[#F5A623] transition-all duration-500" style={{ width: `${(step / 3) * 100}%` }}></div>
+        <div className="h-full bg-[#F5A623] transition-all duration-500" style={{ width: `${(step / 4) * 100}%` }}></div>
       </div>
 
       <div className="p-6 mt-4 flex-1 overflow-y-auto">
@@ -307,13 +353,24 @@ export default function OnboardingPage() {
                 <span className="block">취향을 알려주세요</span>
               </>
             )}
+            {step === 4 && (
+              <>
+                마지막이에요
+                <span className="block">누구와 함께 드시나요?</span>
+              </>
+            )}
           </h1>
-          <p className="text-sm text-gray-500">AI가 입력하신 정보를 바탕으로 맞춤 추천을 제공합니다.</p>
+          <p className="text-sm text-gray-500">
+            {step === 4
+              ? "크루를 만들면 우리 모임에 맞는 가게를 추천받고, 가게와 제휴도 맺을 수 있어요."
+              : "AI가 입력하신 정보를 바탕으로 맞춤 추천을 제공합니다."}
+          </p>
         </div>
 
         {step === 1 && renderStep1()}
         {step === 2 && renderStep2()}
         {step === 3 && renderStep3()}
+        {step === 4 && renderStep4()}
       </div>
     </div>
   )
