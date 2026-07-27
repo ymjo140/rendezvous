@@ -65,7 +65,7 @@ export default function CrewProfilePage() {
       }
       if (res.ok) {
         // 합류 성공 — 멤버 시점으로 다시 로드
-        window.location.href = `/home-next/crew/${params.cid}?joined=1`
+        window.location.href = `/crew/${params.cid}?joined=1`
       }
     } catch { /* ignore */ } finally { setJoinBusy(false) }
   }
@@ -255,7 +255,7 @@ export default function CrewProfilePage() {
           {crew.is_member && (
             <div className="mt-5 px-4">
               <button
-                onClick={() => router.push(`/home-next/crew/${crew.id}/partnerships`)}
+                onClick={() => router.push(`/crew/${crew.id}/partnerships`)}
                 className="flex w-full items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-3.5 text-left"
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-lg">🤝</span>

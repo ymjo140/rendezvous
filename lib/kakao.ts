@@ -148,7 +148,7 @@ export async function shareCrewInvite(opts: {
   icon?: string
   memberCount?: number
 }): Promise<{ result: ShareResult; url: string }> {
-  const url = `${appOrigin()}/home-next/crew/${opts.crewId}?invite=1`
+  const url = `${appOrigin()}/crew/${opts.crewId}?invite=1`
   const title = `${opts.icon || "🍽️"} ${opts.crewTitle} 크루 초대장`
   const desc = `우리 크루에서 맛집 리스트를 함께 쌓아요! 멤버 ${opts.memberCount || 1}명이 기다리고 있어요.`
 

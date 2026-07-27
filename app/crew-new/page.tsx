@@ -88,7 +88,7 @@ export default function CrewNewPage() {
         throw new Error(typeof d?.detail === "string" ? d.detail : "크루를 만들지 못했어요.")
       }
       const d = await res.json()
-      router.push(`/home-next/crew/${d.id}?created=1`)
+      router.push(`/crew/${d.id}?created=1`)
     } catch (e: any) {
       setError(e?.message || "크루를 만들지 못했어요. 로그인 상태를 확인해주세요.")
       setBusy(false)

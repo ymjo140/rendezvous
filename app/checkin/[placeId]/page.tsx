@@ -102,7 +102,7 @@ export default function CheckinPage() {
               </p>
             )}
             <button
-              onClick={() => router.push(`/home-next/crew/${done.crew!.id}/partnerships`)}
+              onClick={() => router.push(`/crew/${done.crew!.id}/partnerships`)}
               className="mt-3 w-full rounded-xl bg-[#F5A623] py-2.5 text-[12.5px] font-bold text-white"
             >
               제휴 관리 보기
@@ -112,7 +112,7 @@ export default function CheckinPage() {
           <p className="mt-6 text-[12.5px] text-slate-500">개인 방문으로 기록했어요.</p>
         )}
 
-        <button onClick={() => router.push("/home-next")} className="mt-4 text-[12.5px] font-semibold text-slate-400">
+        <button onClick={() => router.push("/")} className="mt-4 text-[12.5px] font-semibold text-slate-400">
           홈으로
         </button>
       </div>
@@ -208,7 +208,7 @@ export default function CheckinPage() {
                 친구·동아리와 크루를 만들면 함께 방문이 쌓이고, 이 가게와 제휴도 맺을 수 있어요.
               </p>
               <button
-                onClick={() => router.push("/home-next/crew-new")}
+                onClick={() => router.push("/crew-new")}
                 className="mt-2 text-[12px] font-bold text-[#F5A623]"
               >
                 크루 만들기 →

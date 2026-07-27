@@ -200,7 +200,7 @@ function GroupStrip({ crewMode }: { crewMode?: boolean }) {
                     <span className="text-[11px]">👥</span>
                     <span className="font-bold text-gray-800 text-[11px]">{crewMode ? "인기 크루" : "인기 모임"}</span>
                 </div>
-                <button onClick={() => router.push(crewMode ? "/home-next/crews" : "/groups")} className="text-[10px] font-medium text-amber-600 flex items-center">
+                <button onClick={() => router.push(crewMode ? "/crews" : "/groups")} className="text-[10px] font-medium text-amber-600 flex items-center">
                     전체 <ChevronRight className="w-3 h-3" />
                 </button>
             </div>
@@ -208,7 +208,7 @@ function GroupStrip({ crewMode }: { crewMode?: boolean }) {
                 {items.map((g) => (
                     <button
                         key={g.community_id}
-                        onClick={() => router.push(crewMode ? `/home-next/crew/${g.community_id}` : `/groups/${g.community_id}`)}
+                        onClick={() => router.push(crewMode ? `/crew/${g.community_id}` : `/groups/${g.community_id}`)}
                         className="flex-shrink-0 flex items-center gap-1 bg-white border border-amber-100 rounded-full px-2 py-1 transition-colors hover:bg-amber-50"
                     >
                         <span className={`text-[10px] font-extrabold ${g.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>{g.rank}</span>

@@ -23,30 +23,33 @@
 [B2B 콘솔]   사장님용 별도 저장소 (rendezvous-merchant: 단골 CRM·핫딜·예약)
 ```
 
-## 코드 구조 — v1과 v2가 공존합니다
+## 코드 구조
 
-현재 **리디자인 진행 중**이라 두 세대의 홈이 한 코드베이스에 있습니다:
+2026-07-26 라우트 스왑으로 **v2(크루·제휴 중심)가 메인**이 되었습니다.
 
-| | 위치 | 상태 |
+| | 위치 | 라우트 |
 |---|---|---|
-| **v1 (기존)** | `app/page.tsx` (탭 SPA) + `components/ui/*-tab.tsx` | 프로덕션 (`/`) |
-| **v2 (리디자인)** | `app/home-next/**` | `redesign/group-home` 브랜치, `/home-next` 라우트로 격리 |
+| **메인 (v2)** | `app/page.tsx` + `app/{crews,crew,map,feed,profile,chats,...}` | `/` |
+| **구버전 (v1)** | `app/v1/page.tsx` + `components/ui/*-tab.tsx` | `/v1` (링크 없음, 비교용) |
 
-v2가 확정되면 홈 라우트를 스왑할 예정입니다. 리디자인의 전략·결정 기록은 [`docs/redesign-group-home.md`](docs/redesign-group-home.md) 참고.
+구 `/home-next/**` 링크(카톡으로 나간 크루 초대 링크 등)는
+`app/home-next/[[...rest]]`가 같은 경로의 루트로 리다이렉트합니다.
+리디자인의 전략·결정 기록은 [`docs/redesign-group-home.md`](docs/redesign-group-home.md) 참고.
 
 ### 주요 디렉토리
 
 ```
 app/
-  page.tsx              # v1 홈 (탭 SPA: 지도·채팅·장소추천·탐색·마이페이지)
-  home-next/            # v2 홈 (크루·리스트 중심) ← 리뷰 대상의 중심
-    page.tsx            #   홈: 필터 시트 → 랭킹 → 크루/개인 추천 → 리스트 섹션
-    crew-new/           #   크루 만들기 3스텝
-    crew/[cid]/         #   크루 프로필 (방문 인증 배지·초대·합류)
-    crews/              #   내 크루 탭 (방문·지출 집계)
-    search/  browse/    #   검색·전체보기
-    chats/              #   채팅 (기존 ChatTab 편입, ?room= 딥링크)
-    map/ feed/ profile/ #   기존 탭 컴포넌트 편입 래퍼
+  page.tsx              # 메인 홈: 필터 시트 → 핫딜(실시간 빈자리) → 크루/개인 추천 → 리스트 섹션
+  crews/                #   내 크루 (함께 방문·누적 지출·제휴 관리)
+  crew/[cid]/           #   크루 프로필 (방문 인증 배지·초대·합류)
+  crew/[cid]/partnerships/  #   제휴 관리 (받은 제안·제휴 중·신청 중·신청 가능)
+  crew-new/             #   크루 만들기 3스텝
+  map/ feed/ profile/   #   지도·탐색·프로필 (기존 탭 컴포넌트 편입)
+  chats/                #   채팅 (?room= 딥링크)
+  search/  browse/      #   검색·전체보기
+  checkin/[placeId]/    # 가게 QR 체크인 → 크루 선택 → 함께 방문 적립
+  v1/                   # 구버전 홈 (탭 SPA: 지도·채팅·장소추천·탐색·마이페이지)
   lists/[listId]/       # 공개 리스트 상세 (내 폴더/크루에 담기)
   places/[placeId]/     # 장소 상세
 backend/src/

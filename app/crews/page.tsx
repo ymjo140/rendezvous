@@ -67,7 +67,7 @@ export default function CrewsTabPage() {
                 : "로그인하면 내 크루를 만들고 관리할 수 있어요."}
             </p>
             <button
-              onClick={() => router.push(loggedIn ? "/home-next/crew-new" : "/login")}
+              onClick={() => router.push(loggedIn ? "/crew-new" : "/login")}
               className="mt-4 inline-flex items-center gap-1.5 rounded-2xl bg-[#F5A623] px-5 py-3 text-[14px] font-semibold text-white"
             >
               <Plus className="h-4 w-4" />{loggedIn ? "우리 크루 만들기" : "로그인하기"}
@@ -78,7 +78,7 @@ export default function CrewsTabPage() {
             {mine.map((c) => (
               <div key={c.id} className="rounded-2xl border border-slate-100 p-3.5">
                 <button
-                  onClick={() => router.push(`/home-next/crew/${c.id}`)}
+                  onClick={() => router.push(`/crew/${c.id}`)}
                   className="flex w-full items-center gap-3 text-left"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-2xl">{c.icon}</span>
@@ -96,7 +96,7 @@ export default function CrewsTabPage() {
                 {/* 💬 크루 채팅 + 💌 초대 */}
                 <div className="mt-2 flex gap-2">
                   <button
-                    onClick={() => router.push(`/home-next/chats?room=${c.id}`)}
+                    onClick={() => router.push(`/chats?room=${c.id}`)}
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-amber-50 py-2 text-[12px] font-semibold text-amber-700"
                   >
                     <MessageCircle className="h-3.5 w-3.5" />크루 채팅
@@ -123,7 +123,7 @@ export default function CrewsTabPage() {
                     <div className="text-[10px] text-slate-400">누적 지출</div>
                   </div>
                   <button
-                    onClick={() => router.push(`/home-next/crew/${c.id}/partnerships`)}
+                    onClick={() => router.push(`/crew/${c.id}/partnerships`)}
                     className="relative rounded-xl bg-slate-50 py-2 text-center"
                   >
                     {/* 느낌표 = 새 제안이 왔거나 신청이 승인됨 — 궁금해서 눌러보게 */}
@@ -151,7 +151,7 @@ export default function CrewsTabPage() {
               </div>
             ))}
             <button
-              onClick={() => router.push("/home-next/crew-new")}
+              onClick={() => router.push("/crew-new")}
               className="flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 py-3.5 text-[13px] font-semibold text-amber-700"
             >
               <Plus className="h-4 w-4" />크루 추가하기
@@ -170,7 +170,7 @@ export default function CrewsTabPage() {
             {suggest.map((c) => (
               <button
                 key={c.id}
-                onClick={() => router.push(`/home-next/crew/${c.id}`)}
+                onClick={() => router.push(`/crew/${c.id}`)}
                 className="flex w-full items-center gap-3 rounded-2xl bg-slate-50 p-3 text-left"
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-xl">{c.icon}</span>

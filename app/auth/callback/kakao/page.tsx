@@ -67,7 +67,7 @@ function KakaoCallbackContent() {
               if (!user.location_name || user.location_name === "위치 미설정" || user.name.startsWith("User_")) {
                 router.push("/onboarding")
               } else if (joinedCrew) {
-                router.push(`/home-next/crew/${joinedCrew}?joined=1`)
+                router.push(`/crew/${joinedCrew}?joined=1`)
               } else {
                 router.push("/")
               }

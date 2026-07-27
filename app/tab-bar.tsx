@@ -15,11 +15,11 @@ export function TabBar() {
   const pathname = usePathname()
 
   const tabs = [
-    { key: "home", label: "홈", icon: Compass, path: "/home-next", exact: true },
-    { key: "map", label: "지도", icon: Map, path: "/home-next/map" },
-    { key: "feed", label: "탐색", icon: LayoutGrid, path: "/home-next/feed" },
-    { key: "crews", label: "내 크루", icon: Users, path: "/home-next/crews" },
-    { key: "profile", label: "프로필", icon: User, path: "/home-next/profile" },
+    { key: "home", label: "홈", icon: Compass, path: "/", exact: true },
+    { key: "map", label: "지도", icon: Map, path: "/map" },
+    { key: "feed", label: "탐색", icon: LayoutGrid, path: "/feed" },
+    { key: "crews", label: "내 크루", icon: Users, path: "/crews" },
+    { key: "profile", label: "프로필", icon: User, path: "/profile" },
   ]
 
   return (
