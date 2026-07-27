@@ -40,6 +40,7 @@ export function VerifySheet({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
   const [devNote, setDevNote] = useState(false)
+  const [smtpNote, setSmtpNote] = useState<string | null>(null)
   const [orgName, setOrgName] = useState<string | null>(null)
 
   const request = async () => {
@@ -53,7 +54,7 @@ export function VerifySheet({
       const d = await res.json()
       if (!res.ok) { setErr(typeof d?.detail === "string" ? d.detail : "요청에 실패했어요."); return }
       setOrgName(d.org_name || null)
-      if (d.dev_code) { setCode(d.dev_code); setDevNote(true) }
+      if (d.dev_code) { setCode(d.dev_code); setDevNote(true); setSmtpNote(d.smtp || null) }
       setStep("code")
     } catch { setErr("네트워크 오류 — 잠시 후 다시 시도해주세요.") } finally { setBusy(false) }
   }
@@ -117,6 +118,9 @@ export function VerifySheet({
             {devNote && (
               <p className="mt-1.5 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[11px] text-blue-600">
                 베타 기간이라 코드가 자동 입력됐어요. (정식 오픈 시 이메일로 발송됩니다)
+                {smtpNote && smtpNote !== "off" && (
+                  <span className="mt-1 block break-all text-[10px] text-rose-500">메일 발송 실패 — {smtpNote}</span>
+                )}
               </p>
             )}
             <input

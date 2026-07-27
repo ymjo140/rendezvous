@@ -825,32 +825,91 @@ def _org_name_for(kind: str, domain: str) -> str:
     return domain
 
 
-def _send_verify_email(to_email: str, code: str):
-    """(성공여부, 사유) — 'off'=SMTP 미설정, 'error: ...'=발송 실패.
-    둘을 구분해야 env를 안 넣은 건지, 넣었는데 실패한 건지 알 수 있다."""
+def _mail_subject_body(code: str):
+    return (
+        "[랑데부] 인증 코드 %s" % code,
+        "랑데부 소속 인증 코드는 %s 입니다."
+        "\n\n앱으로 돌아가 10분 안에 입력해주세요."
+        "\n본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다."
+        "\n\n— 랑데부" % code,
+    )
+
+
+def _send_via_resend(to_email: str, code: str):
+    """Resend HTTP API — 발신 도메인 인증이 끝났을 때 쓴다."""
     import os
+    import requests
+
+    key = os.getenv("RESEND_API_KEY")
+    if not key:
+        return None
+    sender = os.getenv("MAIL_FROM") or "랑데부 <onboarding@resend.dev>"
+    subject, body = _mail_subject_body(code)
+    try:
+        r = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": "Bearer %s" % key, "Content-Type": "application/json"},
+            json={"from": sender, "to": [to_email], "subject": subject, "text": body},
+            timeout=10,
+        )
+        if r.status_code < 300:
+            return True, "sent:resend"
+        return False, "resend %d: %s" % (r.status_code, r.text[:120])
+    except Exception as e:
+        return False, "resend %s: %s" % (type(e).__name__, str(e)[:100])
+
+
+def _send_via_brevo(to_email: str, code: str):
+    """Brevo HTTP API — 도메인 없이 Gmail 발신자 인증만으로 쓸 수 있어 초기에 적합."""
+    import os
+    import requests
+
+    key = os.getenv("BREVO_API_KEY")
+    if not key:
+        return None
+    sender_email = os.getenv("MAIL_FROM_EMAIL") or os.getenv("SMTP_USER") or ""
+    if not sender_email:
+        return False, "brevo: MAIL_FROM_EMAIL 미설정"
+    subject, body = _mail_subject_body(code)
+    try:
+        r = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={"api-key": key, "Content-Type": "application/json"},
+            json={
+                "sender": {"name": "랑데부", "email": sender_email},
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "textContent": body,
+            },
+            timeout=10,
+        )
+        if r.status_code < 300:
+            return True, "sent:brevo"
+        return False, "brevo %d: %s" % (r.status_code, r.text[:120])
+    except Exception as e:
+        return False, "brevo %s: %s" % (type(e).__name__, str(e)[:100])
+
+
+def _send_via_smtp(to_email: str, code: str):
+    """SMTP 폴백 — Render 등 PaaS는 587/465를 막는 경우가 많아(Errno 101) 보통 실패한다."""
+    import os
+
     host = os.getenv("SMTP_HOST")
     if not host:
-        return False, "off"
+        return None
     try:
         import smtplib
+        from email.header import Header
         from email.mime.text import MIMEText
+        from email.utils import formataddr
+
         port = int(os.getenv("SMTP_PORT", "587"))
         user_ = os.getenv("SMTP_USER", "")
         pw = os.getenv("SMTP_PASS", "")
         sender = os.getenv("SMTP_FROM", user_)
-        from email.header import Header
-        from email.utils import formataddr
-
-        body = (
-            f"랑데부 소속 인증 코드는 {code} 입니다."
-            "\n\n앱으로 돌아가 10분 안에 입력해주세요."
-            "\n본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다."
-            "\n\n— 랑데부"
-        )
+        subject, body = _mail_subject_body(code)
         msg = MIMEText(body, "plain", "utf-8")
-        msg["Subject"] = Header(f"[랑데부] 인증 코드 {code}", "utf-8")
-        # 표시명을 붙여야 수신함에 계정 아이디가 그대로 노출되지 않는다
+        msg["Subject"] = Header(subject, "utf-8")
         msg["From"] = formataddr((str(Header("랑데부", "utf-8")), sender))
         msg["To"] = to_email
         with smtplib.SMTP(host, port, timeout=10) as sv:
@@ -858,10 +917,44 @@ def _send_verify_email(to_email: str, code: str):
             if user_:
                 sv.login(user_, pw)
             sv.sendmail(sender, [to_email], msg.as_string())
-        return True, "sent"
+        return True, "sent:smtp"
     except Exception as e:
-        print(f"[verify] SMTP send failed: {type(e).__name__}: {e}")
-        return False, "error: %s: %s" % (type(e).__name__, str(e)[:120])
+        return False, "smtp %s: %s" % (type(e).__name__, str(e)[:100])
+
+
+def _send_verify_email(to_email: str, code: str):
+    """(성공여부, 사유). HTTP API를 먼저 쓰고 SMTP는 폴백 — 사유를 남겨 원인을 추적한다."""
+    for fn in (_send_via_resend, _send_via_brevo, _send_via_smtp):
+        out = fn(to_email, code)
+        if out is None:          # 해당 제공자 미설정 → 다음으로
+            continue
+        ok, reason = out
+        if ok:
+            return True, reason
+        print("[verify] mail send failed: %s" % reason)
+        return False, "error: %s" % reason
+    return False, "off"
+
+
+@router.get("/api/verify/email/diag")
+def verify_email_diag():
+    """어떤 발송 경로가 살아 있는지 확인. 키 값은 노출하지 않고 존재 여부만."""
+    import os
+
+    def has(k):
+        return bool(os.getenv(k))
+
+    provider = ("resend" if has("RESEND_API_KEY")
+                else "brevo" if has("BREVO_API_KEY")
+                else "smtp" if has("SMTP_HOST") else "off")
+    return {
+        "provider": provider,
+        "resend_key": has("RESEND_API_KEY"),
+        "brevo_key": has("BREVO_API_KEY"),
+        "mail_from": os.getenv("MAIL_FROM") or os.getenv("MAIL_FROM_EMAIL") or os.getenv("SMTP_FROM") or "",
+        "smtp_host": os.getenv("SMTP_HOST") or "",
+        "note": "Render는 SMTP 아웃바운드(587/465)를 막습니다 — HTTP API 제공자를 쓰세요.",
+    }
 
 
 @router.post("/api/verify/email/request")
