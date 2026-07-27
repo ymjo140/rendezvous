@@ -1549,7 +1549,32 @@ def decide_partnership_app(
     a.status = "approved" if approve else "rejected"
     a.decided_at = datetime.now()
     db.commit()
+
+    crew = db.query(models.Community).filter(models.Community.id == a.community_id).first()
+    if crew is not None:
+        place = db.query(models.Place).filter(models.Place.id == d.place_id).first()
+        name = place.name if place else "가게"
+        if approve:
+            _notify_crew_members(
+                crew, "🤝 제휴가 승인됐어요",
+                "%s — %s. 이제 멤버 누구나 쓸 수 있어요." % (name, d.benefit),
+                data={"type": "partnership_approved", "community_id": crew.id})
+        else:
+            _notify_crew_members(
+                crew, "제휴 신청 결과",
+                "%s 제휴가 이번엔 성사되지 않았어요." % name,
+                data={"type": "partnership_rejected", "community_id": crew.id})
     return {"id": a.id, "status": a.status}
+
+
+def _notify_crew_members(crew, title: str, body: str, data: dict = None):
+    """크루 멤버 전원에게 푸시(사장님 액션 → 크루 통지)."""
+    try:
+        from services import push_service
+        uids = list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or [])))
+        push_service.notify_users_async(uids, title, body, data=data or {})
+    except Exception as exc:
+        print("[partnership] merchant push skip: %s" % exc)
 
 
 @router.get("/stores/{store_id}/crew-candidates")
@@ -1635,6 +1660,7 @@ def invite_crew_to_partnership(
     message = (req.get("message") or "").strip()[:200] or None
 
     sent, skipped = 0, 0
+    invited = []
     for cid in cids:
         crew = db.query(models.Community).filter(models.Community.id == cid).first()
         if not crew:
@@ -1654,8 +1680,19 @@ def invite_crew_to_partnership(
             partnership_id=pid, community_id=cid, applicant_id=0,
             direction="store_invite", message=message,
         ))
+        invited.append(crew)
         sent += 1
     db.commit()
+
+    # 제안이 도착했다는 걸 크루가 바로 알아야 루프가 돈다
+    place = db.query(models.Place).filter(models.Place.id == d.place_id).first()
+    for crew in invited:
+        _notify_crew_members(
+            crew,
+            "🤝 %s에서 제휴 제안이 왔어요" % (place.name if place else "가게"),
+            "%s — 크루에서 수락하면 바로 쓸 수 있어요." % d.benefit,
+            data={"type": "partnership_invite", "community_id": crew.id},
+        )
     return {"sent": sent, "skipped": skipped}
 
 

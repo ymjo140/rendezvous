@@ -1329,6 +1329,21 @@ def _deal_payload(d: models.CrewPartnership, place: Optional[models.Place]) -> d
     }
 
 
+def _crew_member_ids(crew) -> list:
+    return list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or [])))
+
+
+def _notify_crew(crew, title: str, body: str, data: dict = None, exclude: int = None):
+    """크루 멤버 전원에게 푸시 — 제휴는 양쪽 응답이 있어야 성립하므로 알림이 루프의 일부다."""
+    try:
+        from services import push_service
+        push_service.notify_users_async(
+            _crew_member_ids(crew), title, body, data=data or {}, exclude_user_id=exclude
+        )
+    except Exception as exc:
+        print("[partnership] crew push skip: %s" % exc)
+
+
 @router.get("/api/crew-partnerships/summary")
 def crew_partnership_summary(
     community_id: str,
@@ -1452,6 +1467,19 @@ def respond_crew_invite(
     a.decided_at = datetime.now()
     a.seen_at = datetime.now()
     db.commit()
+
+    crew = db.query(models.Community).filter(models.Community.id == a.community_id).first()
+    if crew is not None and action == "accept":
+        d = db.query(models.CrewPartnership).filter(models.CrewPartnership.id == a.partnership_id).first()
+        place = db.query(models.Place).filter(models.Place.id == d.place_id).first() if d else None
+        _notify_crew(
+            crew,
+            "🤝 제휴가 시작됐어요",
+            "%s — %s. 이제 멤버 누구나 쓸 수 있어요." % (
+                (place.name if place else "가게"), (d.benefit if d else "혜택")),
+            data={"type": "partnership_active", "community_id": crew.id},
+            exclude=user.id,
+        )
     return {"id": a.id, "status": a.status, "already": False}
 
 
@@ -1605,4 +1633,14 @@ def apply_crew_deal(
     db.add(a)
     db.commit()
     db.refresh(a)
+
+    place = db.query(models.Place).filter(models.Place.id == d.place_id).first()
+    _notify_crew(
+        crew,
+        "제휴를 신청했어요",
+        "%s에 %s 신청 — 사장님 승인을 기다리는 중이에요." % (
+            (place.name if place else "가게"), d.benefit),
+        data={"type": "partnership_applied", "community_id": crew.id},
+        exclude=user.id,
+    )
     return {"id": a.id, "status": a.status, "already": False}
