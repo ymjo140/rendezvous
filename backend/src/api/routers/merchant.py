@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from api.dependencies import get_current_user, get_current_merchant
 from domain import models
+from services import visit_service
 
 router = APIRouter()
 
@@ -1400,27 +1401,25 @@ def list_partnerships(
     ) if deal_ids else []
 
     approved_cids = list({a.community_id for a in apps if a.status == "approved"})
-    # 성과: 승인 크루가 "이 가게에서" 완료한 분담결제 + 재방문 의사 — 크루별 분해 포함
+    # 성과: 승인 크루가 "이 가게에서" 남긴 방문 — 분담결제·QR 체크인·방문 피드백을
+    # 모두 인정한다(크루 화면과 같은 함수). 분담결제만 세면 밥만 먹고 간 모임이
+    # 영원히 0으로 남아, 사장님 눈에는 제휴가 아무 효과 없는 것처럼 보인다.
     perf_visits = 0
     perf_amount = 0
     perf_revisits = 0
+    perf_deal_uses = 0
     by_crew = []
     if approved_cids:
-        rows = (
-            db.query(models.ChatSplitRequest)
-            .filter(
-                models.ChatSplitRequest.room_id.in_(approved_cids),
-                models.ChatSplitRequest.place_id == place.id,
-                models.ChatSplitRequest.status == "completed",
-            ).all()
-        )
-        perf_visits = len(rows)
-        perf_amount = int(sum(r.total_amount or 0 for r in rows))
-        rows_by_cid: dict = {}
-        for r in rows:
-            rows_by_cid.setdefault(r.room_id, []).append(r)
+        # 제휴가 실제로 적용된 방문 — 사장님이 할인 원가를 가늠하는 숫자
+        uses_by_app = visit_service.partnership_uses_by_app(db, [a.id for a in apps])
+        app_by_cid: dict = {}
+        for a in apps:
+            if a.status == "approved":
+                app_by_cid.setdefault(a.community_id, []).append(a.id)
+
         for cid in approved_cids:
             c = db.query(models.Community).filter(models.Community.id == cid).first()
+            st = visit_service.crew_visit_stats(db, cid, place_id=place.id)
             mids = list((c.member_ids or [])) if c else []
             crew_revisits = 0
             if mids:
@@ -1432,15 +1431,19 @@ def list_partnerships(
                         models.PlaceVisitFeedback.personal_revisit == True,  # noqa: E712
                     ).count()
                 )
+            deal_uses = sum(uses_by_app.get(aid, 0) for aid in app_by_cid.get(cid, []))
+            perf_visits += st["visits"]
+            perf_amount += st["amount"]
             perf_revisits += crew_revisits
-            crs = rows_by_cid.get(cid, [])
+            perf_deal_uses += deal_uses
             by_crew.append({
                 "id": cid,
                 "title": (c.title if c else "(삭제된 크루)") or "크루",
                 "icon": (c.icon if c else "👥") or "👥",
-                "visits": len(crs),
-                "amount": int(sum(r.total_amount or 0 for r in crs)),
+                "visits": st["visits"],
+                "amount": st["amount"],
                 "revisits": int(crew_revisits),
+                "deal_uses": int(deal_uses),
             })
         by_crew.sort(key=lambda x: (x["visits"], x["amount"]), reverse=True)
 
@@ -1448,10 +1451,15 @@ def list_partnerships(
     for a in apps:
         apps_by_deal.setdefault(a.partnership_id, []).append(a)
 
+    # 딜마다 이번 달 몇 번 쓰였는지 — 한도가 그냥 저장된 숫자가 아니라 작동 중임을 보여준다
+    _month = datetime.now().strftime("%Y-%m")
+    _month_uses = visit_service.partnership_uses_by_app(db, [a.id for a in apps], _month)
+
     out_deals = []
     for d in deals:
         das = apps_by_deal.get(d.id, [])
         out_deals.append({
+            "uses_this_month": sum(_month_uses.get(a.id, 0) for a in das if a.status == "approved"),
             "id": d.id, "title": d.title, "benefit": d.benefit, "discount_pct": d.discount_pct,
             "target": d.target, "conditions": d.conditions or {}, "status": d.status,
             "expires_at": d.expires_at.isoformat() if d.expires_at else None,
@@ -1480,6 +1488,7 @@ def list_partnerships(
             "amount": perf_amount,
             "revisits": perf_revisits,
             "by_crew": by_crew,
+            "deal_uses": perf_deal_uses,
         },
     }
 

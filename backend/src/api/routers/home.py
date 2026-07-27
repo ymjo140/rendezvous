@@ -376,6 +376,18 @@ def home_feed(
                 for r in rs[:3]
             ]
 
+    # 다가오는 크루 예약 — 카드의 '예약' 버튼에 건수를 띄운다
+    if my_crews:
+        _today = datetime.now().strftime("%Y-%m-%d")
+        _up: dict = {}
+        for r in (db.query(models.Reservation)
+                  .filter(models.Reservation.community_id.in_([e["id"] for e in my_crews]),
+                          models.Reservation.status == "confirmed",
+                          models.Reservation.date >= _today).all()):
+            _up[r.community_id] = _up.get(r.community_id, 0) + 1
+        for e in my_crews:
+            e["upcoming"] = _up.get(e["id"], 0)
+
     # 크루별 제휴 배지 — 느낌표(안읽은 제안·승인)와 상태 한 줄
     if my_crews:
         crew_ids = [e["id"] for e in my_crews]

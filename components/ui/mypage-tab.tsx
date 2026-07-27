@@ -106,11 +106,17 @@ function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
     )
 }
 
-// 방문 후 재방문 의향 설문 (개인 취향 + 모임 적합 2축) — 방문 다음날부터 미응답 예약에 노출
+// 방문 후 설문 — 체크인 3시간 뒤 노출. 2축(개인 취향·모임 적합)이 관문이고,
+// 답한 사람에게만 별점·한 줄을 더 청한다.
 function RevisitSurvey() {
     const [items, setItems] = useState<any[]>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [answers, setAnswers] = useState<Record<string, { personal?: boolean; group?: boolean }>>({});
+    // 2단계 — 응답이 끝난 방문만 여기로 넘어온다
+    const [rated, setRated] = useState<any | null>(null);
+    const [stars, setStars] = useState(0);
+    const [comment, setComment] = useState("");
+    const [ratingBusy, setRatingBusy] = useState(false);
 
     useEffect(() => {
         const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -131,22 +137,32 @@ function RevisitSurvey() {
                 : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
         }`;
 
+    const keyOf = (item: any) => String(item.checkin_id ?? item.reservation_id);
+
     const submit = async (item: any) => {
-        const a = answers[item.reservation_id] || {};
+        const k = keyOf(item);
+        const a = answers[k] || {};
         if (a.personal === undefined) { alert("'또 가고 싶어요?'를 먼저 선택해주세요."); return; }
-        setBusy(item.reservation_id);
+        setBusy(k);
         try {
             const res = await fetchWithAuth("/api/feedback", {
                 method: "POST",
                 body: JSON.stringify({
-                    reservation_id: item.reservation_id,
+                    checkin_id: item.checkin_id ?? null,
+                    reservation_id: item.reservation_id ?? null,
                     place_id: item.place_id,
+                    room_id: item.room_id ?? null,
                     personal_revisit: a.personal,
                     group_revisit: a.group ?? null,
                 }),
             });
-            if (res.ok) setItems((prev) => prev.filter((x) => x.reservation_id !== item.reservation_id));
-            else alert("저장에 실패했어요.");
+            if (res.ok) {
+                setItems((prev) => prev.filter((x) => keyOf(x) !== k));
+                // 여기서 끊지 않고 한 번 더 청한다 — 답한 사람은 더 남길 의향이 있다
+                setRated(item);
+                setStars(0);
+                setComment("");
+            } else alert("저장에 실패했어요.");
         } catch {
             alert("저장에 실패했어요.");
         } finally {
@@ -154,17 +170,91 @@ function RevisitSurvey() {
         }
     };
 
-    if (items.length === 0) return null;
+    const submitRating = async () => {
+        if (!rated || stars === 0) return;
+        setRatingBusy(true);
+        try {
+            await fetchWithAuth("/api/feedback/review", {
+                method: "POST",
+                body: JSON.stringify({
+                    place_id: rated.place_id,
+                    checkin_id: rated.checkin_id ?? null,
+                    rating: stars,
+                    comment: comment.trim() || null,
+                }),
+            });
+        } catch {
+            /* 선택 단계라 실패해도 흐름을 막지 않는다 */
+        } finally {
+            setRatingBusy(false);
+            setRated(null);
+        }
+    };
+
+    if (items.length === 0 && !rated) return null;
 
     return (
         <div className="px-5 mb-4 space-y-3">
+            {rated && (
+                <div className="rounded-2xl border border-amber-200 bg-white p-4">
+                    <div className="text-sm font-bold text-gray-800">고마워요! ⭐ 별점도 남겨주실래요?</div>
+                    <div className="mt-0.5 text-xs text-gray-400">
+                        {rated.place_name} · 사장님과 다음 손님에게 그대로 전해져요
+                    </div>
+                    <div className="mt-3 flex justify-center gap-1.5">
+                        {[1, 2, 3, 4, 5].map((n) => (
+                            <button
+                                key={n}
+                                type="button"
+                                onClick={() => setStars(n)}
+                                className={`text-3xl leading-none transition-transform ${
+                                    n <= stars ? "text-[#F5A623] scale-110" : "text-gray-200"
+                                }`}
+                                aria-label={`${n}점`}
+                            >
+                                ★
+                            </button>
+                        ))}
+                    </div>
+                    {stars > 0 && (
+                        <textarea
+                            value={comment}
+                            onChange={(e) => setComment(e.target.value.slice(0, 200))}
+                            placeholder="한 줄로 남겨주세요 (선택)"
+                            rows={2}
+                            className="mt-3 w-full resize-none rounded-xl border border-gray-200 p-2.5 text-sm outline-none focus:border-[#F5A623]"
+                        />
+                    )}
+                    <div className="mt-3 flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setRated(null)}
+                            className="h-10 flex-1 rounded-xl border border-gray-200 text-sm font-semibold text-gray-400"
+                        >
+                            건너뛰기
+                        </button>
+                        <Button
+                            className="h-10 flex-[2] rounded-xl bg-[#F5A623] text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-40"
+                            disabled={stars === 0 || ratingBusy}
+                            onClick={submitRating}
+                        >
+                            {ratingBusy ? "보내는 중..." : "후기 남기기"}
+                        </Button>
+                    </div>
+                </div>
+            )}
+
             {items.map((item) => {
-                const a = answers[item.reservation_id] || {};
-                const rid = item.reservation_id;
+                const rid = keyOf(item);
+                const a = answers[rid] || {};
                 return (
                     <div key={rid} className="rounded-2xl border border-amber-100 bg-amber-50/50 p-4">
-                        <div className="text-sm font-bold text-gray-800">📍 {item.place_name} 다녀오셨나요?</div>
-                        <div className="mt-0.5 text-xs text-gray-400">{item.date} · 솔직한 답이 추천을 더 정확하게 해요</div>
+                        <div className="text-sm font-bold text-gray-800">📍 {item.place_name} 어떠셨어요?</div>
+                        <div className="mt-0.5 text-xs text-gray-400">
+                            {item.date}
+                            {item.crew_title && ` · ${item.crew_icon} ${item.crew_title}`}
+                            {" · 솔직한 답이 추천을 더 정확하게 해요"}
+                        </div>
                         <div className="mt-3">
                             <div className="mb-1 text-xs font-semibold text-gray-600">또 가고 싶어요? <span className="text-gray-400">(내 취향)</span></div>
                             <div className="flex gap-2">

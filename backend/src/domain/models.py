@@ -352,6 +352,7 @@ class Review(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     place_name = Column(String, index=True)
     place_id = Column(Integer, nullable=True, index=True)   # 이름만으로는 동명 가게가 섞인다
+    checkin_id = Column(Integer, nullable=True, index=True) # 실제 방문에서 나온 후기인지
     rating = Column(Float)
     comment = Column(String, nullable=True)
     tags = Column(JSON, default=[])
@@ -891,7 +892,8 @@ class PlaceVisitFeedback(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     place_id = Column(Integer, index=True)
-    reservation_id = Column(String, nullable=True)   # user_reservations.id (방문 근거)
+    reservation_id = Column(String, nullable=True)   # user_reservations.id (구 방문 근거)
+    checkin_id = Column(Integer, nullable=True, index=True)   # place_checkins.id — 실제 방문 근거
     room_id = Column(String, nullable=True)          # 모임(커뮤니티) 방문이면 링크
     personal_revisit = Column(Boolean, nullable=True)  # 또 가고 싶어요?(개인 취향 축)
     group_revisit = Column(Boolean, nullable=True)     # 모임 장소로 추천?(모임 적합 축)

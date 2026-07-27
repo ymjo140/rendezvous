@@ -1,6 +1,6 @@
 """방문 후 재방문 의향 설문 — 개인 취향 + 모임 적합 2축.
-별점 대신 '또 갈래요?'라는 진성 신호로 자체 신뢰 데이터 구축.
-트리거: 결제(예약) 방문일 다음날부터, 미응답 예약에 노출."""
+'또 갈래요?'라는 진성 신호를 먼저 받고, 더 남길 사람에게만 별점·한 줄을 받는다.
+트리거: 체크인 3시간 뒤. 예약은 오겠다는 의도일 뿐이라 안 온 사람에게 묻지 않는다."""
 from datetime import date, datetime, timedelta
 from typing import Optional
 import numpy as np
@@ -25,40 +25,66 @@ def _cos(a, b) -> float:
     return float(np.dot(a, b) / (na * nb))
 
 
+FEEDBACK_DELAY_H = 3      # 밥 먹고 나올 때쯤 — 기억이 선명하면서 식사를 방해하지 않는 간격
+
+
 @router.get("/api/feedback/pending")
 def pending_feedback(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """방문일(예약 date)이 지난 예약 중 아직 재방문 설문을 안 한 것들(다음날부터 노출)."""
+    """체크인 3시간 뒤, 아직 응답하지 않은 방문들.
+
+    예약이 아니라 체크인을 기준으로 삼는다 — 예약만 하고 안 온 사람에게
+    "어땠어요?"를 물으면 데이터도 오염되고 사용자도 당황한다.
+    """
     if user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    today = date.today().isoformat()  # 'YYYY-MM-DD' — date 컬럼도 문자열이라 사전식=시간순
-    resvs = (
-        db.query(models.Reservation)
-        .filter(
-            models.Reservation.user_id == user.id,
-            models.Reservation.date < today,          # 방문일 지남(=다음날부터)
-            models.Reservation.status != "cancelled",
+    cutoff = datetime.now() - timedelta(hours=FEEDBACK_DELAY_H)
+    try:
+        checkins = (
+            db.query(models.PlaceCheckin)
+            .filter(models.PlaceCheckin.user_id == user.id,
+                    models.PlaceCheckin.created_at <= cutoff)
+            .order_by(models.PlaceCheckin.created_at.desc())
+            .limit(20)
+            .all()
         )
-        .order_by(models.Reservation.date.desc())
-        .limit(20)
-        .all()
-    )
+    except Exception:
+        checkins = []
+    if not checkins:
+        return {"count": 0, "items": []}
+
     done = {
         row[0]
-        for row in db.query(models.PlaceVisitFeedback.reservation_id)
-        .filter(models.PlaceVisitFeedback.user_id == user.id)
-        .all()
+        for row in db.query(models.PlaceVisitFeedback.checkin_id)
+        .filter(models.PlaceVisitFeedback.user_id == user.id).all()
         if row[0]
     }
-    items = [
-        {
-            "reservation_id": rv.id,
-            "place_id": rv.place_id,
-            "place_name": rv.place_name,
-            "date": rv.date,
-        }
-        for rv in resvs
-        if rv.id not in done
-    ]
+    pending = [c for c in checkins if c.id not in done]
+    if not pending:
+        return {"count": 0, "items": []}
+
+    names = {
+        p.id: p.name
+        for p in db.query(models.Place).filter(
+            models.Place.id.in_([c.place_id for c in pending])).all()
+    }
+    crews = {
+        c.id: c
+        for c in db.query(models.Community).filter(
+            models.Community.id.in_([x.community_id for x in pending if x.community_id])).all()
+    } if any(x.community_id for x in pending) else {}
+
+    items = []
+    for c in pending:
+        crew = crews.get(c.community_id) if c.community_id else None
+        items.append({
+            "checkin_id": c.id,
+            "place_id": c.place_id,
+            "place_name": names.get(c.place_id, "방문한 가게"),
+            "date": c.date,
+            "room_id": c.community_id,
+            "crew_title": crew.title if crew else None,
+            "crew_icon": (crew.icon or "👥") if crew else None,
+        })
     return {"count": len(items), "items": items}
 
 
@@ -73,7 +99,18 @@ def submit_feedback(req: dict, user: models.User = Depends(get_current_user), db
         raise HTTPException(status_code=400, detail="place_id가 필요합니다.")
 
     reservation_id = req.get("reservation_id")
-    if reservation_id:
+    checkin_id = req.get("checkin_id")
+    if checkin_id:
+        exists = (
+            db.query(models.PlaceVisitFeedback)
+            .filter(
+                models.PlaceVisitFeedback.user_id == user.id,
+                models.PlaceVisitFeedback.checkin_id == int(checkin_id),
+            ).first()
+        )
+        if exists:
+            return {"status": "already", "message": "이미 응답했어요."}
+    elif reservation_id:
         exists = (
             db.query(models.PlaceVisitFeedback)
             .filter(
@@ -89,6 +126,7 @@ def submit_feedback(req: dict, user: models.User = Depends(get_current_user), db
         user_id=user.id,
         place_id=int(place_id),
         reservation_id=reservation_id,
+        checkin_id=int(checkin_id) if checkin_id else None,
         room_id=req.get("room_id"),
         personal_revisit=req.get("personal_revisit"),
         group_revisit=req.get("group_revisit"),
@@ -96,6 +134,50 @@ def submit_feedback(req: dict, user: models.User = Depends(get_current_user), db
     db.add(fb)
     db.commit()
     return {"status": "ok"}
+
+
+@router.post("/api/feedback/review")
+def submit_review(req: dict, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """2단계 — 별점·한 줄 후기(선택).
+
+    2축 응답이 관문이고 이건 더 남길 의사가 있는 사람만 거친다. 저장은 기존
+    reviews 테이블에 — 사장님 콘솔의 '손님 콘텐츠 > 후기'로 그대로 흘러간다.
+    body: {place_id, checkin_id?, rating(1~5), comment?, tags?}
+    """
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    place_id = req.get("place_id")
+    if place_id is None:
+        raise HTTPException(status_code=400, detail="place_id가 필요합니다.")
+    try:
+        rating = float(req.get("rating") or 0)
+    except (TypeError, ValueError):
+        rating = 0.0
+    if not (1 <= rating <= 5):
+        raise HTTPException(status_code=400, detail="별점은 1~5 사이여야 해요.")
+
+    checkin_id = req.get("checkin_id")
+    if checkin_id:
+        dup = (db.query(models.Review)
+               .filter(models.Review.user_id == user.id,
+                       models.Review.checkin_id == int(checkin_id)).first())
+        if dup:
+            return {"status": "already"}
+
+    place = db.query(models.Place).filter(models.Place.id == int(place_id)).first()
+    rv = models.Review(
+        user_id=user.id,
+        place_id=int(place_id),
+        place_name=(place.name if place else req.get("place_name") or ""),
+        checkin_id=int(checkin_id) if checkin_id else None,
+        rating=rating,
+        comment=(req.get("comment") or None),
+        tags=list(req.get("tags") or []),
+        image_urls=[],
+    )
+    db.add(rv)
+    db.commit()
+    return {"status": "ok", "id": rv.id}
 
 
 @router.get("/api/feedback/place/{place_id}")
