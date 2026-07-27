@@ -884,7 +884,10 @@ def _send_via_brevo(to_email: str, code: str):
             timeout=10,
         )
         if r.status_code < 300:
+            # messageId를 남겨야 Brevo Transactional 로그에서 그 건을 찾아볼 수 있다
+            print("[verify] brevo accepted -> %s | to=%s" % (r.text[:120], to_email))
             return True, "sent:brevo"
+        print("[verify] brevo rejected %d: %s" % (r.status_code, r.text[:200]))
         return False, "brevo %d: %s" % (r.status_code, r.text[:120])
     except Exception as e:
         return False, "brevo %s: %s" % (type(e).__name__, str(e)[:100])
