@@ -3,8 +3,8 @@
 // 📥 QR 체크인 — 가게 테이블/계산대의 QR을 찍으면 열리는 화면.
 // 크루를 고르면 그 크루의 '함께 방문'으로 쌓여서 제휴 자격(활동 트랙)으로 이어진다.
 
-import React, { useEffect, useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import React, { Suspense, useEffect, useState } from "react"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Check, MapPin, Users, Minus, Plus, Clock, AlertCircle } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 
@@ -25,10 +25,15 @@ type Crew = {
   id: string; title: string; icon: string; members: number; visits: number; checked_today: boolean
   partnership?: (Benefit & { blocked: string | null }) | null
 }
+type Resv = {
+  id: string; date: string; time: string; party_size: number
+  community_id: string | null; needs_location: boolean
+}
 type Ctx = {
   place: { id: number; name: string; category: string; address: string }
   logged_in: boolean
   crews: Crew[]
+  reservation?: Resv | null
 }
 
 const DOW_KO: Record<string, string> = {
@@ -58,9 +63,12 @@ function blockedText(b: Blocked): string {
   }
 }
 
-export default function CheckinPage() {
+function CheckinInner() {
   const params = useParams<{ placeId: string }>()
   const router = useRouter()
+  // 예약에서 넘어온 체크인 — QR을 안 찍었으니 위치로 현장을 확인한다
+  const rid = useSearchParams().get("rid")
+  const [err, setErr] = useState<string | null>(null)
   const [ctx, setCtx] = useState<Ctx | null>(null)
   const [loading, setLoading] = useState(true)
   const [picked, setPicked] = useState<string | null>(null)
@@ -80,10 +88,16 @@ export default function CheckinPage() {
 
   useEffect(() => {
     if (!params?.placeId) return
-    fetchWithAuth(`/api/checkin/${params.placeId}`)
+    fetchWithAuth(`/api/checkin/${params.placeId}${rid ? `?rid=${encodeURIComponent(rid)}` : ""}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: Ctx | null) => {
         setCtx(d)
+        // 예약이 있으면 그 예약이 정답 — 크루도 인원도 다시 묻지 않는다
+        if (d?.reservation) {
+          setPicked(d.reservation.community_id || null)
+          setPartySize(d.reservation.party_size || 2)
+          return
+        }
         // 크루가 하나뿐이고 오늘 안 찍었으면 미리 선택 — 탭 한 번으로 끝나게
         const fresh = (d?.crews || []).filter((c) => !c.checked_today)
         if (fresh.length === 1) setPicked(fresh[0].id)
@@ -92,20 +106,49 @@ export default function CheckinPage() {
       .finally(() => setLoading(false))
   }, [params?.placeId])
 
+  /** 위치 한 번 받아오기 — 실패는 실패로 넘긴다(대충 통과시키면 확인의 의미가 없다). */
+  const getCoords = () =>
+    new Promise<{ lat: number; lng: number }>((resolve, reject) => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        reject(new Error("이 기기에서는 위치를 확인할 수 없어요. 가게 QR을 찍어주세요."))
+        return
+      }
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+        () => reject(new Error("위치 권한이 필요해요. 허용하거나 가게 QR을 찍어주세요.")),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+      )
+    })
+
   const submit = async () => {
     if (!ctx || busy) return
     setBusy(true)
+    setErr(null)
     try {
+      let coords: { lat: number; lng: number } | null = null
+      if (ctx.reservation) {
+        try {
+          coords = await getCoords()
+        } catch (e: any) {
+          setErr(e?.message || "위치를 확인하지 못했어요.")
+          return
+        }
+      }
       const r = await fetchWithAuth("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           place_id: ctx.place.id, community_id: picked, party_size: partySize,
+          reservation_id: ctx.reservation?.id ?? null,
+          lat: coords?.lat ?? null, lng: coords?.lng ?? null,
         }),
       })
       if (r.status === 401) { router.push("/login"); return }
       const d = await r.json().catch(() => null)
-      if (!r.ok) return
+      if (!r.ok) {
+        setErr(d?.detail || "체크인에 실패했어요.")
+        return
+      }
       setDone({
         crew: ctx.crews.find((c) => c.id === picked) || null,
         visits: d?.crew_visits ?? 0,
@@ -261,6 +304,16 @@ export default function CheckinPage() {
         </div>
       ) : (
         <div className="px-4 pt-6">
+          {ctx.reservation && (
+            <div className="mb-4 rounded-2xl border border-[#F5A623] bg-amber-50 px-4 py-3">
+              <p className="text-[12.5px] font-bold text-amber-900">
+                🗓 {ctx.reservation.time} 예약 확인됨
+              </p>
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-amber-700">
+                체크인하면 현재 위치로 방문을 확인해요. 가게 안에서 눌러주세요.
+              </p>
+            </div>
+          )}
           <h2 className="text-[14px] font-bold text-slate-900">누구랑 왔나요?</h2>
           <p className="mt-0.5 text-[11.5px] text-slate-400">크루를 고르면 함께 방문 실적으로 쌓여요</p>
 
@@ -367,15 +420,24 @@ export default function CheckinPage() {
 
       {ctx.logged_in && (
         <div className="fixed inset-x-0 bottom-0 mx-auto max-w-md border-t border-slate-100 bg-white p-4">
+          {err && <p className="mb-2 text-center text-[12px] font-medium text-rose-500">{err}</p>}
           <button
             onClick={submit}
             disabled={busy}
             className="w-full rounded-2xl bg-[#F5A623] py-3.5 text-[15px] font-bold text-white disabled:opacity-50"
           >
-            {busy ? "기록하는 중..." : "체크인하기"}
+            {busy ? (ctx.reservation ? "위치 확인 중..." : "기록하는 중...") : "체크인하기"}
           </button>
         </div>
       )}
     </div>
+  )
+}
+
+export default function CheckinPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto min-h-screen max-w-md bg-white py-24 text-center text-sm text-slate-400">불러오는 중...</div>}>
+      <CheckinInner />
+    </Suspense>
   )
 }

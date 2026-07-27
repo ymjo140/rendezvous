@@ -9,6 +9,7 @@
 
 용어: '크루' = 리스트를 함께 쌓는 지속적 취향 집단(= communities).
 """
+import os
 from collections import Counter
 from datetime import datetime
 from typing import Optional
@@ -1362,6 +1363,40 @@ def _crew_visits(db: Session, community_id: str) -> int:
 
 _DOW = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
+# 도심 GPS는 실내·건물 사이에서 수십 m씩 튄다. 예약이 이미 한 겹 걸러주므로
+# 반경은 넉넉하게 — 못 찍는 쪽이 남용보다 아프다.
+CHECKIN_RADIUS_M = int(os.environ.get("CHECKIN_RADIUS_M") or 300)
+
+
+def _distance_m(lat1, lng1, lat2, lng2) -> float:
+    from math import asin, cos, radians, sin, sqrt
+    lat1, lng1, lat2, lng2 = map(lambda v: radians(float(v)), (lat1, lng1, lat2, lng2))
+    h = sin((lat2 - lat1) / 2) ** 2 + cos(lat1) * cos(lat2) * sin((lng2 - lng1) / 2) ** 2
+    return 6371000 * 2 * asin(min(1.0, sqrt(h)))
+
+
+def _reservation_for_checkin(db: Session, rid: str, user, place):
+    """예약 기반 체크인의 자격 확인 — 내 예약인가, 오늘인가, 시간이 맞나."""
+    r = db.query(models.Reservation).filter(models.Reservation.id == str(rid)).first()
+    if r is None or r.user_id != user.id:
+        raise HTTPException(status_code=404, detail="예약을 찾을 수 없어요.")
+    if r.place_id != place.id:
+        raise HTTPException(status_code=400, detail="다른 가게의 예약이에요.")
+    if r.status == "cancelled":
+        raise HTTPException(status_code=400, detail="취소된 예약이에요.")
+
+    now_ = datetime.now()
+    if (r.date or "") != now_.strftime("%Y-%m-%d"):
+        raise HTTPException(status_code=400, detail="예약 당일에만 체크인할 수 있어요.")
+    try:
+        hh, mm = str(r.time or "0:0").split(":")[:2]
+        diff = abs((now_.hour * 60 + now_.minute) - (int(hh) * 60 + int(mm)))
+    except (TypeError, ValueError):
+        diff = 0
+    if diff > 120:
+        raise HTTPException(status_code=400, detail="예약 시간 전후 2시간 안에만 체크인할 수 있어요.")
+    return r
+
 
 def _crew_deal_at(db: Session, place_id: int, community_id: str,
                   party_size: Optional[int] = None) -> Optional[dict]:
@@ -1460,10 +1495,14 @@ def _crew_deal_at(db: Session, place_id: int, community_id: str,
 @router.get("/api/checkin/{place_id}")
 def checkin_context(
     place_id: int,
+    rid: Optional[str] = None,
     user: Optional[models.User] = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """QR 스캔 직후 화면 — 가게 정보 + 체크인할 내 크루 목록 + 오늘 이미 찍었는지."""
+    """체크인 화면 — 가게 정보 + 내 크루 목록 + 오늘 이미 찍었는지.
+
+    rid(예약 id)로 들어오면 그 예약의 크루·인원을 미리 채워 준다.
+    """
     place = db.query(models.Place).filter(models.Place.id == place_id).first()
     if not place:
         raise HTTPException(status_code=404, detail="가게를 찾을 수 없어요.")
@@ -1508,6 +1547,15 @@ def checkin_context(
         })
     out["crews"].sort(key=lambda x: x["visits"], reverse=True)
     out["today"] = sorted(x for x in done if x)
+
+    if rid:
+        r = db.query(models.Reservation).filter(models.Reservation.id == str(rid)).first()
+        if r is not None and r.user_id == user.id and r.place_id == place_id:
+            out["reservation"] = {
+                "id": r.id, "date": r.date, "time": r.time,
+                "party_size": r.party_size, "community_id": r.community_id,
+                "needs_location": True,   # 예약 경로는 QR을 안 찍었으니 위치로 현장을 확인한다
+            }
     return out
 
 
@@ -1527,7 +1575,23 @@ def create_checkin(
     if not place:
         raise HTTPException(status_code=404, detail="가게를 찾을 수 없어요.")
 
-    community_id = req.get("community_id") or None
+    # 예약에서 들어온 체크인 — 크루는 예약에 적힌 대로 따르고, 위치를 확인한다.
+    rid = req.get("reservation_id") or None
+    resv = None
+    if rid:
+        resv = _reservation_for_checkin(db, rid, user, place)
+        if place.lat is None or place.lng is None:
+            raise HTTPException(status_code=400, detail="가게 위치 정보가 없어 체크인할 수 없어요. QR을 찍어주세요.")
+        lat, lng = req.get("lat"), req.get("lng")
+        if lat is None or lng is None:
+            raise HTTPException(status_code=400, detail="위치 확인이 필요해요. 위치 권한을 허용해주세요.")
+        dist = _distance_m(lat, lng, place.lat, place.lng)
+        if dist > CHECKIN_RADIUS_M:
+            raise HTTPException(
+                status_code=400,
+                detail="가게에서 %dm 떨어져 있어요. 도착한 뒤에 체크인해주세요." % int(dist))
+
+    community_id = (resv.community_id if resv is not None else req.get("community_id")) or None
     if community_id:
         crew = db.query(models.Community).filter(models.Community.id == str(community_id)).first()
         if not crew:
@@ -1562,7 +1626,7 @@ def create_checkin(
         }
 
     # 어떤 제휴가 붙는지는 서버가 정한다. 클라이언트가 보내면 한도를 우회할 수 있다.
-    party_size = int(req.get("party_size") or 1)
+    party_size = int(req.get("party_size") or (resv.party_size if resv is not None else 1) or 1)
     deal = _crew_deal_at(db, place.id, community_id, party_size) if community_id else None
     apply_deal = deal is not None and deal.get("blocked") is None
 

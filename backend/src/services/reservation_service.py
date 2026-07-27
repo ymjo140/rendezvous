@@ -69,6 +69,7 @@ class ReservationService:
                 offer_rule_id=offer_rule_id,
                 table_id=table_id,
                 table_label=table_label,
+                community_id=(getattr(req, "community_id", None) or None),
             )
             db.add(resv)
 

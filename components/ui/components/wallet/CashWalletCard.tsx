@@ -1,10 +1,11 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Wallet, Plus, Loader2, Receipt, CalendarCheck, X } from "lucide-react"
+import { Wallet, Plus, Loader2, Receipt, CalendarCheck, X, MapPin } from "lucide-react"
 import {
   getWallet,
   chargeCash,
@@ -18,7 +19,19 @@ import {
 
 const CHARGE_PRESETS = [10000, 30000, 50000, 100000]
 
+/** 예약 당일 ±2시간 — 서버가 같은 창으로 검사하므로 버튼도 그때만 보여준다. */
+function canCheckIn(r: Reservation): boolean {
+  if (r.status !== "confirmed" || !r.place_id) return false
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+  if (r.date !== today) return false
+  const [hh, mm] = String(r.time || "0:0").split(":")
+  const diff = Math.abs(now.getHours() * 60 + now.getMinutes() - (Number(hh) * 60 + Number(mm)))
+  return diff <= 120
+}
+
 export function CashWalletCard() {
+  const router = useRouter()
   const [wallet, setWallet] = useState<WalletInfo>({ balance: 0, history: [] })
   const [loading, setLoading] = useState(true)
   const [chargeOpen, setChargeOpen] = useState(false)
@@ -147,8 +160,22 @@ export function CashWalletCard() {
                       {r.date} {r.time} · {r.party_size}명
                       {r.deposit_amount > 0 && ` · ${won(r.deposit_amount)}`}
                     </div>
+                    {r.crew_title && (
+                      <div className="text-[11px] text-indigo-500 mt-0.5">
+                        {r.crew_icon} {r.crew_title} 크루 예약
+                      </div>
+                    )}
                   </div>
-                  {r.status === "confirmed" && (
+                  {canCheckIn(r) ? (
+                    // 예약은 '오겠다는 의도'일 뿐이라, 실제로 왔는지는 여기서 따로 확인한다
+                    <Button
+                      size="sm"
+                      onClick={() => router.push(`/checkin/${r.place_id}?rid=${r.id}`)}
+                      className="h-8 flex-shrink-0 gap-1 rounded-lg bg-[#F5A623] text-xs font-bold text-white hover:bg-amber-600"
+                    >
+                      <MapPin className="h-3 w-3" /> 방문 체크인
+                    </Button>
+                  ) : r.status === "confirmed" ? (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -157,7 +184,7 @@ export function CashWalletCard() {
                     >
                       취소
                     </Button>
-                  )}
+                  ) : null}
                 </div>
               ))}
             </div>

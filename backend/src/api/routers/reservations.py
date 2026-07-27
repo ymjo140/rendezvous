@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -60,14 +60,59 @@ def create_reservation(
     return result["reservation"]
 
 
+def _with_crew(db: Session, rows):
+    """예약 행에 크루 이름·아이콘을 붙인다 — 목록에서 '누구와 가는 예약'인지 보이도록."""
+    cids = {r.community_id for r in rows if getattr(r, "community_id", None)}
+    crews = {}
+    if cids:
+        for c in db.query(models.Community).filter(models.Community.id.in_(list(cids))).all():
+            crews[c.id] = c
+    out = []
+    for r in rows:
+        d = schemas.ReservationResponse.model_validate(r).model_dump()
+        c = crews.get(getattr(r, "community_id", None))
+        d["crew_title"] = c.title if c else None
+        d["crew_icon"] = (c.icon or "👥") if c else None
+        out.append(d)
+    return out
+
+
 @router.get("/api/reservations", response_model=List[schemas.ReservationResponse])
 def list_reservations(
+    scope: Optional[str] = None,     # personal | crew | (없으면 전부)
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """내 예약. scope=personal이면 개인 예약만, crew면 크루 예약만."""
     if user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    return service.list_my(db, user)
+    rows = service.list_my(db, user)
+    if scope == "personal":
+        rows = [r for r in rows if not getattr(r, "community_id", None)]
+    elif scope == "crew":
+        rows = [r for r in rows if getattr(r, "community_id", None)]
+    return _with_crew(db, rows)
+
+
+@router.get("/api/reservations/crew/{community_id}", response_model=List[schemas.ReservationResponse])
+def list_crew_reservations(
+    community_id: str,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """크루 예약 — 멤버 누구의 예약이든 크루 전체가 본다. 같이 가는 약속이니까."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    crew = db.query(models.Community).filter(models.Community.id == str(community_id)).first()
+    if not crew:
+        raise HTTPException(status_code=404, detail="크루를 찾을 수 없어요.")
+    members = list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or [])))
+    if user.id not in members:
+        raise HTTPException(status_code=403, detail="크루 멤버만 볼 수 있어요.")
+    rows = (db.query(models.Reservation)
+            .filter(models.Reservation.community_id == str(community_id))
+            .order_by(models.Reservation.date.desc(), models.Reservation.time.desc()).all())
+    return _with_crew(db, rows)
 
 
 @router.post("/api/reservations/{reservation_id}/cancel")

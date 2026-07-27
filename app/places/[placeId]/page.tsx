@@ -167,6 +167,10 @@ export default function PlaceDetailPage() {
   const [reserveDate, setReserveDate] = useState("")
   const [reserveTime, setReserveTime] = useState("19:00")
   const [partySize, setPartySize] = useState(2)
+  // 누구와 가는 예약인지 — 크루를 고르면 체크인 때 크루를 다시 안 골라도 되고,
+  // 그 크루가 이 가게와 맺은 제휴가 자동으로 걸린다.
+  const [myCrews, setMyCrews] = useState<{ id: string; title: string; icon: string }[]>([])
+  const [reserveCrew, setReserveCrew] = useState<string | null>(null)
   const [reserveSubmitting, setReserveSubmitting] = useState(false)
   const [reserveError, setReserveError] = useState<string | null>(null)
   const [reserveSuccess, setReserveSuccess] = useState<string | null>(null)
@@ -343,6 +347,15 @@ export default function PlaceDetailPage() {
       )
     }
     setReserveOpen(true)
+    if (myCrews.length === 0) {
+      const tk = typeof window !== "undefined" ? localStorage.getItem("token") : null
+      if (tk) {
+        fetch(`${API_BASE_URL}/api/home/feed`, { headers: { Authorization: `Bearer ${tk}` } })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => setMyCrews(d?.my_crews || []))
+          .catch(() => {})
+      }
+    }
     try {
       const w = await getWallet()
       setCashBalance(w.balance)
@@ -374,6 +387,7 @@ export default function PlaceDetailPage() {
         offer_rule_id: offerRuleId,
         table_id: selectedTable?.id ?? null,
         table_label: selectedTable ? `${selectedTable.zone} ${selectedTable.label}` : null,
+        community_id: reserveCrew,
       })
       setReserveSuccess(
         `예약 완료!${selectedTable ? ` ${selectedTable.zone} ${selectedTable.label} 지정 ·` : ""} 예약금 ${won(depositAmount)}이 캐시에서 결제됐어요.`
@@ -1183,6 +1197,46 @@ export default function PlaceDetailPage() {
             </div>
 
             <div className="space-y-3">
+              {/* 누구와 가나요 — 크루를 고르면 체크인 때 크루가 자동 지정되고,
+                  그 크루가 이 가게와 맺은 제휴 혜택이 따라온다. */}
+              {myCrews.length > 0 && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-500">누구와 가나요?</label>
+                  <div className="mt-1.5 flex gap-2 overflow-x-auto pb-1">
+                    <button
+                      type="button"
+                      onClick={() => setReserveCrew(null)}
+                      className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
+                        reserveCrew === null
+                          ? "border-amber-500 bg-amber-500 text-white"
+                          : "border-gray-200 bg-white text-gray-600"
+                      }`}
+                    >
+                      혼자 / 개인
+                    </button>
+                    {myCrews.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setReserveCrew(reserveCrew === c.id ? null : c.id)}
+                        className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
+                          reserveCrew === c.id
+                            ? "border-indigo-500 bg-indigo-500 text-white"
+                            : "border-gray-200 bg-white text-gray-600"
+                        }`}
+                      >
+                        {c.icon} {c.title}
+                      </button>
+                    ))}
+                  </div>
+                  {reserveCrew && (
+                    <p className="mt-1 text-[11px] text-indigo-500">
+                      크루 예약이라 방문하면 함께 방문 실적으로 쌓이고, 제휴 혜택이 있으면 자동으로 붙어요.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* 날짜 선택 — 7일 가로 칩 (캐치테이블식) */}
               <div>
                 <label className="text-xs font-semibold text-gray-500">날짜</label>
