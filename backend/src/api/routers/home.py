@@ -266,21 +266,21 @@ def home_feed(
     owner_ids = list({f.user_id for f in heavy})
     owners = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()} if owner_ids else {}
 
-    taste = _user_taste_centroid(db, uid) if uid else None
-
     my_crew_ids, crew_taste, crew_visited = _crew_axis(db, uid)
+    sheet = taste_service.load(db, uid)
+    fcens = taste_service.folder_centroids(db, [f.id for f in heavy])
+    fscores = taste_service.score_folders(db, sheet, [f.id for f in heavy])
+    crew_unit = taste_service.centered_unit(crew_taste)
 
     def _list_card(f: models.SaveFolder) -> dict:
         pids = fplaces.get(f.id, [])[:50]
-        vecs = [embs[p] for p in pids if p in embs]
-        cen = _centroid(vecs)
-        match = None
-        if taste is not None and cen is not None:
-            match = int(round(max(0.0, float(np.dot(taste, cen))) * 100))
-        # 크루 리스트는 '우리 크루 취향'으로, 겹치는 방문 가게 수도 함께 근거로 준다
-        crew_match = None
-        if crew_taste is not None and cen is not None:
-            crew_match = int(round(max(0.0, float(np.dot(crew_taste, cen))) * 100))
+        # 점수는 취향 시트가 낸다. 이유를 말할 수 있는 것만 배지가 붙는다.
+        score, fidx, taste_ok = fscores.get(f.id, (None, 0, False))
+        reason, reason_kind = (taste_service.taste_reason(sheet, fidx)
+                               if (taste_ok and sheet) else (None, None))
+        crew_score = None
+        if crew_unit is not None and f.id in fcens:
+            crew_score = float(fcens[f.id] @ crew_unit)
         shared_visits = len(crew_visited.intersection(pids)) if crew_visited else 0
         crew = comms.get(f.community_id) if f.community_id else None
         owner = owners.get(f.user_id)
@@ -295,8 +295,15 @@ def home_feed(
             "saves": int(saves_cnt.get(f.id, 0)),
             "revisit": int(revisit),
             "area": _area_of([addr.get(p) for p in pids]),
-            "match": match,
-            "crew_match": crew_match,
+            # match(0~100)는 폐기 — 무작위 장소도 94%로 뜨던 숫자라 의미가 없었다.
+            # 프론트가 아직 읽으므로 필드는 남기고 null을 준다.
+            "match": None,
+            "crew_match": None,
+            "score": score,
+            "taste_ok": bool(taste_ok),
+            "reason": reason,
+            "reason_kind": reason_kind,
+            "crew_score": crew_score,
             "shared_visits": shared_visits,
             "is_my_crew": bool(f.community_id and f.community_id in my_crew_ids),
             "by": (
@@ -311,8 +318,11 @@ def home_feed(
     cards = [_list_card(f) for f in heavy]
 
     # ── ① 취향 매칭: match 있으면 match순, 없으면(비로그인) 담기순 ──
+    # 취향 점수가 1차, 담은 수는 동점 처리(지금 공개 리스트는 전부 0명이라 무의미하지만
+    # 값이 채워지면 자동으로 기여한다)
     matched = sorted(
-        cards, key=lambda c: ((c["match"] if c["match"] is not None else -1), c["saves"]), reverse=True
+        cards, key=lambda c: ((c["score"] if c["score"] is not None else -9), c["saves"]),
+        reverse=True,
     )[:8]
 
     # 크루 축 — 같이 간 가게가 겹치는 크루가 먼저, 그다음 집단 취향 유사도.
@@ -320,7 +330,7 @@ def home_feed(
     crew_matched = sorted(
         [c for c in cards if c["by"]["kind"] == "crew" and not c["is_my_crew"]],
         key=lambda c: (c["shared_visits"],
-                       (c["crew_match"] if c["crew_match"] is not None else -1),
+                       (c["crew_score"] if c["crew_score"] is not None else -9),
                        c["saves"]),
         reverse=True,
     )[:8]
@@ -452,7 +462,8 @@ def home_feed(
         "trending": trending,
         "context_tags": CONTEXT_TAGS,
         "logged_in": bool(uid),
-        "has_taste": taste is not None,
+        "has_taste": bool(sheet and sheet.has_taste),
+        "taste_level": (sheet.level if sheet else "L0"),
     }
 
 
@@ -677,21 +688,23 @@ def home_search(
     owner_ids = list({f.user_id for f in heavy})
     owners = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()} if owner_ids else {}
 
-    taste = _user_taste_centroid(db, uid) if uid else None
     my_crew_ids, crew_taste, crew_visited = _crew_axis(db, uid)
+    sheet = taste_service.load(db, uid)
+    _hids = [f.id for f in heavy]
+    fcens = taste_service.folder_centroids(db, _hids)
+    fscores = taste_service.score_folders(db, sheet, _hids)
+    crew_unit = taste_service.centered_unit(crew_taste)
 
     items = []
     for f in heavy:
         pids = hplaces.get(f.id, [])[:50]
-        vecs = [embs[p] for p in pids if p in embs]
-        cen = _centroid(vecs)
-        match = None
-        if taste is not None and cen is not None:
-            match = int(round(max(0.0, float(np.dot(taste, cen))) * 100))
+        score, fidx, taste_ok = fscores.get(f.id, (None, 0, False))
+        reason, reason_kind = (taste_service.taste_reason(sheet, fidx)
+                               if (taste_ok and sheet) else (None, None))
         # 검색 결과에도 크루 축을 실어 보낸다 — 크루가 만든 리스트는 크루 기준으로 보여야 한다
-        crew_match = None
-        if crew_taste is not None and cen is not None:
-            crew_match = int(round(max(0.0, float(np.dot(crew_taste, cen))) * 100))
+        crew_score = None
+        if crew_unit is not None and f.id in fcens:
+            crew_score = float(fcens[f.id] @ crew_unit)
         shared_visits = len(crew_visited.intersection(pids)) if crew_visited else 0
         crew = comms.get(f.community_id) if f.community_id else None
         owner = owners.get(f.user_id)
@@ -708,8 +721,15 @@ def home_search(
             "saves": int(saves_cnt.get(f.id, 0)),
             "revisit": int(revisit),
             "area": _area_of([addr.get(p) for p in pids]),
-            "match": match,
-            "crew_match": crew_match,
+            # match(0~100)는 폐기 — 무작위 장소도 94%로 뜨던 숫자라 의미가 없었다.
+            # 프론트가 아직 읽으므로 필드는 남기고 null을 준다.
+            "match": None,
+            "crew_match": None,
+            "score": score,
+            "taste_ok": bool(taste_ok),
+            "reason": reason,
+            "reason_kind": reason_kind,
+            "crew_score": crew_score,
             "shared_visits": shared_visits,
             "is_my_crew": bool(f.community_id and f.community_id in my_crew_ids),
             "by": (
@@ -725,14 +745,14 @@ def home_search(
         """리스트를 만든 주체에 맞는 점수. 크루 리스트를 내 개인 취향으로 줄 세우면
         '우리랑 비슷한 크루'가 아니라 '내 입맛에 맞는 크루'가 올라온다."""
         if c["by"]["kind"] == "crew":
-            v = c.get("crew_match")
+            v = c.get("crew_score")
             if v is None:
-                v = c.get("match")
+                v = c.get("score")
             # 같이 다녀온 가게가 겹치면 그게 가장 강한 신호
-            return (v if v is not None else -1) + min(c.get("shared_visits") or 0, 5) * 10
-        return c["match"] if c["match"] is not None else -1
+            return (v if v is not None else -9) + min(c.get("shared_visits") or 0, 5) * 1.0
+        return c["score"] if c["score"] is not None else -9
 
-    eff_sort = sort or ("match" if (taste is not None or crew_taste is not None) else "saves")
+    eff_sort = sort or ("match" if (sheet and sheet.has_taste) or crew_taste is not None else "saves")
     if eff_sort == "match":
         items.sort(key=lambda c: (_axis_score(c), c["saves"]), reverse=True)
     elif eff_sort == "revisit":
@@ -1248,7 +1268,7 @@ def home_hot_deals(
     uid = user.id if user else None
 
     # 내 취향 / 크루 취향 centroid
-    taste = _user_taste_centroid(db, uid) if uid else None
+    sheet = taste_service.load(db, uid)
     my_crews = []
     crew_taste = None
     crew_visited: dict[int, tuple[str, int]] = {}   # place_id → (크루명, 방문수)
@@ -1310,14 +1330,19 @@ def home_hot_deals(
                 if d and d.place_id in pids:
                     partnered[d.place_id] = d.benefit
 
-    embs = _embeddings_for(db, pids) if (taste is not None or crew_taste is not None) else {}
+    # 취향 점수는 pgvector가 내적만 계산해 돌려준다(벡터 인출 없음)
+    pscores = taste_service.score_places(db, sheet, pids)
+    crew_unit = taste_service.centered_unit(crew_taste)
+    cembs = _embeddings_for(db, pids) if crew_unit is not None else {}
 
     items = []
     for r in rows:
         pid = r[0]
-        emb = embs.get(pid)
-        match = int(round(max(0.0, float(np.dot(taste, emb))) * 100)) if (taste is not None and emb is not None) else None
-        cmatch = int(round(max(0.0, float(np.dot(crew_taste, emb))) * 100)) if (crew_taste is not None and emb is not None) else None
+        sc, fidx, taste_ok = pscores.get(pid, (None, 0, False))
+        match = None if sc is None else int(round(sc * 100))
+        cmatch = None
+        if crew_unit is not None and pid in cembs:
+            cmatch = int(round(float(taste_service.centered_unit(cembs[pid]) @ crew_unit) * 100))
 
         visited = crew_visited.get(pid)
         benefit = partnered.get(pid)

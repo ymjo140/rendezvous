@@ -426,6 +426,13 @@ def mark_dirty(db: Session, uid: Optional[int]) -> None:
 
 # ── 채점 ──────────────────────────────────────────────────────
 
+def centered_unit(vec) -> Optional[np.ndarray]:
+    """임의의 centroid를 중심화 단위벡터로. 크루 취향처럼 시트 밖 벡터를 맞출 때 쓴다."""
+    if vec is None or _MEAN is None:
+        return None
+    return _center(np.asarray(vec, dtype=np.float64))[0]
+
+
 def facet_literals(sheet: Optional[TasteSheet]) -> list:
     return [_vec_lit(f.vec) for f in sheet.facets] if sheet else []
 
