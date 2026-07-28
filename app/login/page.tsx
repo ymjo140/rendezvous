@@ -27,7 +27,20 @@ export default function LoginPage() {
     (typeof window !== "undefined"
       ? `${window.location.origin}/auth/callback/kakao`
       : "")
-  const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${kakaoRestApiKey}&redirect_uri=${redirectUri}&response_type=code`
+  // 크루 id를 OAuth state에 싣는다. localStorage는 카톡 인앱 브라우저 →
+  // 카카오톡 앱 → 기본 브라우저로 컨텍스트가 갈리면 사라지는데, state는 카카오가
+  // 콜백 URL에 그대로 돌려주므로 살아남는다.
+  const [stateParam, setStateParam] = React.useState("")
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const crew = new URLSearchParams(window.location.search).get("crew")
+    setStateParam(crew ? `crew:${crew}` : "")
+  }, [])
+
+  const kakaoAuthUrl =
+    `https://kauth.kakao.com/oauth/authorize?client_id=${kakaoRestApiKey}` +
+    `&redirect_uri=${redirectUri}&response_type=code` +
+    (stateParam ? `&state=${encodeURIComponent(stateParam)}` : "")
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white p-4 font-['Pretendard']">

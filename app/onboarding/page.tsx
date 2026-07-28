@@ -83,7 +83,13 @@ export default function OnboardingPage() {
     else setList([...list, item])
   }
 
+  // 크루 초대로 들어와 가입한 경우 — 온보딩이 끝나면 그 크루로 데려간다
+  const inviteCrew = typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).get("crew")
+    : null
+
   const handleSubmit = async (dest: string = "/") => {
+    if (inviteCrew) dest = `/crew/${inviteCrew}?joined=1`
     if (selectedFoods.length === 0) return alert("선호 음식은 최소 1개 선택해주세요.")
 
     setLoading(true)

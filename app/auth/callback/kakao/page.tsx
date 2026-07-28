@@ -22,9 +22,10 @@ async function consumeInviteRef() {
 }
 
 // 크루 초대 링크로 가입/로그인한 경우 자동 합류 → 합류한 크루 id 반환 (실패해도 무시)
-async function consumeCrewInvite(token: string): Promise<string | null> {
+async function consumeCrewInvite(token: string, fromState?: string | null): Promise<string | null> {
   try {
-    const cid = window.localStorage.getItem("invite_crew")
+    // state가 1순위 — 브라우저가 바뀌어도 살아남는 유일한 경로
+    const cid = fromState || window.localStorage.getItem("invite_crew")
     if (!cid) return null
     const res = await fetch(`${API_URL}/api/crews/${cid}/join`, {
       method: "POST",
@@ -42,6 +43,9 @@ function KakaoCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const code = searchParams.get("code")
+  const stateCrew = (searchParams.get("state") || "").startsWith("crew:")
+    ? (searchParams.get("state") || "").slice(5)
+    : null
   const [status, setStatus] = useState("카카오 로그인 처리 중...")
 
   useEffect(() => {
@@ -63,11 +67,18 @@ function KakaoCallbackContent() {
             .then(res => res.json())
             .then(async user => {
               await consumeInviteRef()
-              const joinedCrew = await consumeCrewInvite(data.access_token)
-              if (!user.location_name || user.location_name === "위치 미설정" || user.name.startsWith("User_")) {
-                router.push("/onboarding")
+              const joinedCrew = await consumeCrewInvite(data.access_token, stateCrew)
+              const needsOnboarding =
+                !user.location_name || user.location_name === "위치 미설정" || user.name.startsWith("User_")
+              if (needsOnboarding) {
+                // 합류는 이미 끝났다. 온보딩을 마치면 그 크루로 데려간다 —
+                // 안 그러면 들어가 놓고 본인은 모른 채 홈에 떨어진다.
+                router.push(joinedCrew ? `/onboarding?crew=${joinedCrew}` : "/onboarding")
               } else if (joinedCrew) {
                 router.push(`/crew/${joinedCrew}?joined=1`)
+              } else if (stateCrew) {
+                // 합류에 실패했으면 조용히 넘기지 말고 크루로 보내 다시 시도하게
+                router.push(`/crew/${stateCrew}?invite=1`)
               } else {
                 router.push("/")
               }

@@ -48,6 +48,8 @@ export default function CrewProfilePage() {
   const [joinBusy, setJoinBusy] = useState(false)
   const [shareMsg, setShareMsg] = useState<string | null>(null)
   const [verifyNeed, setVerifyNeed] = useState<null | { kind: "university" | "company"; org: string }>(null)
+  const [joinErr, setJoinErr] = useState<string | null>(null)
+  const autoTried = React.useRef(false)
   const [deals, setDeals] = useState<any[] | null>(null)
 
   const doJoin = async () => {
@@ -66,9 +68,25 @@ export default function CrewProfilePage() {
       if (res.ok) {
         // 합류 성공 — 멤버 시점으로 다시 로드
         window.location.href = `/crew/${params.cid}?joined=1`
+        return
       }
-    } catch { /* ignore */ } finally { setJoinBusy(false) }
+      const d = await res.json().catch(() => null)
+      setJoinErr(d?.detail?.message || (typeof d?.detail === "string" ? d.detail : null)
+                 || "합류에 실패했어요. 다시 시도해주세요.")
+    } catch {
+      setJoinErr("연결이 불안정해요. 다시 시도해주세요.")
+    } finally { setJoinBusy(false) }
   }
+
+  // 초대 링크는 탭 한 번으로 끝나야 한다. 열리자마자 합류시키고,
+  // 로그인이 필요하면 로그인만 시킨 뒤 콜백에서 자동으로 합류한다.
+  useEffect(() => {
+    if (!isInvite || autoTried.current || loading) return
+    if (crew && crew.is_member) return          // 이미 멤버면 그냥 보여주면 된다
+    if (verifyNeed) return                       // 소속 인증이 먼저다
+    autoTried.current = true
+    doJoin()
+  }, [isInvite, loading, crew, verifyNeed])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const doInvite = async () => {
     if (!crew) return
@@ -126,14 +144,22 @@ export default function CrewProfilePage() {
           <div className="px-4 py-16 text-center">
             <div className="text-4xl">💌</div>
             <h2 className="mt-3 text-[16px] font-bold text-slate-900">크루에 초대받았어요!</h2>
-            <p className="mt-1.5 text-[12px] text-slate-400">비공개 크루라 합류하면 리스트가 보여요.</p>
-            <button
-              onClick={doJoin}
-              disabled={joinBusy}
-              className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[#F5A623] px-6 py-3 text-[14px] font-semibold text-white disabled:opacity-50"
-            >
-              {joinBusy && <Loader2 className="h-4 w-4 animate-spin" />}크루 합류하기
-            </button>
+            {joinErr ? (
+              <>
+                <p className="mt-1.5 text-[12px] text-rose-500">{joinErr}</p>
+                <button
+                  onClick={() => { setJoinErr(null); doJoin() }}
+                  disabled={joinBusy}
+                  className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[#F5A623] px-6 py-3 text-[14px] font-semibold text-white disabled:opacity-50"
+                >
+                  {joinBusy && <Loader2 className="h-4 w-4 animate-spin" />}다시 시도
+                </button>
+              </>
+            ) : (
+              <p className="mt-1.5 flex items-center justify-center gap-1.5 text-[12px] text-slate-400">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />합류하는 중...
+              </p>
+            )}
           </div>
         ) : (
           <div className="py-20 text-center text-sm text-slate-400">크루를 찾을 수 없어요.</div>
@@ -182,12 +208,14 @@ export default function CrewProfilePage() {
                   <Share2 className="h-3.5 w-3.5" />초대
                 </button>
               ) : isInvite ? (
+                // 자동 합류가 돌고 있다 — 실패했을 때만 사람이 누를 것이 된다
                 <button
-                  onClick={doJoin}
+                  onClick={() => { setJoinErr(null); doJoin() }}
                   disabled={joinBusy}
                   className="flex shrink-0 items-center gap-1 rounded-full bg-[#F5A623] px-4 py-2 text-[12px] font-semibold text-white disabled:opacity-50"
                 >
-                  {joinBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}합류하기
+                  {joinBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {joinBusy ? "합류 중" : joinErr ? "다시 시도" : "합류하기"}
                 </button>
               ) : (
                 <button
