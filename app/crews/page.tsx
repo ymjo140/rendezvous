@@ -6,7 +6,6 @@
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Users, Plus, ChevronRight, Sparkles, MessageCircle, Share2, Handshake, CalendarCheck } from "lucide-react"
-import { shareCrewInvite } from "@/lib/kakao"
 import { Copy, Check, X } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "../tab-bar"
@@ -234,12 +233,6 @@ export default function CrewsTabPage() {
               {copied ? "복사했어요 — 카톡에 붙여넣기" : "링크 복사"}
             </button>
 
-            <button
-              onClick={() => shareCrewInvite({ crewId: invite.url.split("/crew/")[1].split("?")[0], crewTitle: invite.title })}
-              className="mt-2 w-full rounded-2xl border border-slate-200 py-2.5 text-[12.5px] font-semibold text-slate-500"
-            >
-              공유 시트로 보내기
-            </button>
           </div>
         </div>
       )}

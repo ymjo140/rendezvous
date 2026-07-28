@@ -6,7 +6,6 @@
 import React, { useEffect, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, ChevronRight, RotateCw, Users, Plus, BadgeCheck, Bookmark, Share2, Loader2 } from "lucide-react"
-import { shareCrewInvite } from "@/lib/kakao"
 import { VerifySheet, CREW_TYPE_META } from "../../verify-sheet"
 import { fetchWithAuth } from "@/lib/api-client"
 
@@ -90,9 +89,15 @@ export default function CrewProfilePage() {
 
   const doInvite = async () => {
     if (!crew) return
-    const { result } = await shareCrewInvite({ crewId: crew.id, crewTitle: crew.title, icon: crew.icon, memberCount: crew.member_count })
-    if (result === "copied") { setShareMsg("초대 링크를 복사했어요 — 카톡에 붙여넣어 보내세요!"); setTimeout(() => setShareMsg(null), 3000) }
-    else if (result === "none") { setShareMsg("공유를 지원하지 않는 환경이에요."); setTimeout(() => setShareMsg(null), 3000) }
+    const url = `${window.location.origin}/crew/${crew.id}?invite=1`
+    try {
+      await navigator.clipboard.writeText(url)
+      setShareMsg("초대 링크를 복사했어요 — 카톡에 붙여넣어 보내세요")
+    } catch {
+      // 클립보드가 막힌 환경 — 주소를 그대로 보여줘 직접 복사하게 한다
+      setShareMsg(url)
+    }
+    setTimeout(() => setShareMsg(null), 6000)
   }
 
   useEffect(() => {

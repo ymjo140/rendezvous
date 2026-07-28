@@ -23,8 +23,23 @@ export function appOrigin(): string {
   return (process.env.NEXT_PUBLIC_APP_URL || "https://rendezvous.app").replace(/\/$/, "")
 }
 
+// 카카오 공유 SDK(sendDefault)를 당분간 끈다.
+//
+// sendDefault는 개발자 콘솔에 등록되지 않은 주소로는 링크를 보내지 않고 등록된
+// 도메인 루트로 대체한다. 그래서 크루 초대(/crew/{id}?invite=1)를 보내면 받는
+// 쪽은 홈만 열렸고, 친구 초대(/login?ref={id})도 추천인이 조용히 사라진다.
+// 사이트 도메인을 등록한 뒤에도 재현돼(2026-07-28 실측) 원인을 확정하기 전까지는
+// 쓰지 않는다 — 보낸 사람은 성공한 줄 알고 받는 사람은 홈에 도착하는, 조용히
+// 실패하는 경로라 있는 것 자체가 해롭다.
+//
+// 붙여넣은 주소는 어떤 메신저를 거쳐도 그대로 가므로 클립보드 경로로 대체했다.
+// 카카오 카드(썸네일)를 되살리려면 이 상수를 false로 바꾸되, 실제로 경로가
+// 보존되는지 먼저 확인할 것.
+const KAKAO_SHARE_DISABLED = true
+
 /** Kakao SDK가 로드됐고 JS키가 있으면 init 후 true 반환. */
 export function isKakaoReady(): boolean {
+  if (KAKAO_SHARE_DISABLED) return false
   if (typeof window === "undefined") return false
   const k = window.Kakao
   if (!k || !JS_KEY) return false
@@ -152,23 +167,10 @@ export async function shareCrewInvite(opts: {
   const title = `${opts.icon || "🍽️"} ${opts.crewTitle} 크루 초대장`
   const desc = `우리 크루에서 맛집 리스트를 함께 쌓아요! 멤버 ${opts.memberCount || 1}명이 기다리고 있어요.`
 
-  if (isKakaoReady()) {
-    try {
-      window.Kakao.Share.sendDefault({
-        objectType: "feed",
-        content: {
-          title,
-          description: desc,
-          imageUrl: DEFAULT_SHARE_IMAGE,
-          link: { mobileWebUrl: url, webUrl: url },
-        },
-        buttons: [{ title: "크루 합류하기", link: { mobileWebUrl: url, webUrl: url } }],
-      })
-      return { result: "kakao", url }
-    } catch {
-      // SDK 실패 → 폴백
-    }
-  }
+  // 카카오 공유 SDK(sendDefault)는 쓰지 않는다. 개발자 콘솔에 등록되지 않은
+  // 주소로는 링크를 보내지 않고 등록 도메인 루트로 대체해버려서, 초대를 보내도
+  // 받는 쪽이 홈만 열렸다(도메인 등록 후에도 재현됨). 조용히 실패하는 경로라
+  // 버튼이 있는 것 자체가 해롭다 — 붙여넣은 주소는 어디를 거쳐도 그대로 간다.
   const result = await fallbackShare(title, desc, url)
   return { result, url }
 }
