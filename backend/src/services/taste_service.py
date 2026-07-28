@@ -478,3 +478,105 @@ def taste_reason(sheet: TasteSheet, facet_idx: int) -> tuple:
     if sheet.learning:
         txt += " (아직 학습 중)"
     return (txt, "taste")
+
+
+# ── 장소 채점 (요청당 쿼리 1회) ────────────────────────────────
+
+def score_places(db: Session, sheet: Optional[TasteSheet], place_ids: list) -> dict:
+    """place_id → (점수, 덩어리 인덱스, 게이트 통과 여부).
+
+    벡터를 통째로 끌어오지 않는다. 후보 330개면 예전엔 2.42MB였는데
+    pgvector가 내적만 계산해 돌려주면 8KB다.
+    """
+    if not sheet or not sheet.facets or not place_ids or not _load_space(db):
+        return {}
+    lits = [_vec_lit(f.vec) for f in sheet.facets]
+    while len(lits) < 3:
+        lits.append(None)
+
+    rows = db.execute(text("""
+        SELECT pe.place_id,
+               CASE WHEN :f1 IS NULL THEN NULL
+                    ELSE -(pe.embedding <#> (:f1)::vector) * pm.inv_norm END,
+               CASE WHEN :f2 IS NULL THEN NULL
+                    ELSE -(pe.embedding <#> (:f2)::vector) * pm.inv_norm END,
+               CASE WHEN :f3 IS NULL THEN NULL
+                    ELSE -(pe.embedding <#> (:f3)::vector) * pm.inv_norm END,
+               pm.dot_mean
+        FROM place_embeddings pe
+        JOIN place_embedding_meta pm ON pm.place_id = pe.place_id
+        WHERE pe.place_id = ANY(:ids)
+    """), {"f1": lits[0], "f2": lits[1], "f3": lits[2], "ids": list(place_ids)}).all()
+
+    fm = [float(f.vec @ _MEAN) for f in sheet.facets]
+    out = {}
+    for r in rows:
+        denom = math.sqrt(max(1e-12, 1.0 - 2.0 * float(r[4]) + _MEAN_SQ))
+        best, bi = -2.0, 0
+        for k in range(len(sheet.facets)):
+            if r[1 + k] is None:
+                continue
+            sc = (float(r[1 + k]) - fm[k]) / denom
+            if sc > best:
+                best, bi = sc, k
+        out[r[0]] = (best, bi, best > sheet.facets[bi].gate)
+    return out
+
+
+# ── 폴더(리스트) centroid ─────────────────────────────────────
+
+def folder_centroids(db: Session, folder_ids: list) -> dict:
+    """folder_id → 중심화 단위벡터. 담긴 장소가 바뀌면 자동으로 다시 만든다.
+
+    무효화 훅을 두지 않는 이유: item_count가 이미 정답을 알고 있다.
+    계산 시점의 개수(centroid_n)와 지금 개수가 다르면 그때 다시 만들면 된다.
+    """
+    if not folder_ids or not _load_space(db):
+        return {}
+
+    rows = db.execute(text("""
+        SELECT id, centroid, centroid_n, item_count FROM save_folders
+        WHERE id = ANY(:ids)
+    """), {"ids": list(folder_ids)}).all()
+
+    out, stale = {}, []
+    for fid, cen, cn, ic in rows:
+        if cen is not None and cn == ic:
+            out[fid] = _center(_as_vec(cen))[0]
+        else:
+            stale.append(fid)
+
+    for fid in stale:
+        row = db.execute(text("""
+            SELECT avg(pe.embedding), count(*)
+            FROM saved_items si JOIN place_embeddings pe ON pe.place_id = si.place_id
+            WHERE si.folder_id = :fid AND pe.embedding IS NOT NULL
+        """), {"fid": fid}).first()
+        if row is None or row[0] is None or not row[1]:
+            continue
+        v = _as_vec(row[0])
+        db.execute(text("""
+            UPDATE save_folders
+               SET centroid = (:c)::vector, centroid_n = item_count, centroid_at = now()
+             WHERE id = :fid
+        """), {"c": _vec_lit(v), "fid": fid})
+        out[fid] = _center(v)[0]
+    if stale:
+        db.commit()
+    return out
+
+
+def score_folders(db: Session, sheet: Optional[TasteSheet], folder_ids: list) -> dict:
+    """folder_id → (점수, 덩어리 인덱스, 게이트 통과 여부)."""
+    if not sheet or not sheet.facets:
+        return {}
+    cens = folder_centroids(db, folder_ids)
+    out = {}
+    for fid, c in cens.items():
+        best, bi = -2.0, 0
+        for k, f in enumerate(sheet.facets):
+            sc = float(c @ f.vec)
+            if sc > best:
+                best, bi = sc, k
+        out[fid] = (best, bi, best > sheet.facets[bi].gate)
+    return out
