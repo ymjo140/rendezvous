@@ -7,6 +7,7 @@ import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Users, Plus, ChevronRight, Sparkles, MessageCircle, Share2, Handshake, CalendarCheck } from "lucide-react"
 import { shareCrewInvite } from "@/lib/kakao"
+import { Copy, Check, X } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "../tab-bar"
 
@@ -32,6 +33,11 @@ export default function CrewsTabPage() {
   const [suggest, setSuggest] = useState<Crew[]>([])
   const [loading, setLoading] = useState(true)
   const [loggedIn, setLoggedIn] = useState(true)
+  // 초대 링크를 눈으로 보고 복사하게 한다. 카카오 공유 SDK는 개발자 콘솔에
+  // 등록되지 않은 주소로는 링크를 못 보내고 등록 도메인 루트로 대체해버려서,
+  // 초대를 보내도 받는 쪽이 홈만 열리는 일이 있었다.
+  const [invite, setInvite] = useState<{ title: string; url: string } | null>(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     fetchWithAuth("/api/home/feed")
@@ -114,9 +120,12 @@ export default function CrewsTabPage() {
                     )}
                   </button>
                   <button
-                    onClick={async () => {
-                      const { result } = await shareCrewInvite({ crewId: c.id, crewTitle: c.title, icon: c.icon, memberCount: c.members })
-                      if (result === "copied") alert("초대 링크를 복사했어요 — 카톡에 붙여넣어 보내세요!")
+                    onClick={() => {
+                      setCopied(false)
+                      setInvite({
+                        title: c.title,
+                        url: `${window.location.origin}/crew/${c.id}?invite=1`,
+                      })
                     }}
                     className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-[#F5A623] py-2 text-[11.5px] font-semibold text-white"
                   >
@@ -193,6 +202,44 @@ export default function CrewsTabPage() {
                 <Users className="h-4 w-4 shrink-0 text-slate-300" />
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {invite && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setInvite(null)}>
+          <div className="w-full max-w-md rounded-t-3xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center">
+              <b className="flex-1 text-[15px] font-bold text-slate-900">{invite.title} 초대 링크</b>
+              <button onClick={() => setInvite(null)} className="p-1 text-slate-400"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="mt-1 text-[12px] text-slate-400">이 주소를 그대로 보내주세요. 받는 사람이 누르면 바로 합류됩니다.</p>
+
+            <div className="mt-3 rounded-2xl bg-slate-50 p-3">
+              <p className="break-all text-[12px] leading-relaxed text-slate-700">{invite.url}</p>
+            </div>
+
+            <button
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(invite.url)
+                  setCopied(true)
+                } catch {
+                  setCopied(false)
+                }
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#F5A623] py-3 text-[14px] font-bold text-white"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copied ? "복사했어요 — 카톡에 붙여넣기" : "링크 복사"}
+            </button>
+
+            <button
+              onClick={() => shareCrewInvite({ crewId: invite.url.split("/crew/")[1].split("?")[0], crewTitle: invite.title })}
+              className="mt-2 w-full rounded-2xl border border-slate-200 py-2.5 text-[12.5px] font-semibold text-slate-500"
+            >
+              공유 시트로 보내기
+            </button>
           </div>
         </div>
       )}
