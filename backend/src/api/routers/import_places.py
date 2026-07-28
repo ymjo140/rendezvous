@@ -370,6 +370,7 @@ def commit_import(
             user_id=user.id,
             item_type="place",
             place_id=place.id,
+            source="import",   # 과거 관심의 흔적 — 지금 고른 게 아니라 신호가 약하다
         ))
         saved += 1
 

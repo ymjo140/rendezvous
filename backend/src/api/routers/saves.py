@@ -464,7 +464,8 @@ def save_item(
         item_type=req.item_type,
         post_id=req.post_id if req.item_type == "post" else None,
         place_id=req.place_id if req.item_type == "place" else None,
-        memo=req.memo
+        memo=req.memo,
+        source="manual",   # 내가 이 가게를 골랐다 — 가장 강한 취향 신호
     )
     
     db.add(saved_item)

@@ -556,7 +556,9 @@ def save_list_to_my_folders(
             if it.place_id in have:
                 continue
             have.add(it.place_id)
-            db.add(models.SavedItem(folder_id=target.id, user_id=user.id, item_type="place", place_id=it.place_id, memo=it.memo))
+            # 리스트를 좋아한 것이지 각 가게를 고른 건 아니다 — 취향 신호로는 약하게 센다
+            db.add(models.SavedItem(folder_id=target.id, user_id=user.id, item_type="place",
+                                    place_id=it.place_id, memo=it.memo, source="copy"))
             added += 1
         target.item_count = added
         # 담은 사람 수 집계(1인 1회) — 개인 담기와 동일
@@ -611,7 +613,7 @@ def save_list_to_my_folders(
         have.add(it.place_id)
         db.add(models.SavedItem(
             folder_id=target.id, user_id=user.id, item_type="place",
-            place_id=it.place_id, memo=it.memo,
+            place_id=it.place_id, memo=it.memo, source="copy",
         ))
         added += 1
     target.item_count = len(have)

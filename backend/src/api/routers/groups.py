@@ -343,7 +343,7 @@ def save_place_to_group(cid: str, req: dict, user: Optional[models.User] = Depen
               .filter(models.SavedItem.folder_id == folder.id, models.SavedItem.place_id == int(place_id)).first())
     if not exists:
         db.add(models.SavedItem(folder_id=folder.id, user_id=user.id, item_type="place",
-                                place_id=int(place_id), memo=req.get("memo")))
+                                place_id=int(place_id), memo=req.get("memo"), source="manual"))
     db.flush()
     cnt = db.query(models.SavedItem).filter(models.SavedItem.folder_id == folder.id).count()
     folder.item_count = cnt

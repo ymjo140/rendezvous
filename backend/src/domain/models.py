@@ -597,6 +597,10 @@ class SavedItem(Base):
     post_id = Column(String, ForeignKey("posts.id", ondelete="CASCADE"), nullable=True)
     place_id = Column(Integer, ForeignKey("places.id", ondelete="CASCADE"), nullable=True)
     
+    # 어떻게 담겼는가 — 취향 신호의 무게가 다르다.
+    #   manual 내가 이 가게를 골랐다 / copy 남의 리스트를 통째로 담았다 / import 외부 북마크 반입
+    source = Column(String(16), nullable=False, default="manual", index=True)
+
     # 메모/태그
     memo = Column(String, nullable=True)
     
