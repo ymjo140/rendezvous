@@ -16,13 +16,15 @@ from typing import Optional
 
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
 from services import taste_service
 from services import visit_service
+from services import taste_service
+from services import query_interpreter
 from api.dependencies import get_current_user
 
 router = APIRouter()
@@ -559,6 +561,136 @@ def create_crew(
     }
 
 
+def _place_fallback(db: Session, sheet, interp: dict, limit: int,
+                    crew_visited=None, my_crew_ids=None) -> tuple:
+    """지역 안에서 취향·거리·사회적 증거로 장소를 채운다.
+
+    후보는 거리로 좁힌다. wemeet_rating·review_count가 12만 행 전부 0이라
+    (실측) 평점으로는 후보를 고를 수 없다 — 오늘 0이 아닌 신호는 거리뿐이다.
+    """
+    reg = interp.get("region") or {}
+    lat, lng = reg.get("lat"), reg.get("lng")
+    if lat is None or lng is None:
+        return [], None
+
+    import math as _m
+    r_km = float(reg.get("radius_km") or 1.5)
+    dlat = r_km / 111.0
+    dlng = r_km / (111.0 * max(0.2, _m.cos(_m.radians(lat))))
+
+    food_set = {f for f in (interp.get("foods") or []) if f in FOOD_KEYWORDS}
+    kws = [k for f in food_set for k in FOOD_KEYWORDS[f]]
+    resid = (interp.get("residual_q") or "").strip()
+
+    sql = """
+        SELECT p.id, p.name, COALESCE(p.cuisine_type, ''), COALESCE(p.category, ''),
+               COALESCE(p.address, ''), p.hero_image, p.lat, p.lng
+        FROM places p
+        WHERE p.main_category IN ('FOOD','RESTAURANT','CAFE','PUB')
+          AND p.lat BETWEEN :la1 AND :la2 AND p.lng BETWEEN :ln1 AND :ln2
+    """
+    params = {"la1": lat - dlat, "la2": lat + dlat, "ln1": lng - dlng, "ln2": lng + dlng}
+    if kws:
+        # category는 못 믿는다 — '경양식'이 %양식%에 걸려 포차가 파스타 검색에 나왔다
+        sql += " AND (" + " OR ".join(
+            f"p.cuisine_type ILIKE :k{i} OR p.name ILIKE :k{i}"
+            for i in range(len(kws))) + ")"
+        for i, k in enumerate(kws):
+            params[f"k{i}"] = f"%{k}%"
+    if resid:
+        sql += " AND p.name ILIKE :rq"
+        params["rq"] = f"%{resid}%"
+    # 거리순 + id 타이브레이크로 재현성 확보
+    sql += """ ORDER BY ((p.lat - :la0) * (p.lat - :la0)
+                       + (p.lng - :ln0) * 0.79 * (p.lng - :ln0) * 0.79) ASC, p.id ASC
+               LIMIT 330"""
+    params["la0"], params["ln0"] = lat, lng
+
+    rows = db.execute(text(sql), params).all()
+    if not rows:
+        return [], None
+
+    pids = [r[0] for r in rows]
+    scores = taste_service.score_places(db, sheet, pids) if sheet else {}
+    excluded = sheet.excluded if sheet else set()
+
+    saves_by_place = dict(
+        db.query(models.SavedItem.place_id, func.count(func.distinct(models.SavedItem.user_id)))
+        .filter(models.SavedItem.place_id.in_(pids)).group_by(models.SavedItem.place_id).all()
+    )
+    revisit_by_place = dict(
+        db.query(models.PlaceVisitFeedback.place_id, func.count(models.PlaceVisitFeedback.id))
+        .filter(models.PlaceVisitFeedback.place_id.in_(pids),
+                models.PlaceVisitFeedback.personal_revisit == True)  # noqa: E712
+        .group_by(models.PlaceVisitFeedback.place_id).all()
+    )
+    crew_visited = crew_visited or set()
+
+    out = []
+    seen_place = set()   # 이름+좌표가 같은 중복 장소가 447그룹 있다(실측)
+    for pid, name, cz, cat, addr_, img, plat, plng in rows:
+        if pid in excluded:
+            continue
+        key = (name, round(plat or 0, 5), round(plng or 0, 5))
+        if key in seen_place:
+            continue
+        seen_place.add(key)
+        dist = _haversine_km(lat, lng, plat, plng) if (plat and plng) else r_km
+        sc, fidx, taste_ok = scores.get(pid, (None, 0, False))
+
+        # 값이 실제로 0인 항목은 비중에서 빼고 나머지에 재분배한다.
+        # 안 그러면 아무 효과도 없으면서 취향 비중만 깎는다.
+        parts = []
+        if sc is not None:
+            parts.append((0.50, max(0.0, min(1.0, (sc + 0.3) / 0.9))))
+        parts.append((0.20, max(0.0, 1.0 - min(dist / max(r_km, 0.1), 1.0))))
+        social = max(
+            1.0 if pid in crew_visited else 0.0,
+            min(revisit_by_place.get(pid, 0) / 3.0, 1.0),
+            min(saves_by_place.get(pid, 0) / 5.0, 1.0),
+        )
+        if social > 0:
+            parts.append((0.20, social))
+        wsum = sum(w for w, _ in parts) or 1.0
+        total = sum(w * v for w, v in parts) / wsum
+
+        # 이유 사다리 — 구성상 참인 것만
+        if pid in crew_visited:
+            reason, kind = "우리 크루가 다녀온 곳", "crew_visit"
+        elif revisit_by_place.get(pid, 0) > 0:
+            n = revisit_by_place[pid]
+            reason, kind = f"다녀온 {n}명이 또 가겠다고 함", "revisit_proof"
+        elif taste_ok and sheet:
+            reason, kind = taste_service.taste_reason(sheet, fidx)
+        elif saves_by_place.get(pid, 0) > 0:
+            reason, kind = f"{saves_by_place[pid]}명이 저장한 곳", "popular"
+        else:
+            reason, kind = f"{reg.get('name')} · {round(dist, 1)}km", "area"
+
+        out.append({
+            "id": pid, "name": name, "cuisine": cz, "category": cat, "address": addr_,
+            "image": img, "dist_km": round(dist, 2),
+            "taste_ok": bool(taste_ok), "score": sc, "rank": total,
+            "reason": reason, "reason_kind": kind,
+        })
+
+    out.sort(key=lambda x: x["rank"], reverse=True)
+    out = out[:limit]
+    hit = sum(1 for x in out if x["taste_ok"])
+    if hit:
+        note = f"'{reg.get('name')}' 근처에서 취향에 맞는 곳을 찾았어요"
+    else:
+        note = f"'{reg.get('name')}'에서 취향에 딱 맞는 곳은 못 찾았어요. 가까운 순으로 보여드려요"
+    return out, note
+
+
+def _haversine_km(lat1, lng1, lat2, lng2) -> float:
+    from math import asin, cos, radians, sin, sqrt
+    lat1, lng1, lat2, lng2 = map(lambda v: radians(float(v)), (lat1, lng1, lat2, lng2))
+    h = sin((lat2 - lat1) / 2) ** 2 + cos(lat1) * cos(lat2) * sin((lng2 - lng1) / 2) ** 2
+    return 6371.0 * 2 * asin(min(1.0, sqrt(h)))
+
+
 @router.get("/api/home/search")
 def home_search(
     q: Optional[str] = None,
@@ -575,6 +707,18 @@ def home_search(
     """리스트 단위 검색 — 필터 4축(지역·맥락·정렬·재방문 검증).
     검색의 기본 단위는 장소가 아니라 '믿을 무리가 만든 리스트'다."""
     uid = user.id if user else None
+
+    # 검색어를 지역·음식·목적으로 쪼갠다. 해석한 말은 q에서 빼야 한다 —
+    # 남겨두면 q와 region이 AND로 걸려 '신논현 파스타'가 확정적으로 0건이 된다.
+    interp = query_interpreter.interpret(db, q, FOOD_KEYWORDS, TAG_NAME_HINTS)
+    if interp["region"] and not (regions or region):
+        region = interp["region"]["name"]
+    if interp["foods"] and not foods:
+        foods = ",".join(interp["foods"])
+    if interp["tags"] and not (tags or tag):
+        tags = ",".join(interp["tags"])
+    q = interp["residual_q"] or None
+
     tag_set = set()
     if tags:
         tag_set = {t.strip() for t in tags.split(",") if t.strip() in VALID_CONTEXT_TAGS}
@@ -760,7 +904,19 @@ def home_search(
     else:
         items.sort(key=lambda c: (c["saves"], c["revisit"]), reverse=True)
 
+    # 리스트가 부족하면 장소로 채운다. 빈 화면은 "취향에 맞는 게 없다"가 아니라
+    # "우리가 못 찾았다"로 읽히고, 사용자는 앱이 고장난 줄 안다.
+    places, places_note = [], None
+    need = 20 if len(items) == 0 else (12 if len(items) <= 2 else 6)
+    if interp["region"]:
+        places, places_note = _place_fallback(
+            db, sheet, interp, need,
+            crew_visited=crew_visited, my_crew_ids=my_crew_ids)
+
     return {
+        "interpretation": interp,
+        "places": places,
+        "places_note": places_note,
         "items": items,
         "count": len(items),
         "filters": {"q": q or "", "regions": region_set, "tags": sorted(tag_set), "foods": sorted(food_set), "sort": eff_sort, "verified": verified},
