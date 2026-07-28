@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from domain import models
+from services import taste_service
 from repositories.coin_repository import CoinRepository
 from schemas import reservation as schemas
 
@@ -82,6 +83,7 @@ class ReservationService:
             if offer_rule_id:
                 self._adjust_inventory(db, offer_rule_id, +1)
 
+            taste_service.mark_dirty(db, user.id)
             db.commit()
             db.refresh(resv)
             return {"reservation": resv, "balance": user.wallet_balance}

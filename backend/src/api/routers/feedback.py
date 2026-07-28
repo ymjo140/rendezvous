@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
+from services import taste_service
 from api.dependencies import get_current_user
 
 router = APIRouter()
@@ -132,6 +133,7 @@ def submit_feedback(req: dict, user: models.User = Depends(get_current_user), db
         group_revisit=req.get("group_revisit"),
     )
     db.add(fb)
+    taste_service.mark_dirty(db, user.id)
     db.commit()
     return {"status": "ok"}
 
@@ -176,6 +178,7 @@ def submit_review(req: dict, user: models.User = Depends(get_current_user), db: 
         image_urls=[],
     )
     db.add(rv)
+    taste_service.mark_dirty(db, user.id)
     db.commit()
     return {"status": "ok", "id": rv.id}
 

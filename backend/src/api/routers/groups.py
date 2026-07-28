@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
+from services import taste_service
 from api.dependencies import get_current_user
 
 router = APIRouter()
@@ -347,5 +348,6 @@ def save_place_to_group(cid: str, req: dict, user: Optional[models.User] = Depen
     db.flush()
     cnt = db.query(models.SavedItem).filter(models.SavedItem.folder_id == folder.id).count()
     folder.item_count = cnt
+    taste_service.mark_dirty(db, user.id)
     db.commit()
     return {"folder_id": folder.id, "folder_name": folder.name, "item_count": cnt, "saved": exists is None}

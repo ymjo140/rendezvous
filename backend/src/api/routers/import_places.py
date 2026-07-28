@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
+from services import taste_service
 from api.dependencies import require_user
 
 router = APIRouter()
@@ -375,6 +376,7 @@ def commit_import(
         saved += 1
 
     folder.item_count = saved
+    taste_service.mark_dirty(db, user.id)
     db.commit()
 
     return {

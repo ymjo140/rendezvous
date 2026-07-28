@@ -4,6 +4,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from fastapi import HTTPException
 
 from domain import models
+from services import taste_service
 from schemas import user as schemas
 from repositories.user_repository import UserRepository
 
@@ -73,6 +74,8 @@ class UserService:
         }
         user.preferences = preferences
         flag_modified(user, "preferences")
+        # 설문이 바뀌면 취향 시트도 다시 만들어야 한다(신호 0인 유저는 이게 유일한 재료)
+        taste_service.mark_dirty(db, user.id)
         db.commit()
         # 취향 → 임베딩 시드 (첫 추천부터 개인화)
         self._seed_taste_embedding(db, user, preferences)

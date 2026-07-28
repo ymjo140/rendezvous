@@ -15,6 +15,7 @@ from datetime import datetime
 
 from core.database import get_db
 from domain import models
+from services import taste_service
 from api.dependencies import get_current_user
 
 router = APIRouter()
@@ -470,6 +471,7 @@ def save_item(
     
     db.add(saved_item)
     folder.item_count += 1
+    taste_service.mark_dirty(db, current_user.id)
     db.commit()
     db.refresh(saved_item)
     
@@ -510,6 +512,7 @@ def unsave_item(
         folder.item_count = max(0, folder.item_count - 1)
     
     db.delete(item)
+    taste_service.mark_dirty(db, current_user.id)
     db.commit()
     
     return {"message": "저장이 취소되었습니다."}

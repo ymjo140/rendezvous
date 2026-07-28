@@ -345,7 +345,7 @@ def refresh(db: Session, uid: int) -> TasteSheet:
         "n_signal": sheet.signal_count,
         "excluded": sorted(sheet.excluded)[:200],
         "facets": [
-            {"label": f.label, "n": f.n, "w": round(f.weight, 2), "gate": round(f.gate, 4)}
+            {"label": f.label, "n": f.n, "w": round(f.weight, 2), "gate": round(f.gate, 6)}
             for f in sheet.facets
         ],
     }

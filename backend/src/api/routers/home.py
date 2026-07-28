@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
+from services import taste_service
 from services import visit_service
 from api.dependencies import get_current_user
 
@@ -1648,6 +1649,7 @@ def create_checkin(
         partnership_app_id=(deal["app_id"] if apply_deal else None),
     )
     db.add(row)
+    taste_service.mark_dirty(db, user.id)
     db.commit()
     db.refresh(row)
 
