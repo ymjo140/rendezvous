@@ -23,7 +23,7 @@ type HomeCache = {
 }
 const homeCache: HomeCache = {}
 
-const CACHE_KEY = "home:v1"
+const CACHE_KEY = "home:v2"
 const CACHE_TTL = 30 * 60 * 1000
 
 /** 캐시는 계정에 묶인다 — 로그아웃/계정 전환 뒤 남의 홈이 잠깐 보이면 안 된다. */
@@ -70,6 +70,10 @@ type ListCard = {
   area: string; match: number | null; by: ListBy
   // 크루 축(집단 취향·같이 간 가게)과 개인 축(내 입맛)은 근거가 다르다
   crew_match?: number | null; shared_visits?: number; is_my_crew?: boolean
+  // 매칭 %는 폐기했다 — 무작위 장소도 94%로 뜨던 숫자라 의미가 없었다.
+  // 대신 '왜 이게 떴는지'를 문장으로 말하고, 근거가 충분할 때만 배지를 붙인다.
+  score?: number | null; taste_ok?: boolean; reason?: string | null; reason_kind?: string | null
+  crew_score?: number | null
 }
 type Rack = { tag: string; label: string; emoji: string; items: ListCard[] }
 type CrewBrief = { id: string; title: string; icon: string; members: number; lists: number }
@@ -370,9 +374,9 @@ export default function HomeNextPage() {
           </div>
           <div className="text-[11px] text-gray-400">{g.by.kind === "crew" ? `멤버 ${g.by.members}명 · 크루` : "큐레이터"}</div>
         </div>
-        {(axis === "crew" ? g.crew_match : g.match) != null && (
-          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
-            {axis === "crew" ? g.crew_match : g.match}%
+        {g.taste_ok && (
+          <span className="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">
+            취향 적중
           </span>
         )}
       </div>
@@ -384,6 +388,9 @@ export default function HomeNextPage() {
         <span className="mx-0.5">·</span>
         <Bookmark className="h-3 w-3" />{g.saves}
       </div>
+      {g.reason && (
+        <p className="mt-1.5 text-[10.5px] leading-snug text-indigo-500">{g.reason}</p>
+      )}
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         {axis === "crew" && (g.shared_visits ?? 0) > 0 && (
           <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
@@ -741,7 +748,6 @@ export default function HomeNextPage() {
               {(filterResults || []).map((it) => {
                 // 크루가 만든 리스트는 크루 축(우리 크루 취향·같이 간 가게)으로 읽어야 한다
                 const isCrew = it.by.kind === "crew"
-                const pct = isCrew ? it.crew_match : it.match
                 return (
                 <article
                   key={it.folder_id}
@@ -752,8 +758,8 @@ export default function HomeNextPage() {
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
                       <b className="truncate text-[13px] font-semibold text-gray-900">{it.name}</b>
-                      {pct != null && (
-                        <em className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold not-italic ${isCrew ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"}`}>{pct}%</em>
+                      {it.taste_ok && (
+                        <em className="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold not-italic text-indigo-700">취향 적중</em>
                       )}
                     </span>
                     <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400">

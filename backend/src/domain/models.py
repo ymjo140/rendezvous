@@ -900,6 +900,7 @@ class PlaceVisitFeedback(Base):
     checkin_id = Column(Integer, nullable=True, index=True)   # place_checkins.id — 실제 방문 근거
     room_id = Column(String, nullable=True)          # 모임(커뮤니티) 방문이면 링크
     personal_revisit = Column(Boolean, nullable=True)  # 또 가고 싶어요?(개인 취향 축)
+    dislike_reason = Column(String(32), nullable=True)  # 아니라고 했을 때 무엇이 아쉬웠나
     group_revisit = Column(Boolean, nullable=True)     # 모임 장소로 추천?(모임 적합 축)
     created_at = Column(DateTime, default=datetime.now, index=True)
 

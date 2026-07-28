@@ -117,6 +117,9 @@ function RevisitSurvey() {
     const [stars, setStars] = useState(0);
     const [comment, setComment] = useState("");
     const [ratingBusy, setRatingBusy] = useState(false);
+    // '갔는데 아니었다'는 이 제품이 가진 가장 정확한 신호다. 방문한 사람에게만 묻고,
+    // 이유까지 받으면 "싫어하신 OO은 뺐어요"를 말할 수 있게 된다.
+    const [why, setWhy] = useState<Record<string, string>>({});
 
     useEffect(() => {
         const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -154,6 +157,7 @@ function RevisitSurvey() {
                     room_id: item.room_id ?? null,
                     personal_revisit: a.personal,
                     group_revisit: a.group ?? null,
+                    dislike_reason: a.personal === false ? (why[k] || null) : null,
                 }),
             });
             if (res.ok) {
@@ -262,6 +266,27 @@ function RevisitSurvey() {
                                 <button type="button" onClick={() => setAns(rid, "personal", false)} className={btnCls(a.personal === false, false)}>아니요</button>
                             </div>
                         </div>
+                        {a.personal === false && (
+                            <div className="mt-2">
+                                <div className="mb-1 text-xs font-semibold text-gray-600">뭐가 아쉬웠어요? <span className="text-gray-400">(선택)</span></div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {["맛", "가격", "분위기", "서비스", "너무 붐빔"].map((w) => (
+                                        <button
+                                            key={w}
+                                            type="button"
+                                            onClick={() => setWhy((p) => ({ ...p, [rid]: p[rid] === w ? "" : w }))}
+                                            className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                                                why[rid] === w
+                                                    ? "border-transparent bg-gray-700 text-white"
+                                                    : "border-gray-200 bg-white text-gray-500"
+                                            }`}
+                                        >
+                                            {w}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         <div className="mt-2">
                             <div className="mb-1 text-xs font-semibold text-gray-600">모임 장소로 추천할래요? <span className="text-gray-400">(모임 적합)</span></div>
                             <div className="flex gap-2">

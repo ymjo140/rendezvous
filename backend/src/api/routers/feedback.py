@@ -131,6 +131,7 @@ def submit_feedback(req: dict, user: models.User = Depends(get_current_user), db
         room_id=req.get("room_id"),
         personal_revisit=req.get("personal_revisit"),
         group_revisit=req.get("group_revisit"),
+        dislike_reason=(req.get("dislike_reason") or None),
     )
     db.add(fb)
     taste_service.mark_dirty(db, user.id)
