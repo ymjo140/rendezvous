@@ -609,7 +609,11 @@ def score_folders(db: Session, sheet: Optional[TasteSheet], folder_ids: list) ->
 
 W_MIN = 0.6          # 최소 만족도 비중. 1.0이면 한 명이 전부를 거부한다
 W_MEAN = 0.4
-YIELD_BOOST = 0.35   # 지난번 양보한 사람의 가중치 상한
+# 지난번 양보한 사람의 가중치 상한. 0.05면 사실상 동점 처리용이다 — 가중치는
+# 평균 항(W_MEAN)에만 들어가서, 5명 크루에서 점수에 미치는 영향이
+# 0.4 × 0.05/5.05 ≈ 0.4%(그 사람 여유가 평균에서 벗어난 만큼의)에 그친다.
+# 즉 순위를 뒤집지는 못하고 비슷한 후보 둘 사이에서만 갈린다.
+YIELD_BOOST = 0.05
 
 
 @dataclass
