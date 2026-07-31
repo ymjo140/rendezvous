@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, JSON, ARRAY, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKey, Boolean, JSON, ARRAY, UniqueConstraint
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector  # pgvector 768-dim 임베딩 컬럼용
 from datetime import datetime
@@ -143,6 +143,17 @@ class Place(Base):
     kakao_cid = Column(String, nullable=True, index=True)
     # 대표 이미지(사장님이 손님 사진 중 지정) — B2C 상세/카드 얼굴
     hero_image = Column(String, nullable=True)
+
+    # ── 행안부 인허가(LOCALDATA) 대조 결과 ──
+    # 평점이 없어도 답할 수 있는 것들. 특히 폐업은 평점 없는 것보다 치명적이다 —
+    # 크루 5명이 갔는데 문이 닫혀 있으면 그날 앱이 지워진다.
+    # ★ biz_status NULL은 '대조 못 함'이지 폐업이 아니다. 필터에서 반드시 구분할 것.
+    biz_status = Column(String(16), nullable=True, index=True)   # 영업 | 폐업 | NULL
+    opened_at = Column(Date, nullable=True)      # 인허가일 → "1994년 개업 · 31년째"
+    closed_at = Column(Date, nullable=True)
+    uptae = Column(String(40), nullable=True)    # 원본 업태(경양식·정종/대포집/소주방…)
+    area_m2 = Column(Float, nullable=True)       # 소재지면적 → 대략적 수용 규모
+    localdata_at = Column(DateTime, nullable=True)
 
 class MeetingLog(Base):
     __tablename__ = "meeting_logs"

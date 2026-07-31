@@ -587,6 +587,9 @@ def _place_fallback(db: Session, sheet, interp: dict, limit: int,
                COALESCE(p.address, ''), p.hero_image, p.lat, p.lng
         FROM places p
         WHERE p.main_category IN ('FOOD','RESTAURANT','CAFE','PUB')
+          -- 폐업은 뺀다. NULL(아직 대조 못 함)은 남긴다 — 대조 실패를 폐업으로
+          -- 처리하면 멀쩡한 가게가 사라진다.
+          AND (p.biz_status IS NULL OR p.biz_status <> '폐업')
           AND p.lat BETWEEN :la1 AND :la2 AND p.lng BETWEEN :ln1 AND :ln2
     """
     params = {"la1": lat - dlat, "la2": lat + dlat, "ln1": lng - dlng, "ln2": lng + dlng}
@@ -946,6 +949,9 @@ def home_search_places(
     # 주의: 크롤 음식 대분류의 본체는 "FOOD"(10만+) — RESTAURANT만 보면 대부분 빠진다
     query = db.query(models.Place).filter(
         models.Place.main_category.in_(["FOOD", "RESTAURANT", "CAFE", "PUB"])
+    ).filter(
+        # 폐업 제외 (NULL = 미대조는 유지)
+        (models.Place.biz_status.is_(None)) | (models.Place.biz_status != "폐업")
     )
 
     # 지역: 좌표 반경 bbox (기존 지역검색 /api/geocode 선택값과 연동)
@@ -1413,6 +1419,7 @@ def home_hot_deals(
                (SELECT MAX(t.deal_percent) FROM store_tables t WHERE t.place_id = p.id AND t.status = 'empty') AS best_deal
         FROM places p
         WHERE p.vacancy_until IS NOT NULL AND p.vacancy_until > NOW()
+          AND (p.biz_status IS NULL OR p.biz_status <> '폐업')
         ORDER BY dist_km ASC
         LIMIT 30
     """), {"lat": lat, "lng": lng}).fetchall()
