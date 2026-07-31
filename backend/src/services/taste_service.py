@@ -587,3 +587,155 @@ def score_folders(db: Session, sheet: Optional[TasteSheet], folder_ids: list) ->
                 best, bi = sc, k
         out[fid] = (best, bi, best > sheet.facets[bi].gate)
     return out
+
+
+# ── 집단 취향 합성 ──────────────────────────────────────────────
+#
+# 5명이 함께 만족하는 곳은 5명 취향의 평균이 아니다. 평균을 내면 아무도
+# 좋아하지 않는 중간 지점이 나온다 — 한 사람 안에서 이미 실측된 문제이고
+# (uid5 단일 centroid 분리 +1.3%p), 여러 사람이면 더 심해진다.
+#
+# 대신 두 가지를 한다:
+#   ① 최소 만족도를 올린다 — 제일 안 맞는 사람이 기준이다. 다만 순수 min은
+#      한 명 때문에 전부 0이 되는 병리가 있어 평균과 섞는다.
+#   ② 지난번에 양보한 사람을 기억한다 — 매번 같은 사람이 참으면 그건 추천이
+#      아니라 다수결이다.
+#
+# 네이버·카카오는 개인 계정만 알아서 이 문제를 구조적으로 풀 수 없다.
+
+W_MIN = 0.6          # 최소 만족도 비중. 1.0이면 한 명이 전부를 거부한다
+W_MEAN = 0.4
+YIELD_BOOST = 0.35   # 지난번 양보한 사람의 가중치 상한
+
+
+@dataclass
+class MemberTaste:
+    user_id: int
+    name: str
+    sheet: TasteSheet
+    weight: float = 1.0     # 양보 보정. 최근에 참은 사람일수록 크다
+
+
+def crew_members(db: Session, community_id: str) -> list:
+    """크루 멤버 + 각자의 취향 시트. 시트가 없는 사람은 빠진다(합성에서 제외)."""
+    crew = db.query(models.Community).filter(models.Community.id == str(community_id)).first()
+    if crew is None:
+        return []
+    ids = list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or [])))
+    if not ids:
+        return []
+    names = {u.id: (u.name or f"멤버{u.id}")
+             for u in db.query(models.User).filter(models.User.id.in_(ids)).all()}
+    out = []
+    for uid in ids:
+        sh = load(db, uid)
+        if sh and sh.has_taste:
+            out.append(MemberTaste(user_id=uid, name=names.get(uid, f"멤버{uid}"), sheet=sh))
+    return out
+
+
+def apply_yield_weights(db: Session, community_id: str, members: list) -> list:
+    """최근 크루 방문에서 자기 취향과 안 맞는 곳에 간 사람에게 가중치를 준다.
+
+    '양보'의 정의: 그 방문 장소가 본인 게이트를 통과하지 못했다. 매번 같은
+    사람이 참고 있으면 다음 추천에서 그 사람 쪽으로 기울어야 공정하다.
+    """
+    if not members:
+        return members
+    try:
+        pids = [r[0] for r in (
+            db.query(models.PlaceCheckin.place_id)
+            .filter(models.PlaceCheckin.community_id == str(community_id))
+            .order_by(models.PlaceCheckin.created_at.desc()).limit(30).all())]
+    except Exception:
+        pids = []
+    pids = list(dict.fromkeys(p for p in pids if p))
+    if not pids:
+        return members
+
+    yielded = {}
+    for m in members:
+        sc = score_places(db, m.sheet, pids)
+        if not sc:
+            continue
+        n_bad = sum(1 for v in sc.values() if not v[2])
+        yielded[m.user_id] = n_bad / max(1, len(sc))
+
+    if not yielded:
+        return members
+    worst = max(yielded.values()) or 1.0
+    for m in members:
+        # 가장 많이 참은 사람이 +YIELD_BOOST, 아예 안 참은 사람은 1.0
+        m.weight = 1.0 + YIELD_BOOST * (yielded.get(m.user_id, 0.0) / worst)
+    return members
+
+
+def crew_picks(db: Session, members: list, place_ids: list) -> dict:
+    """place_id → 집단 만족도.
+
+    반환: {score, satisfied, total, weakest, per_member{uid: (점수, 통과)}}
+    개인 점수는 그대로 비교할 수 없다 — 게이트가 사람마다 다르다. 그래서
+    '게이트 대비 여유(margin)'로 환산해 비교 가능하게 만든다.
+    """
+    if not members or not place_ids:
+        return {}
+    per = {}
+    for m in members:
+        per[m.user_id] = score_places(db, m.sheet, place_ids)
+
+    out = {}
+    for pid in place_ids:
+        margins, wsum, wacc, sat, detail = [], 0.0, 0.0, 0, {}
+        for m in members:
+            v = per.get(m.user_id, {}).get(pid)
+            if v is None:
+                continue
+            sc, fidx, ok = v
+            gate = m.sheet.facets[fidx].gate if fidx < len(m.sheet.facets) else 0.0
+            margin = sc - gate           # 양수면 그 사람 취향에 맞다
+            margins.append(margin)
+            wacc += margin * m.weight
+            wsum += m.weight
+            if ok:
+                sat += 1
+            detail[m.user_id] = (round(sc, 4), bool(ok))
+        if not margins:
+            continue
+        mean = wacc / wsum if wsum else 0.0
+        worst = min(margins)
+
+        # 가장 안 맞는 사람 — 이 사람이 곧 '참는 사람'이고, 다음 추천에서 우대된다
+        wi, wv = None, 1e9
+        for m in members:
+            v = per.get(m.user_id, {}).get(pid)
+            if v is None:
+                continue
+            g = m.sheet.facets[v[1]].gate if v[1] < len(m.sheet.facets) else 0.0
+            if (v[0] - g) < wv:
+                wv, wi = v[0] - g, m
+        weakest = wi.name if wi else None
+
+        out[pid] = {
+            "score": round(W_MIN * worst + W_MEAN * mean, 4),
+            "satisfied": sat,
+            "total": len(margins),
+            "weakest": weakest,
+            "per_member": detail,
+        }
+    return out
+
+
+def crew_reason(pick: dict, members: list) -> tuple:
+    """(문구, 종류). 몇 명이 맞는지 세는 건 구성상 참이다."""
+    if not pick:
+        return (None, None)
+    sat, tot = pick["satisfied"], pick["total"]
+    if tot == 0:
+        return (None, None)
+    if sat == tot and tot >= 2:
+        return (f"{tot}명 모두 취향에 맞아요", "group_all")
+    if sat >= 2:
+        return (f"{tot}명 중 {sat}명 취향에 맞아요", "group_most")
+    if sat == 1:
+        return (f"{tot}명 중 1명만 맞아요 · {pick['weakest']}님이 참는 자리", "group_weak")
+    return (f"{pick['weakest']}님 취향과 특히 안 맞아요", "group_none")
