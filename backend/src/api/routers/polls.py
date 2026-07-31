@@ -192,27 +192,24 @@ def suggest_poll_places(
     # 요구하면 통과가 거의 안 나온다 — 아무도 못 넘으면 상위 10%·20%로 넓혀 보고,
     # 어느 기준으로 봤는지는 note에 밝힌다. 점수(=순위)는 어차피 상대적이라
     # 기준을 풀어도 순서가 크게 바뀌지 않고, 바뀌는 건 '맞다'고 부를지 여부다.
-    top_n = max(1, min(limit, 10))
+    top_n = max(1, min(limit, 30))
     scores = taste_service.crew_scores(db, members, ids)
-    ranked, gate_fpr = [], taste_service.GATE_LEVELS[0]
+    ranked, gate_fpr, matched = [], taste_service.GATE_LEVELS[0], 0
     for lv in taste_service.GATE_LEVELS:
         picks = taste_service.crew_picks(db, members, ids, fpr=lv, per=scores)
-        ranked = sorted(picks.items(), key=lambda kv: -kv[1]["score"])[:top_n]
         gate_fpr = lv
-        # 판정 기준은 '보여줄 목록'이다. 250개 중 어딘가 한 곳이 통과해도
-        # 그게 상위 N에 없으면 사용자 화면은 여전히 전부 '안 맞아요'다.
-        if any(p["satisfied"] > 0 for _pid, p in ranked):
+        # 합집합 = 한 명이라도 자기 기준을 넘은 곳. 여기서 '여유 총합' 높은 순으로 뽑는다.
+        # ★거르고 나서 자른다★ — 먼저 상위 N을 자르고 거르면, 통과한 곳이 그 안에
+        # 몇 개 없다는 이유로 후보가 서너 곳으로 말라버린다(실제로 그랬다).
+        pool = {pid: p for pid, p in picks.items() if p["satisfied"] > 0}
+        matched = len(pool)
+        if not pool:
+            pool = picks   # 마지막 단계에서도 없으면 덜 어긋나는 순으로라도 보여준다
+        ranked = sorted(pool.items(),
+                        key=lambda kv: (-kv[1]["total_margin"], -kv[1]["score"]))[:top_n]
+        if matched:
             break
     strict = abs(gate_fpr - taste_service.GATE_FPR) < 1e-9
-
-    # 통과한 후보가 하나라도 있으면 미달 후보는 내보내지 않는다.
-    # 순위는 상대적이라 250곳을 줄 세우면 미달도 뒤따라 나오는데, 화면에선 그게
-    # "5명 다 기준 밖인데 왜 추천이지"로 읽힌다. 게다가 상위 3개 자동선택이
-    # 통과 여부를 안 보고 앞에서 집어서, 아무도 안 맞는 곳이 체크된 채 올라갔다.
-    passing = [(pid, p) for pid, p in ranked if p["satisfied"] > 0]
-    below = len(ranked) - len(passing)
-    if passing:
-        ranked = passing
 
     items = []
     for pid, p in ranked:
@@ -237,8 +234,8 @@ def suggest_poll_places(
         note += f" · 근처에 '{purpose}' 후보가 없어 전체에서 골랐어요"
     if dropped:
         note += f" · 안 맞았던 곳 {dropped}곳은 뺐어요"
-    if passing and below:
-        note += f" · 기준 밖 {below}곳은 뺐어요"
+    if matched > len(items):
+        note += f" · 맞는 곳 {matched}곳 중 {len(items)}곳"
     return {
         "items": items,
         "members": len(members),

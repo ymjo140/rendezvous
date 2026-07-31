@@ -725,7 +725,11 @@ def crew_picks(db: Session, members: list, place_ids: list,
         weakest = wi.name if wi else None
 
         out[pid] = {
+            # score: 최소만족 중심(0.6×최악 + 0.4×평균). 아무도 희생시키지 않는 순서.
             "score": round(W_MIN * worst + W_MEAN * mean, 4),
+            # total: 여유의 총합. '합집합에서 총합이 높은 순'을 쓸 때의 기준.
+            # 교집합만 보면 후보가 서너 곳으로 말라서 투표가 성립하지 않는다.
+            "total_margin": round(sum(margins), 4),
             "satisfied": sat,
             "total": len(margins),
             "weakest": weakest,
