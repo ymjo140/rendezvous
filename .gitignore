@@ -16,6 +16,9 @@ yarn-error.log*
 .cache/
 .vercel
 
+# 로컬 타입체크용(옆 레포 node_modules를 빌려 씀 — 절대경로라 이 PC 전용)
+tsconfig.typecheck.json
+
 # python venv (백엔드 의존성은 requirements.txt로)
 backend/venv/
 __pycache__/

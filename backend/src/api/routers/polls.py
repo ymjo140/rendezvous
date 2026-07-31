@@ -87,6 +87,20 @@ async def _broadcast_poll(db: Session, poll: models.ChatPoll):
     await manager.broadcast({"type": "poll_update", "poll": _serialize_poll(db, poll)}, poll.room_id)
 
 
+# 목적 → main_category. meeting_service의 매핑과 같은 기준을 쓴다(같은 말이 두 곳에서
+# 다른 곳을 가리키면 안 된다). 없는 목적(데이트 등)은 안 좁힌다.
+_PURPOSE_MAIN_CATEGORIES = {
+    "식사": ("RESTAURANT", "FOOD"),
+    "카페": ("CAFE",),
+    "술": ("PUB",),
+    "술집": ("PUB",),
+    "주점": ("PUB",),
+    "술/회식": ("PUB",),
+    "회식": ("PUB",),
+}
+_ALL_MAIN_CATEGORIES = ("FOOD", "RESTAURANT", "CAFE", "PUB")
+
+
 @router.get("/api/chat/rooms/{room_id}/polls/suggest")
 def suggest_poll_places(
     room_id: str,
@@ -94,6 +108,7 @@ def suggest_poll_places(
     lng: Optional[float] = None,
     radius_km: float = 2.0,
     limit: int = 5,
+    purpose: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -121,18 +136,32 @@ def suggest_poll_places(
 
     # 후보는 거리로 좁힌다 — 평점이 12만 행 전부 0이라 다른 기준이 없다.
     # 폐업은 뺀다(NULL은 '대조 못 함'이라 유지).
-    rows = db.execute(text("""
-        SELECT p.id, p.name, COALESCE(p.uptae, p.cuisine_type, ''), COALESCE(p.address,''),
-               p.hero_image, p.opened_at
-        FROM places p
-        WHERE p.main_category IN ('FOOD','RESTAURANT','CAFE','PUB')
-          AND (p.biz_status IS NULL OR p.biz_status <> '폐업')
-          AND p.lat BETWEEN :la1 AND :la2 AND p.lng BETWEEN :ln1 AND :ln2
-        ORDER BY ((p.lat - :la0)*(p.lat - :la0) + (p.lng - :ln0)*0.79*(p.lng - :ln0)*0.79) ASC,
-                 p.id ASC
-        LIMIT 250
-    """), {"la1": lat - dlat, "la2": lat + dlat, "ln1": lng - dlng, "ln2": lng + dlng,
-           "la0": lat, "ln0": lng}).all()
+    box = {"la1": lat - dlat, "la2": lat + dlat, "ln1": lng - dlng, "ln2": lng + dlng,
+           "la0": lat, "ln0": lng}
+
+    def _nearby(cats: tuple):
+        keys = {f"mc{i}": c for i, c in enumerate(cats)}
+        in_sql = ", ".join(f":{k}" for k in keys)
+        return db.execute(text(f"""
+            SELECT p.id, p.name, COALESCE(p.uptae, p.cuisine_type, ''), COALESCE(p.address,''),
+                   p.hero_image, p.opened_at
+            FROM places p
+            WHERE p.main_category IN ({in_sql})
+              AND (p.biz_status IS NULL OR p.biz_status <> '폐업')
+              AND p.lat BETWEEN :la1 AND :la2 AND p.lng BETWEEN :ln1 AND :ln2
+            ORDER BY ((p.lat - :la0)*(p.lat - :la0) + (p.lng - :ln0)*0.79*(p.lng - :ln0)*0.79) ASC,
+                     p.id ASC
+            LIMIT 250
+        """), {**box, **keys}).all()
+
+    cats = _PURPOSE_MAIN_CATEGORIES.get((purpose or "").strip(), _ALL_MAIN_CATEGORIES)
+    rows = _nearby(cats)
+    # 목적으로 좁혔더니 근처에 하나도 없으면 좁히기를 푼다 — 빈 투표보다 낫고,
+    # 대신 어떤 기준으로 골랐는지 note에 밝힌다.
+    relaxed = False
+    if not rows and cats != _ALL_MAIN_CATEGORIES:
+        rows = _nearby(_ALL_MAIN_CATEGORIES)
+        relaxed = bool(rows)
     if not rows:
         return {"items": [], "members": len(members), "note": "근처에 후보가 없어요."}
 
@@ -150,11 +179,16 @@ def suggest_poll_places(
             "reason": reason, "reason_kind": kind,
             "years_open": ((datetime.now().year - r[5].year) if r[5] else None),
         })
+    note = f"{len(members)}명 취향을 함께 봤어요"
+    if relaxed:
+        note += f" · 근처에 '{purpose}' 후보가 없어 전체에서 골랐어요"
     return {
         "items": items,
         "members": len(members),
         "member_names": [m.name for m in members],
-        "note": f"{len(members)}명 취향을 함께 봤어요",
+        "purpose": (purpose or None),
+        "purpose_relaxed": relaxed,
+        "note": note,
     }
 
 

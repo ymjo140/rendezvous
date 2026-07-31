@@ -267,8 +267,30 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
 
 type ChatMember = { id: number; name: string; is_me?: boolean; lat?: number | null; lng?: number | null }
 
+// 집단 합성 후보(polls/suggest 응답 1건). 개인 추천과 달리 '몇 명이 맞는지'가 붙는다.
+type CrewPick = {
+  place_id: number | null
+  name: string
+  cuisine?: string | null
+  address?: string | null
+  satisfied?: number
+  total?: number
+  weakest?: string | null
+  reason?: string | null
+  reason_kind?: string | null
+  years_open?: number | null
+}
+
+// 합성 결과의 색조 — '1명만 맞아요'를 초록으로 칠하면 거짓말이 된다
+function reasonTone(kind?: string | null) {
+  if (kind === "group_all") return "text-teal-700"
+  if (kind === "group_most") return "text-amber-700"
+  if (kind === "group_weak" || kind === "group_none") return "text-rose-500"
+  return "text-gray-400"
+}
+
 // ─────────────────────────────────────────────────────────────
-// 장소 투표 만들기 — 어디서 → 목적 → AI 상위 3곳 시드로 카드 발행
+// 장소 투표 만들기 — 어디서 → 목적 → 집단 합성 후보 확인 → 카드 발행
 export function PlacePollComposer({
   roomId,
   members,
@@ -280,10 +302,17 @@ export function PlacePollComposer({
   onClose: () => void
   onCreated: (p: Poll) => void
 }) {
-  const [step, setStep] = useState<"where" | "search" | "purpose" | "loading">("where")
+  const [step, setStep] = useState<"where" | "search" | "purpose" | "loading" | "picks">("where")
   const [anchor, setAnchor] = useState<{ lat: number; lng: number; name: string } | "midpoint" | null>(null)
   const [query, setQuery] = useState("")
   const [hits, setHits] = useState<any[]>([])
+  const [purpose, setPurpose] = useState("")
+  const [spot, setSpot] = useState<{ lat: number; lng: number; name: string } | null>(null)
+  const [picks, setPicks] = useState<CrewPick[]>([])
+  const [chosen, setChosen] = useState<number[]>([])
+  const [note, setNote] = useState("")
+  const [fromCrew, setFromCrew] = useState(true)
+  const [creating, setCreating] = useState(false)
 
   // 지역/동/역 검색(지오코딩) — 식당 검색이 아니라 '어디 근처'의 기준점을 잡는 단계
   const search = async () => {
@@ -296,64 +325,131 @@ export function PlacePollComposer({
     } catch { setHits([]) }
   }
 
-  const create = async (purpose: string) => {
-    setStep("loading")
+  // 개인 추천(/api/recommend) — 중간지점 계산(교통 기준, 좌표 평균이 아니다)과
+  // 취향 시트가 없을 때의 폴백 두 가지 용도로만 남는다.
+  const recommend = async (p: string, at?: { lat: number; lng: number }) => {
+    const located = members.filter((m) => m.lat && m.lng && Math.abs(Number(m.lat)) > 1)
+    const payload: any = {
+      purpose: p,
+      user_selected_tags: [],
+      member_user_ids: members.map((m) => m.id),
+      current_lat: at?.lat ?? located[0]?.lat ?? 37.5665,
+      current_lng: at?.lng ?? located[0]?.lng ?? 126.978,
+    }
+    if (!at) payload.users = located.slice(1).map((m) => ({ location: { lat: m.lat, lng: m.lng } }))
     try {
-      const located = members.filter((m) => m.lat && m.lng && Math.abs(Number(m.lat)) > 1)
-      const payload: any = {
-        purpose,
-        user_selected_tags: [],
-        member_user_ids: members.map((m) => m.id),
-      }
-      let anchorName = "중간지점"
-      if (anchor && anchor !== "midpoint") {
-        payload.current_lat = anchor.lat
-        payload.current_lng = anchor.lng
-        anchorName = anchor.name
-      } else {
-        payload.current_lat = located[0]?.lat ?? 37.5665
-        payload.current_lng = located[0]?.lng ?? 126.978
-        payload.users = located.slice(1).map((m) => ({ location: { lat: m.lat, lng: m.lng } }))
-      }
       const res = await fetchWithAuth(`/api/recommend`, { method: "POST", body: JSON.stringify(payload) })
       const regions = res.ok ? await res.json() : []
-      const region0 = regions?.[0]
-      const places = (region0?.places || []).slice(0, 3)
-      if (places.length === 0) {
-        alert("조건에 맞는 곳을 못 찾았어요. 다시 시도해 주세요.")
+      const r0 = regions?.[0]
+      return {
+        lat: r0?.center?.lat ?? payload.current_lat,
+        lng: r0?.center?.lng ?? payload.current_lng,
+        name: r0?.region_name || "중간지점",
+        places: (r0?.places || []) as any[],
+      }
+    } catch {
+      return { lat: payload.current_lat, lng: payload.current_lng, name: "중간지점", places: [] as any[] }
+    }
+  }
+
+  // 목적을 고르면 후보를 '집단 합성'으로 뽑아 먼저 보여준다.
+  // 투표는 올리는 순간 전원에게 푸시가 나가므로, 뭘 올리는지 보고 올리게 한다.
+  const loadPicks = async (p: string) => {
+    setPurpose(p)
+    setStep("loading")
+    try {
+      let at: { lat: number; lng: number; name: string }
+      let fallback: any[] = []
+      if (anchor && anchor !== "midpoint") {
+        at = { lat: anchor.lat, lng: anchor.lng, name: anchor.name }
+      } else {
+        const r = await recommend(p)
+        at = { lat: r.lat, lng: r.lng, name: r.name }
+        fallback = r.places
+      }
+      setSpot(at)
+
+      const qs = `lat=${at.lat}&lng=${at.lng}&purpose=${encodeURIComponent(p)}&limit=6`
+      const res = await fetchWithAuth(`/api/chat/rooms/${roomId}/polls/suggest?${qs}`)
+      const data = res.ok ? await res.json() : null
+      const items: CrewPick[] = Array.isArray(data?.items) ? data.items : []
+
+      if (items.length > 0) {
+        setFromCrew(true)
+        setNote(data?.note || "")
+        setPicks(items)
+        setChosen(items.slice(0, 3).map((_, i) => i))
+        setStep("picks")
+        return
+      }
+
+      // 멤버 취향 시트가 없거나 반경 안에 후보가 없을 때 — 기존 추천으로라도 채운다
+      if (fallback.length === 0) fallback = (await recommend(p, at)).places
+      if (fallback.length === 0) {
+        alert(data?.note || "조건에 맞는 곳을 못 찾았어요. 다시 시도해 주세요.")
         setStep("purpose")
         return
       }
-      const metaLat = region0?.center?.lat ?? payload.current_lat
-      const metaLng = region0?.center?.lng ?? payload.current_lng
-      const createRes = await fetchWithAuth(`/api/chat/rooms/${roomId}/polls`, {
-        method: "POST",
-        body: JSON.stringify({
-          kind: "place",
-          meta: {
-            anchor_name: region0?.region_name || anchorName,
-            lat: metaLat,
-            lng: metaLng,
-            purpose,
-          },
-          options: places.map((p: any) => ({
-            label: p.name,
-            place_id: p.id,
-            added_by_ai: true,
-            meta: { category: p.category, reason: p.reason },
-          })),
-        }),
-      })
-      if (createRes.ok) {
-        onCreated(await createRes.json())
-        onClose()
-      } else {
-        alert("투표 생성에 실패했어요.")
-        setStep("purpose")
-      }
+      setFromCrew(false)
+      setNote(data?.note || "멤버 취향을 아직 모으지 못해 일반 추천으로 채웠어요.")
+      setPicks(
+        fallback.slice(0, 5).map((x: any) => ({
+          place_id: x.id ?? null,
+          name: x.name,
+          cuisine: x.category,
+          reason: x.reason,
+        }))
+      )
+      setChosen([0, 1, 2].filter((i) => i < Math.min(5, fallback.length)))
+      setStep("picks")
     } catch {
       alert("오류가 발생했어요.")
       setStep("purpose")
+    }
+  }
+
+  const toggle = (i: number) =>
+    setChosen((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]))
+
+  const create = async () => {
+    if (chosen.length === 0 || !spot) return
+    setCreating(true)
+    try {
+      const res = await fetchWithAuth(`/api/chat/rooms/${roomId}/polls`, {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "place",
+          meta: { anchor_name: spot.name, lat: spot.lat, lng: spot.lng, purpose },
+          options: chosen
+            .slice()
+            .sort((a, b) => a - b)
+            .map((i) => picks[i])
+            .filter(Boolean)
+            .map((p) => ({
+              label: p.name,
+              place_id: p.place_id,
+              added_by_ai: true,
+              meta: {
+                category: p.cuisine,
+                reason: p.reason,
+                reason_kind: p.reason_kind,
+                satisfied: p.satisfied,
+                total: p.total,
+                weakest: p.weakest,
+              },
+            })),
+        }),
+      })
+      if (res.ok) {
+        onCreated(await res.json())
+        onClose()
+      } else {
+        alert("투표 생성에 실패했어요.")
+      }
+    } catch {
+      alert("오류가 발생했어요.")
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -410,10 +506,10 @@ export function PlacePollComposer({
       )}
       {step === "purpose" && (
         <div>
-          <p className="text-xs text-gray-500 mb-2">목적을 고르면 AI 추천 상위 3곳으로 투표가 시작돼요.</p>
+          <p className="text-xs text-gray-500 mb-2">목적을 고르면 멤버 취향을 합쳐 후보를 뽑아요.</p>
           <div className="grid grid-cols-2 gap-2">
             {PURPOSES.map((p) => (
-              <Button key={p.key} onClick={() => create(p.key)} variant="outline" className="h-11 rounded-xl">
+              <Button key={p.key} onClick={() => loadPicks(p.key)} variant="outline" className="h-11 rounded-xl">
                 {p.label}
               </Button>
             ))}
@@ -424,6 +520,62 @@ export function PlacePollComposer({
         <div className="py-8 text-center">
           <Loader2 className="w-6 h-6 animate-spin text-[#F5A623] mx-auto mb-2" />
           <p className="text-xs text-gray-400">모임 취향을 합쳐 추천 중...</p>
+        </div>
+      )}
+      {step === "picks" && (
+        <div>
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <p className="text-xs text-gray-500">
+              {spot?.name} 기준 · {note}
+              {fromCrew && <span className="block text-[11px] text-gray-400">올릴 후보를 고르세요. 평균이 아니라 다 같이 만족하는 순서예요.</span>}
+            </p>
+            <button onClick={() => setStep("purpose")} className="text-[11px] text-gray-400 flex-shrink-0 underline">
+              목적 바꾸기
+            </button>
+          </div>
+          <div className="space-y-1.5 max-h-[44vh] overflow-y-auto">
+            {picks.map((p, i) => {
+              const on = chosen.includes(i)
+              return (
+                <button
+                  key={p.place_id ?? `i${i}`}
+                  onClick={() => toggle(i)}
+                  className={`w-full text-left rounded-xl border px-3 py-2 transition-colors ${
+                    on ? "border-[#F5A623] bg-amber-50" : "border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-gray-800 truncate">{p.name}</div>
+                      <div className="text-[10px] text-gray-400 truncate">
+                        {[p.cuisine, p.address].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    <span
+                      className={`w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0 ${
+                        on ? "bg-[#F5A623] border-[#F5A623] text-white" : "border-gray-200 text-transparent"
+                      }`}
+                    >
+                      <Check className="w-3 h-3" />
+                    </span>
+                  </div>
+                  {p.reason && (
+                    <div className={`mt-1 text-[10px] font-bold ${reasonTone(p.reason_kind)}`}>{p.reason}</div>
+                  )}
+                  {p.years_open ? (
+                    <div className="text-[10px] text-gray-400 mt-0.5">{p.years_open}년째 영업 중</div>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+          <Button
+            onClick={create}
+            disabled={creating || chosen.length === 0}
+            className="w-full h-11 rounded-xl bg-[#F5A623] hover:bg-[#D97706] mt-3"
+          >
+            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : `투표 올리기 (${chosen.length}곳)`}
+          </Button>
         </div>
       )}
     </Sheet>
@@ -539,7 +691,9 @@ export function CandidateSheet({
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<"reco" | "search">("reco")
-  const [recos, setRecos] = useState<any[]>([])
+  const [recos, setRecos] = useState<CrewPick[]>([])
+  const [recoNote, setRecoNote] = useState("")
+  const [fromCrew, setFromCrew] = useState(true)
   const [loading, setLoading] = useState(poll.kind === "place")
   const [query, setQuery] = useState("")
   const [hits, setHits] = useState<any[]>([])
@@ -553,23 +707,60 @@ export function CandidateSheet({
   )
   const existingLabels = useMemo(() => new Set(poll.options.map((o) => o.label)), [poll.options])
 
+  // 후보 추가 목록도 투표를 만들 때와 같은 집단 합성으로 뽑는다 — 만든 사람과
+  // 나중에 담는 사람이 서로 다른 기준의 목록을 보면 같은 투표가 아니다.
   useEffect(() => {
     if (poll.kind !== "place") return
     const meta = poll.meta || {}
-    fetchWithAuth(`/api/recommend`, {
-      method: "POST",
-      body: JSON.stringify({
-        purpose: meta.purpose || "식사",
-        user_selected_tags: [],
-        member_user_ids: members.map((m) => m.id),
-        current_lat: meta.lat ?? 37.5665,
-        current_lng: meta.lng ?? 126.978,
-      }),
-    })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((regions) => setRecos(regions?.[0]?.places || []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    const lat = meta.lat ?? 37.5665
+    const lng = meta.lng ?? 126.978
+    const purpose = meta.purpose || "식사"
+    let alive = true
+
+    const run = async () => {
+      try {
+        const qs = `lat=${lat}&lng=${lng}&purpose=${encodeURIComponent(purpose)}&limit=10`
+        const res = await fetchWithAuth(`/api/chat/rooms/${poll.room_id}/polls/suggest?${qs}`)
+        const data = res.ok ? await res.json() : null
+        const items: CrewPick[] = Array.isArray(data?.items) ? data.items : []
+        if (!alive) return
+        if (items.length > 0) {
+          setFromCrew(true)
+          setRecoNote(data?.note || "")
+          setRecos(items)
+          return
+        }
+        // 취향 시트가 없거나 반경 안에 후보가 없을 때 — 기존 추천으로라도 채운다
+        const r2 = await fetchWithAuth(`/api/recommend`, {
+          method: "POST",
+          body: JSON.stringify({
+            purpose,
+            user_selected_tags: [],
+            member_user_ids: members.map((m) => m.id),
+            current_lat: lat,
+            current_lng: lng,
+          }),
+        })
+        const regions = r2.ok ? await r2.json() : []
+        if (!alive) return
+        setFromCrew(false)
+        setRecoNote(data?.note || "")
+        setRecos(
+          (regions?.[0]?.places || []).map((x: any) => ({
+            place_id: x.id ?? null,
+            name: x.name,
+            cuisine: x.category,
+            reason: x.reason,
+          }))
+        )
+      } catch {
+        /* 목록이 비면 검색 탭으로 담으면 된다 */
+      } finally {
+        if (alive) setLoading(false)
+      }
+    }
+    run()
+    return () => { alive = false }
   }, [poll.id])
 
   const add = async (key: string, body: any) => {
@@ -634,7 +825,7 @@ export function CandidateSheet({
           onClick={() => setTab("reco")}
           className={`flex-1 py-1.5 rounded-lg text-xs font-bold ${tab === "reco" ? "bg-white shadow-sm text-gray-900" : "text-gray-400"}`}
         >
-          ✨ AI 추천 {recos.length > 0 ? `${recos.length}곳` : ""}
+          {fromCrew ? "🤝 우리 취향" : "✨ AI 추천"} {recos.length > 0 ? `${recos.length}곳` : ""}
         </button>
         <button
           onClick={() => setTab("search")}
@@ -652,20 +843,27 @@ export function CandidateSheet({
           {!loading && recos.length === 0 && (
             <p className="text-xs text-gray-400 text-center py-6">추천 결과가 없어요. 검색으로 추가해보세요.</p>
           )}
-          {recos.map((p: any, i: number) => {
-            const added = p.id && existingPlaceIds.has(p.id)
+          {!loading && recos.length > 0 && recoNote && (
+            <p className="text-[11px] text-gray-400 pb-0.5">{recoNote}</p>
+          )}
+          {recos.map((p, i) => {
+            const added = !!p.place_id && existingPlaceIds.has(p.place_id)
+            const key = `p${p.place_id ?? i}`
             return (
-              <div key={p.id ?? i} className="flex items-center gap-2 rounded-xl border border-gray-100 px-3 py-2">
+              <div key={p.place_id ?? `i${i}`} className="flex items-center gap-2 rounded-xl border border-gray-100 px-3 py-2">
                 <button
-                  onClick={() => p.id && router.push(`/places/${p.id}`)}
+                  onClick={() => p.place_id && router.push(`/places/${p.place_id}`)}
                   className="flex-1 min-w-0 text-left"
                   title="가게 상세 보기"
                 >
                   <div className="text-xs font-bold text-gray-800 truncate">{p.name}</div>
                   <div className="text-[10px] text-gray-400 truncate">
-                    {[p.category, p.reason].filter(Boolean).join(" · ")}
+                    {[p.cuisine, p.address].filter(Boolean).join(" · ")}
                   </div>
-                  {p.id && <span className="text-[9px] font-bold text-sky-600">상세 보기 →</span>}
+                  {p.reason && (
+                    <div className={`text-[10px] font-bold truncate ${reasonTone(p.reason_kind)}`}>{p.reason}</div>
+                  )}
+                  {p.place_id && <span className="text-[9px] font-bold text-sky-600">상세 보기 →</span>}
                 </button>
                 {added ? (
                   <span className="text-[10px] text-gray-400 flex items-center gap-0.5 flex-shrink-0">
@@ -673,11 +871,24 @@ export function CandidateSheet({
                   </span>
                 ) : (
                   <button
-                    onClick={() => add(`p${p.id ?? i}`, { label: p.name, place_id: p.id, meta: { category: p.category, reason: p.reason } })}
+                    onClick={() =>
+                      add(key, {
+                        label: p.name,
+                        place_id: p.place_id,
+                        meta: {
+                          category: p.cuisine,
+                          reason: p.reason,
+                          reason_kind: p.reason_kind,
+                          satisfied: p.satisfied,
+                          total: p.total,
+                          weakest: p.weakest,
+                        },
+                      })
+                    }
                     disabled={busyKey !== null}
                     className="text-[11px] font-bold text-amber-800 bg-amber-100 rounded-full px-2.5 py-1 flex-shrink-0"
                   >
-                    {busyKey === `p${p.id ?? i}` ? "..." : "+ 담기"}
+                    {busyKey === key ? "..." : "+ 담기"}
                   </button>
                 )}
               </div>
