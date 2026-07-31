@@ -11,11 +11,13 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
 from api.dependencies import get_current_user
+from services import taste_service
 from api.routers.chat import manager, _sync_room_members_from_community, kst_hhmm
 
 router = APIRouter()
@@ -83,6 +85,77 @@ def _serialize_poll(db: Session, poll: models.ChatPoll, me_id: Optional[int] = N
 
 async def _broadcast_poll(db: Session, poll: models.ChatPoll):
     await manager.broadcast({"type": "poll_update", "poll": _serialize_poll(db, poll)}, poll.room_id)
+
+
+@router.get("/api/chat/rooms/{room_id}/polls/suggest")
+def suggest_poll_places(
+    room_id: str,
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    radius_km: float = 2.0,
+    limit: int = 5,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """투표를 열 때 후보를 미리 채운다 — 크루가 아무것도 안 해도 추천이 작동한다.
+
+    후보는 '멤버 취향의 평균'이 아니라 집단 합성으로 고른다. 평균을 내면 아무도
+    좋아하지 않는 중간이 나온다 — 실측으로 취향이 갈리는 크루에서 평균은 상위
+    20곳 중 7곳에서 누군가를 희생시켰다.
+    """
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    _require_member(db, room_id, current_user.id)
+
+    members = taste_service.crew_members(db, room_id)
+    members = taste_service.apply_yield_weights(db, room_id, members)
+    if not members:
+        return {"items": [], "members": 0,
+                "note": "아직 멤버 취향을 모으지 못했어요. 저장 목록을 가져오면 추천이 시작돼요."}
+
+    if lat is None or lng is None:
+        lat, lng = (current_user.lat or 37.5665), (current_user.lng or 126.9780)
+    import math as _m
+    dlat = radius_km / 111.0
+    dlng = radius_km / (111.0 * max(0.2, _m.cos(_m.radians(lat))))
+
+    # 후보는 거리로 좁힌다 — 평점이 12만 행 전부 0이라 다른 기준이 없다.
+    # 폐업은 뺀다(NULL은 '대조 못 함'이라 유지).
+    rows = db.execute(text("""
+        SELECT p.id, p.name, COALESCE(p.uptae, p.cuisine_type, ''), COALESCE(p.address,''),
+               p.hero_image, p.opened_at
+        FROM places p
+        WHERE p.main_category IN ('FOOD','RESTAURANT','CAFE','PUB')
+          AND (p.biz_status IS NULL OR p.biz_status <> '폐업')
+          AND p.lat BETWEEN :la1 AND :la2 AND p.lng BETWEEN :ln1 AND :ln2
+        ORDER BY ((p.lat - :la0)*(p.lat - :la0) + (p.lng - :ln0)*0.79*(p.lng - :ln0)*0.79) ASC,
+                 p.id ASC
+        LIMIT 250
+    """), {"la1": lat - dlat, "la2": lat + dlat, "ln1": lng - dlng, "ln2": lng + dlng,
+           "la0": lat, "ln0": lng}).all()
+    if not rows:
+        return {"items": [], "members": len(members), "note": "근처에 후보가 없어요."}
+
+    meta = {r[0]: r for r in rows}
+    picks = taste_service.crew_picks(db, members, list(meta.keys()))
+    ranked = sorted(picks.items(), key=lambda kv: -kv[1]["score"])[:max(1, min(limit, 10))]
+
+    items = []
+    for pid, p in ranked:
+        r = meta[pid]
+        reason, kind = taste_service.crew_reason(p, members)
+        items.append({
+            "place_id": pid, "name": r[1], "cuisine": r[2], "address": r[3], "image": r[4],
+            "satisfied": p["satisfied"], "total": p["total"], "weakest": p["weakest"],
+            "reason": reason, "reason_kind": kind,
+            "years_open": ((datetime.now().year - r[5].year) if r[5] else None),
+        })
+    return {
+        "items": items,
+        "members": len(members),
+        "member_names": [m.name for m in members],
+        "note": f"{len(members)}명 취향을 함께 봤어요",
+    }
 
 
 @router.post("/api/chat/rooms/{room_id}/polls")
