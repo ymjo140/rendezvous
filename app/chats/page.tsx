@@ -20,10 +20,14 @@ function ChatsInner() {
 
   return (
     <div className="mx-auto flex h-[100dvh] max-w-md flex-col bg-white">
-      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
-        <button onClick={() => router.back()} className="rounded-full p-1 text-gray-500"><ChevronLeft className="h-5 w-5" /></button>
-        <h1 className="text-[15px] font-bold text-gray-900">채팅</h1>
-      </div>
+      {/* 방을 지정해 들어오면 방 자체 헤더(방 이름·멤버·설정)가 있다.
+          그 위에 '채팅' 헤더를 또 얹으면 뒤로가기 버튼이 두 개가 된다. */}
+      {!room && (
+        <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+          <button onClick={() => router.back()} className="rounded-full p-1 text-gray-500"><ChevronLeft className="h-5 w-5" /></button>
+          <h1 className="text-[15px] font-bold text-gray-900">채팅</h1>
+        </div>
+      )}
       <div className="min-h-0 flex-1">
         <ChatTab openRoomId={room} openRoomTitle={roomTitle} />
       </div>

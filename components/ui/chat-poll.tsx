@@ -340,11 +340,17 @@ export function PlacePollComposer({
   onClose: () => void
   onCreated: (p: Poll) => void
 }) {
-  const [step, setStep] = useState<"where" | "search" | "midpoints" | "purpose" | "loading" | "picks">("where")
+  // 순서: 목적 → 동네 3곳 → 후보. 동네부터 고르면 "여기서 뭘 할 건데"가 빠진 채
+  // 가게가 먼저 튀어나온다.
+  const [step, setStep] = useState<"purpose" | "regions" | "search" | "loading" | "picks">("purpose")
   const [anchor, setAnchor] = useState<{ lat: number; lng: number; name: string } | "midpoint" | null>(null)
   // 중간지점 후보 3곳 — 엔진(find_best_midpoints)이 원래 3개를 주는데 1등만 쓰고 있었다
-  const [regions, setRegions] = useState<{ lat: number; lng: number; name: string; places: any[] }[]>([])
+  const [regions, setRegions] = useState<
+    { lat: number; lng: number; name: string; places: any[]; travel_times: number[] }[]
+  >([])
   const [regionsLoading, setRegionsLoading] = useState(false)
+  // 중간지점은 위치를 설정한 멤버가 2명 이상이어야 계산된다(서버가 1명이면 '내 주변'으로 뭉갠다)
+  const locatedCount = members.filter((m) => m.lat && m.lng && Math.abs(Number(m.lat)) > 1).length
   const [query, setQuery] = useState("")
   const [hits, setHits] = useState<any[]>([])
   const [purpose, setPurpose] = useState("")
@@ -368,15 +374,16 @@ export function PlacePollComposer({
 
   // 중간지점 후보 3곳을 받아 고르게 한다. 엔진은 191개 핫스팟 중 min-max(가장 오래
   // 걸리는 사람의 시간을 최소화)로 3곳을 뽑는데, 1등만 쓰면 "왜 여기?"에 답할 수 없다.
-  const loadMidpoints = async () => {
-    setStep("midpoints")
+  const loadMidpoints = async (p: string) => {
+    setPurpose(p)
+    setStep("regions")
     setRegionsLoading(true)
     try {
       const located = members.filter((m) => m.lat && m.lng && Math.abs(Number(m.lat)) > 1)
       const res = await fetchWithAuth(`/api/recommend`, {
         method: "POST",
         body: JSON.stringify({
-          purpose: "식사",
+          purpose: p,
           user_selected_tags: [],
           member_user_ids: members.map((m) => m.id),
           current_lat: located[0]?.lat ?? 37.5665,
@@ -390,15 +397,16 @@ export function PlacePollComposer({
         lng: r?.center?.lng ?? 126.978,
         name: r?.region_name || "중간지점",
         places: r?.places || [],
+        travel_times: Array.isArray(r?.travel_times) ? r.travel_times.map(Number) : [],
       }))
       setRegions(list)
       if (list.length === 0) {
-        alert("중간지점을 찾지 못했어요. 장소를 직접 입력해 주세요.")
-        setStep("where")
+        alert("모일 동네를 찾지 못했어요. 지역을 직접 입력해 주세요.")
+        setStep("search")
       }
     } catch {
       alert("오류가 발생했어요.")
-      setStep("where")
+      setStep("purpose")
     } finally {
       setRegionsLoading(false)
     }
@@ -432,20 +440,24 @@ export function PlacePollComposer({
 
   // 목적을 고르면 후보를 '집단 합성'으로 뽑아 먼저 보여준다.
   // 투표는 올리는 순간 전원에게 푸시가 나가므로, 뭘 올리는지 보고 올리게 한다.
-  const loadPicks = async (p: string) => {
+  // at을 인자로 받는다 — 방금 setAnchor한 값을 상태에서 읽으면 아직 갱신 전이다.
+  const loadPicks = async (
+    p: string,
+    at?: { lat: number; lng: number; name: string },
+    seedFallback?: any[],
+  ) => {
     setPurpose(p)
     setStep("loading")
     try {
-      // 앵커는 이 시점에 이미 정해져 있다(검색 결과 또는 고른 중간지점).
-      // "midpoint"는 옛 흐름의 잔재라 안전망으로만 남긴다.
-      let at: { lat: number; lng: number; name: string }
-      let fallback: any[] = []
-      if (anchor && anchor !== "midpoint") {
-        at = { lat: anchor.lat, lng: anchor.lng, name: anchor.name }
-      } else {
-        const r = await recommend(p)
-        at = { lat: r.lat, lng: r.lng, name: r.name }
-        fallback = r.places
+      let fallback: any[] = seedFallback || []
+      if (!at) {
+        if (anchor && anchor !== "midpoint") {
+          at = { lat: anchor.lat, lng: anchor.lng, name: anchor.name }
+        } else {
+          const r = await recommend(p)
+          at = { lat: r.lat, lng: r.lng, name: r.name }
+          fallback = r.places
+        }
       }
       setSpot(at)
 
@@ -539,18 +551,16 @@ export function PlacePollComposer({
 
   return (
     <Sheet title="📍 장소 투표 만들기" onClose={onClose}>
-      {step === "where" && (
-        <div className="space-y-2">
-          <p className="text-xs text-gray-500 mb-1">어디 기준으로 추천할까요?</p>
-          <Button
-            onClick={loadMidpoints}
-            className="w-full h-11 rounded-xl bg-[#F5A623] hover:bg-[#D97706]"
-          >
-            📍 멤버들 중간 지점
-          </Button>
-          <Button onClick={() => setStep("search")} variant="outline" className="w-full h-11 rounded-xl">
-            🔍 장소 직접 입력
-          </Button>
+      {step === "purpose" && (
+        <div>
+          <p className="text-xs text-gray-500 mb-2">뭐 하러 모이나요? 목적을 고르면 모일 동네를 찾아드려요.</p>
+          <div className="grid grid-cols-2 gap-2">
+            {PURPOSES.map((p) => (
+              <Button key={p.key} onClick={() => loadMidpoints(p.key)} variant="outline" className="h-11 rounded-xl">
+                {p.label}
+              </Button>
+            ))}
+          </div>
         </div>
       )}
       {step === "search" && (
@@ -578,7 +588,7 @@ export function PlacePollComposer({
                 if (!p?.lat || !p?.lng) return
                 const name = String(p.title || p.name || query).replace(/^서울\S* /, "")
                 setAnchor({ lat: p.lat, lng: p.lng, name })
-                setStep("purpose")
+                loadPicks(purpose, { lat: p.lat, lng: p.lng, name })
               }}
               className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 hover:bg-amber-50 text-sm"
             >
@@ -588,51 +598,60 @@ export function PlacePollComposer({
           ))}
         </div>
       )}
-      {step === "midpoints" && (
+      {step === "regions" && (
         <div className="space-y-2">
-          <p className="text-xs text-gray-500">
-            멤버들이 모이기 좋은 곳 3군데예요. 가장 오래 걸리는 사람 기준으로 골랐어요.
-          </p>
-          {regionsLoading && (
-            <div className="py-6 text-center"><Loader2 className="w-5 h-5 animate-spin text-[#F5A623] mx-auto" /></div>
-          )}
-          {regions.map((r, i) => (
-            <button
-              key={`${r.name}-${i}`}
-              onClick={() => { setAnchor({ lat: r.lat, lng: r.lng, name: r.name }); setStep("purpose") }}
-              className="w-full text-left rounded-xl border border-gray-200 px-3 py-2.5 hover:bg-amber-50"
-            >
-              <div className="text-sm font-bold text-gray-800">
-                {i === 0 && <span className="mr-1 text-[10px] font-bold text-amber-700">추천</span>}
-                {r.name}
-              </div>
-              {r.places.length > 0 && (
-                <div className="text-[10px] text-gray-400 truncate">
-                  {r.places.slice(0, 3).map((p: any) => p.name).join(" · ")}
-                </div>
+          {regionsLoading ? (
+            <div className="py-8 text-center">
+              <Loader2 className="w-5 h-5 animate-spin text-[#F5A623] mx-auto mb-2" />
+              <p className="text-xs text-gray-400">모일 동네를 찾는 중...</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500">
+                {locatedCount >= 2
+                  ? `${purpose} · 모이기 좋은 동네예요. 가장 오래 걸리는 사람 기준으로 골랐어요.`
+                  : `${purpose} · 동네를 고르세요.`}
+              </p>
+              {locatedCount < 2 && (
+                <p className="text-[11px] text-rose-500">
+                  동네를 설정한 멤버가 {locatedCount}명이라 중간지점을 못 잡았어요.
+                  멤버들이 마이페이지에서 내 동네를 설정하면 3곳을 뽑아드려요.
+                </p>
               )}
-            </button>
-          ))}
-          {!regionsLoading && (
-            <Button onClick={() => setStep("where")} variant="outline" className="w-full h-10 rounded-xl">
-              다시 고르기
-            </Button>
-          )}
-        </div>
-      )}
-      {step === "purpose" && (
-        <div>
-          <p className="text-xs text-gray-500 mb-1">
-            {anchor && anchor !== "midpoint" ? `${anchor.name} 기준` : "중간지점 기준"}
-          </p>
-          <p className="text-xs text-gray-500 mb-2">목적을 고르면 멤버 취향을 합쳐 후보를 뽑아요.</p>
-          <div className="grid grid-cols-2 gap-2">
-            {PURPOSES.map((p) => (
-              <Button key={p.key} onClick={() => loadPicks(p.key)} variant="outline" className="h-11 rounded-xl">
-                {p.label}
+              {regions.map((r, i) => {
+                const worst = r.travel_times.length ? Math.max(...r.travel_times) : null
+                return (
+                  <button
+                    key={`${r.name}-${i}`}
+                    onClick={() => {
+                      setAnchor({ lat: r.lat, lng: r.lng, name: r.name })
+                      loadPicks(purpose, { lat: r.lat, lng: r.lng, name: r.name }, r.places)
+                    }}
+                    className="w-full text-left rounded-xl border border-gray-200 px-3 py-2.5 hover:bg-amber-50"
+                  >
+                    <div className="text-sm font-bold text-gray-800">
+                      {i === 0 && locatedCount >= 2 && (
+                        <span className="mr-1 text-[10px] font-bold text-amber-700">가장 공평</span>
+                      )}
+                      {r.name}
+                    </div>
+                    {worst !== null && (
+                      <div className="text-[10px] text-gray-400">
+                        가장 먼 멤버 {worst}분
+                        {r.travel_times.length > 1 && ` · 평균 ${Math.round(r.travel_times.reduce((a, b) => a + b, 0) / r.travel_times.length)}분`}
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+              <Button onClick={() => setStep("search")} variant="outline" className="w-full h-10 rounded-xl">
+                🔍 다른 지역 직접 입력
               </Button>
-            ))}
-          </div>
+              <Button onClick={() => setStep("purpose")} variant="ghost" className="w-full h-9 rounded-xl text-xs text-gray-400">
+                목적 다시 고르기
+              </Button>
+            </>
+          )}
         </div>
       )}
       {step === "loading" && (
