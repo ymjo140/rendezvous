@@ -763,16 +763,23 @@ def crew_picks(db: Session, members: list, place_ids: list,
             "satisfied": sat,
             "total": len(margins),
             "weakest": weakest,
+            "weakest_id": (wi.user_id if wi else None),
             "per_member": detail,
         }
     return out
 
 
-def crew_reason(pick: dict, members: list, strict: bool = True) -> tuple:
+def crew_reason(pick: dict, members: list, strict: bool = True,
+                me_id: Optional[int] = None) -> tuple:
     """(문구, 종류). 몇 명이 맞는지 세는 건 구성상 참이다.
 
     strict=False면 기준을 푼 상태다 — 같은 숫자라도 '취향에 맞아요'가 아니라
     '무난해요'라고 말한다. 상위 20%를 상위 5%인 척하면 그게 거짓말이 된다.
+
+    이름은 '못 넘은 사람이 정확히 한 명'일 때만 부른다. 5명 중 1명만 통과면
+    실제로 넷이 양보하는 건데 한 명만 부르면 나머지 셋은 괜찮은 것처럼 읽힌다.
+    me_id를 주면 그 사람을 '내가'로 부른다 — 단 이 문구는 저장하면 안 된다
+    (옵션 meta는 방 전원이 같은 문자열을 본다).
     """
     if not pick:
         return (None, None)
@@ -780,10 +787,16 @@ def crew_reason(pick: dict, members: list, strict: bool = True) -> tuple:
     if tot == 0:
         return (None, None)
     fit = "취향에 맞아요" if strict else "무난한 편이에요"
-    if sat == tot and tot >= 2:
+    if tot == 1:
+        return ((fit, "group_all") if sat else ("취향과는 거리가 있어요", "group_none"))
+
+    who = "내가" if (me_id is not None and pick.get("weakest_id") == me_id) \
+        else f"{pick.get('weakest')}님이"
+    yielders = tot - sat
+    if yielders == 0:
         return (f"{tot}명 모두 {fit}", "group_all")
-    if sat >= 2:
-        return (f"{tot}명 중 {sat}명 {fit}", "group_most")
-    if sat == 1:
-        return (f"{tot}명 중 1명만 {fit} · {pick['weakest']}님이 참는 자리", "group_weak")
-    return (f"{pick['weakest']}님 취향과 특히 안 맞아요", "group_none")
+    if sat == 0:
+        return (f"{tot}명 다 기준 밖이에요 · {who} 가장 멀어요", "group_none")
+    head = f"{tot}명 중 {sat}명 {fit}" if sat >= 2 else f"{tot}명 중 1명만 {fit}"
+    tail = f"{who} 양보해야 해요" if yielders == 1 else f"{yielders}명이 양보해야 해요"
+    return (f"{head} · {tail}", "group_most" if sat >= 2 else "group_weak")

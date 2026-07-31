@@ -188,11 +188,17 @@ def suggest_poll_places(
     items = []
     for pid, p in ranked:
         r = meta[pid]
+        # reason은 저장·공유용(이름), reason_me는 지금 보는 사람용('내가').
+        # 옵션 meta에 박히는 건 반드시 reason이어야 한다 — 방 전원이 같은 문자열을 본다.
         reason, kind = taste_service.crew_reason(p, members, strict=strict)
+        reason_me, _k = taste_service.crew_reason(p, members, strict=strict,
+                                                  me_id=current_user.id)
         items.append({
             "place_id": pid, "name": r[1], "cuisine": r[2], "address": r[3], "image": r[4],
             "satisfied": p["satisfied"], "total": p["total"], "weakest": p["weakest"],
+            "weakest_id": p.get("weakest_id"),
             "reason": reason, "reason_kind": kind,
+            "reason_me": (reason_me if reason_me != reason else None),
             "years_open": ((datetime.now().year - r[5].year) if r[5] else None),
         })
     note = f"{len(members)}명 취향을 함께 봤어요"

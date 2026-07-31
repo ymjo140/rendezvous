@@ -276,7 +276,9 @@ type CrewPick = {
   satisfied?: number
   total?: number
   weakest?: string | null
-  reason?: string | null
+  weakest_id?: number | null
+  reason?: string | null       // 저장·공유용(이름) — 옵션 meta엔 이게 들어간다
+  reason_me?: string | null    // 지금 보는 사람용('내가') — 화면에만 쓴다
   reason_kind?: string | null
   years_open?: number | null
 }
@@ -569,8 +571,10 @@ export function PlacePollComposer({
                       <Check className="w-3 h-3" />
                     </span>
                   </div>
-                  {p.reason && (
-                    <div className={`mt-1 text-[10px] font-bold ${reasonTone(p.reason_kind)}`}>{p.reason}</div>
+                  {(p.reason_me || p.reason) && (
+                    <div className={`mt-1 text-[10px] font-bold ${reasonTone(p.reason_kind)}`}>
+                      {p.reason_me || p.reason}
+                    </div>
                   )}
                   {p.years_open ? (
                     <div className="text-[10px] text-gray-400 mt-0.5">{p.years_open}년째 영업 중</div>
@@ -875,8 +879,10 @@ export function CandidateSheet({
                   <div className="text-[10px] text-gray-400 truncate">
                     {[p.cuisine, p.address].filter(Boolean).join(" · ")}
                   </div>
-                  {p.reason && (
-                    <div className={`text-[10px] font-bold truncate ${reasonTone(p.reason_kind)}`}>{p.reason}</div>
+                  {(p.reason_me || p.reason) && (
+                    <div className={`text-[10px] font-bold truncate ${reasonTone(p.reason_kind)}`}>
+                      {p.reason_me || p.reason}
+                    </div>
                   )}
                   {p.place_id && <span className="text-[9px] font-bold text-sky-600">상세 보기 →</span>}
                 </button>
