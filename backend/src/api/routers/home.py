@@ -1886,6 +1886,7 @@ def create_checkin(
         place_id=place.id, user_id=user.id, community_id=community_id,
         party_size=party_size, date=today,
         partnership_app_id=(deal["app_id"] if apply_deal else None),
+        context_tag=((req.get("context_tag") or "").strip() or None),
     )
     db.add(row)
     taste_service.mark_dirty(db, user.id)

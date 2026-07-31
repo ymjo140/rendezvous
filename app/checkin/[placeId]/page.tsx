@@ -36,6 +36,17 @@ type Ctx = {
   reservation?: Resv | null
 }
 
+const CTX_CHIPS = [
+  { tag: "work", label: "회식", emoji: "🥂" },
+  { tag: "friends", label: "친구", emoji: "🍻" },
+  { tag: "date", label: "데이트", emoji: "💕" },
+  { tag: "family", label: "가족", emoji: "🍲" },
+  { tag: "solo", label: "혼밥", emoji: "🍚" },
+  { tag: "drink", label: "술 한잔", emoji: "🍶" },
+  { tag: "cafe", label: "카페", emoji: "☕" },
+  { tag: "special", label: "기념일", emoji: "🎂" },
+]
+
 const DOW_KO: Record<string, string> = {
   mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일",
 }
@@ -74,6 +85,9 @@ function CheckinInner() {
   const [picked, setPicked] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [partySize, setPartySize] = useState(2)
+  // 맥락은 임포트 때 300개를 묻는 대신 실제로 간 순간에 한 곳만 받는다.
+  // 선택은 자유 — 안 골라도 체크인은 된다.
+  const [ctxTag, setCtxTag] = useState<string | null>(null)
   const [done, setDone] = useState<{
     crew: Crew | null; visits: number; eligible: boolean
     benefit: Benefit | null; blocked: Blocked | null; issuedAt: number
@@ -139,6 +153,7 @@ function CheckinInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           place_id: ctx.place.id, community_id: picked, party_size: partySize,
+          context_tag: ctxTag,
           reservation_id: ctx.reservation?.id ?? null,
           lat: coords?.lat ?? null, lng: coords?.lng ?? null,
         }),
@@ -363,6 +378,27 @@ function CheckinInner() {
                 {picked === null ? "✓" : "○"}
               </span>
             </button>
+          </div>
+
+          {/* 오늘 어떤 자리였나 — 이 한 번이 저장 300개에 묻는 것보다 정확하다 */}
+          <div className="mt-3">
+            <p className="text-[13.5px] font-semibold text-slate-900">오늘 어떤 자리였어요?</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">다음에 비슷한 자리를 추천할 때 써요 (선택)</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {CTX_CHIPS.map((c) => (
+                <button
+                  key={c.tag}
+                  onClick={() => setCtxTag(ctxTag === c.tag ? null : c.tag)}
+                  className={`rounded-xl border px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+                    ctxTag === c.tag
+                      ? "border-transparent bg-[#F5A623] text-white"
+                      : "border-slate-200 bg-white text-slate-500"
+                  }`}
+                >
+                  {c.emoji} {c.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* 몇 명인지 — 최소 인원 조건이 걸린 제휴가 있어서 필요하다 */}

@@ -981,4 +981,6 @@ class PlaceCheckin(Base):
     # 이 방문에 적용된 제휴(crew_partnership_apps.id). 딜이 아니라 '성사 기록'을 가리킨다 —
     # 계약 사본(terms_snapshot)이 거기 붙어 있어서 딜을 나중에 고쳐도 소급되지 않는다.
     partnership_app_id = Column(Integer, nullable=True, index=True)
+    # 어떤 자리였나 — 임포트 때 300개를 묻는 대신 실제로 간 순간에 한 곳만 받는다
+    context_tag = Column(String(16), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
