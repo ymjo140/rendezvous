@@ -166,13 +166,29 @@ def suggest_poll_places(
         return {"items": [], "members": len(members), "note": "근처에 후보가 없어요."}
 
     meta = {r[0]: r for r in rows}
-    picks = taste_service.crew_picks(db, members, list(meta.keys()))
-    ranked = sorted(picks.items(), key=lambda kv: -kv[1]["score"])[:max(1, min(limit, 10))]
+    ids = list(meta.keys())
+
+    # 게이트를 단계적으로 푼다. 5%는 개인 배지용 문턱이라 5명 전원에게 동시에
+    # 요구하면 통과가 거의 안 나온다 — 아무도 못 넘으면 상위 10%·20%로 넓혀 보고,
+    # 어느 기준으로 봤는지는 note에 밝힌다. 점수(=순위)는 어차피 상대적이라
+    # 기준을 풀어도 순서가 크게 바뀌지 않고, 바뀌는 건 '맞다'고 부를지 여부다.
+    top_n = max(1, min(limit, 10))
+    scores = taste_service.crew_scores(db, members, ids)
+    ranked, gate_fpr = [], taste_service.GATE_LEVELS[0]
+    for lv in taste_service.GATE_LEVELS:
+        picks = taste_service.crew_picks(db, members, ids, fpr=lv, per=scores)
+        ranked = sorted(picks.items(), key=lambda kv: -kv[1]["score"])[:top_n]
+        gate_fpr = lv
+        # 판정 기준은 '보여줄 목록'이다. 250개 중 어딘가 한 곳이 통과해도
+        # 그게 상위 N에 없으면 사용자 화면은 여전히 전부 '안 맞아요'다.
+        if any(p["satisfied"] > 0 for _pid, p in ranked):
+            break
+    strict = abs(gate_fpr - taste_service.GATE_FPR) < 1e-9
 
     items = []
     for pid, p in ranked:
         r = meta[pid]
-        reason, kind = taste_service.crew_reason(p, members)
+        reason, kind = taste_service.crew_reason(p, members, strict=strict)
         items.append({
             "place_id": pid, "name": r[1], "cuisine": r[2], "address": r[3], "image": r[4],
             "satisfied": p["satisfied"], "total": p["total"], "weakest": p["weakest"],
@@ -180,6 +196,8 @@ def suggest_poll_places(
             "years_open": ((datetime.now().year - r[5].year) if r[5] else None),
         })
     note = f"{len(members)}명 취향을 함께 봤어요"
+    if not strict:
+        note += f" · 상위 {int(round(gate_fpr * 100))}% 기준까지 넓혀서 봤어요"
     if relaxed:
         note += f" · 근처에 '{purpose}' 후보가 없어 전체에서 골랐어요"
     return {
@@ -188,6 +206,8 @@ def suggest_poll_places(
         "member_names": [m.name for m in members],
         "purpose": (purpose or None),
         "purpose_relaxed": relaxed,
+        "gate_fpr": gate_fpr,
+        "gate_strict": strict,
         "note": note,
     }
 

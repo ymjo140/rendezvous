@@ -411,6 +411,10 @@ export function PlacePollComposer({
   const toggle = (i: number) =>
     setChosen((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]))
 
+  // 아무도 게이트를 못 넘은 목록 — 순위는 '덜 어긋나는 순'일 뿐이다.
+  // 이걸 "다 같이 만족하는 순서"라고 부르면 화면이 거짓말을 한다.
+  const noneSatisfied = fromCrew && picks.length > 0 && picks.every((p) => (p.satisfied ?? 0) === 0)
+
   const create = async () => {
     if (chosen.length === 0 || !spot) return
     setCreating(true)
@@ -527,7 +531,13 @@ export function PlacePollComposer({
           <div className="flex items-start justify-between gap-2 mb-2">
             <p className="text-xs text-gray-500">
               {spot?.name} 기준 · {note}
-              {fromCrew && <span className="block text-[11px] text-gray-400">올릴 후보를 고르세요. 평균이 아니라 다 같이 만족하는 순서예요.</span>}
+              {fromCrew && (
+                <span className={`block text-[11px] ${noneSatisfied ? "text-rose-500" : "text-gray-400"}`}>
+                  {noneSatisfied
+                    ? "기준을 넓혀도 넘는 곳이 없어요. 그나마 덜 어긋나는 순서라, 목적이나 지역을 바꾸는 게 나아요."
+                    : "올릴 후보를 고르세요. 평균이 아니라 가장 안 맞는 사람 기준으로 고른 순서예요."}
+                </span>
+              )}
             </p>
             <button onClick={() => setStep("purpose")} className="text-[11px] text-gray-400 flex-shrink-0 underline">
               목적 바꾸기
@@ -706,6 +716,9 @@ export function CandidateSheet({
     [poll.options]
   )
   const existingLabels = useMemo(() => new Set(poll.options.map((o) => o.label)), [poll.options])
+  // 합성 목록인데 아무도 게이트를 못 넘었으면 그 사실을 밝힌다(순위는 상대적일 뿐)
+  const recoNoneSatisfied =
+    fromCrew && recos.length > 0 && recos.every((p) => (p.satisfied ?? 0) === 0)
 
   // 후보 추가 목록도 투표를 만들 때와 같은 집단 합성으로 뽑는다 — 만든 사람과
   // 나중에 담는 사람이 서로 다른 기준의 목록을 보면 같은 투표가 아니다.
@@ -843,8 +856,10 @@ export function CandidateSheet({
           {!loading && recos.length === 0 && (
             <p className="text-xs text-gray-400 text-center py-6">추천 결과가 없어요. 검색으로 추가해보세요.</p>
           )}
-          {!loading && recos.length > 0 && recoNote && (
-            <p className="text-[11px] text-gray-400 pb-0.5">{recoNote}</p>
+          {!loading && recos.length > 0 && (recoNote || recoNoneSatisfied) && (
+            <p className={`text-[11px] pb-0.5 ${recoNoneSatisfied ? "text-rose-500" : "text-gray-400"}`}>
+              {recoNoneSatisfied ? `${recoNote} · 기준을 넓혀도 넘는 곳이 없어 덜 어긋나는 순서예요` : recoNote}
+            </p>
           )}
           {recos.map((p, i) => {
             const added = !!p.place_id && existingPlaceIds.has(p.place_id)

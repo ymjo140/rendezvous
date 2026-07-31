@@ -48,6 +48,10 @@ MAX_FACETS = 3         # 저장 컬럼 수. 상위 3개 넘어가면 꼬리라 �
 # 덩어리 수로 나눠 보정한다 — 안 하면 저장을 많이 한 유저일수록 배지가 흔해져
 # "쓸수록 정확해진다"와 부호가 반대가 된다(실측: 1개 5.0% → 3개 14.9%).
 GATE_FPR = 0.05
+# 집단 합성에서 단계적으로 푸는 기준. 5%는 '배지'용 문턱이라 개인에게는 맞지만
+# 5명 전원에게 동시에 요구하면 통과가 사실상 안 나온다(독립이면 0.05^5). 그래서
+# 아무도 못 넘으면 상위 10%·20%로 넓혀 보고, 어느 기준으로 봤는지 밝힌다.
+GATE_LEVELS = (GATE_FPR, 0.10, 0.20)
 SAMPLE_N = 2000        # 게이트 보정용 무작위 표본. 2000×768 float32 ≈ 6MB
 
 # 신호별 (가중치, 반감기 일수). 행동이 말보다 강하고, 최근이 과거보다 강하다.
@@ -670,18 +674,56 @@ def apply_yield_weights(db: Session, community_id: str, members: list) -> list:
     return members
 
 
-def crew_picks(db: Session, members: list, place_ids: list) -> dict:
+def crew_scores(db: Session, members: list, place_ids: list) -> dict:
+    """uid → {place_id: (점수, 덩어리, 통과)}. 게이트와 무관하니 한 번만 잰다.
+
+    게이트를 여러 단계로 풀어 볼 때 이걸 재사용한다 — 단계마다 다시 재면
+    멤버 수 × 단계 수만큼 쿼리가 나간다.
+    """
+    return {m.user_id: score_places(db, m.sheet, place_ids) for m in members}
+
+
+def _member_gates(db: Session, members: list, fpr: Optional[float]) -> dict:
+    """uid → 덩어리별 게이트. fpr가 기본값이면 시트에 박힌 값을 그대로 쓴다.
+
+    다른 값이면 표본에서 그 백분위를 다시 잰다. 게이트는 '무작위 장소 분포의
+    상위 fpr 지점'이라는 정의라, 정의대로 다시 재는 것 말고 방법이 없다
+    (덩어리마다 무작위 분포가 달라서 상수로 환산이 안 된다).
+    """
+    stored = {m.user_id: [f.gate for f in m.sheet.facets] for m in members}
+    if fpr is None or abs(fpr - GATE_FPR) < 1e-9:
+        return stored
+    sample = _load_sample(db)
+    if sample is None:
+        return stored
+    out = {}
+    for m in members:
+        if not m.sheet.facets:
+            out[m.user_id] = []
+            continue
+        pct = 100.0 * (1.0 - fpr / max(1, len(m.sheet.facets)))
+        out[m.user_id] = [float(np.percentile(sample @ f.vec, pct)) for f in m.sheet.facets]
+    return out
+
+
+def crew_picks(db: Session, members: list, place_ids: list,
+               fpr: Optional[float] = None, per: Optional[dict] = None) -> dict:
     """place_id → 집단 만족도.
 
     반환: {score, satisfied, total, weakest, per_member{uid: (점수, 통과)}}
     개인 점수는 그대로 비교할 수 없다 — 게이트가 사람마다 다르다. 그래서
     '게이트 대비 여유(margin)'로 환산해 비교 가능하게 만든다.
+    fpr을 주면 그 기준으로 통과 여부를 다시 판정한다(기본은 시트의 5%).
     """
     if not members or not place_ids:
         return {}
-    per = {}
-    for m in members:
-        per[m.user_id] = score_places(db, m.sheet, place_ids)
+    if per is None:
+        per = crew_scores(db, members, place_ids)
+    gates = _member_gates(db, members, fpr)
+
+    def _gate(m, fidx):
+        g = gates.get(m.user_id) or []
+        return g[fidx] if fidx < len(g) else 0.0
 
     out = {}
     for pid in place_ids:
@@ -690,9 +732,10 @@ def crew_picks(db: Session, members: list, place_ids: list) -> dict:
             v = per.get(m.user_id, {}).get(pid)
             if v is None:
                 continue
-            sc, fidx, ok = v
-            gate = m.sheet.facets[fidx].gate if fidx < len(m.sheet.facets) else 0.0
+            sc, fidx, _ok = v
+            gate = _gate(m, fidx)
             margin = sc - gate           # 양수면 그 사람 취향에 맞다
+            ok = sc > gate               # 완화된 기준이면 여기서 다시 갈린다
             margins.append(margin)
             wacc += margin * m.weight
             wsum += m.weight
@@ -710,7 +753,7 @@ def crew_picks(db: Session, members: list, place_ids: list) -> dict:
             v = per.get(m.user_id, {}).get(pid)
             if v is None:
                 continue
-            g = m.sheet.facets[v[1]].gate if v[1] < len(m.sheet.facets) else 0.0
+            g = _gate(m, v[1])
             if (v[0] - g) < wv:
                 wv, wi = v[0] - g, m
         weakest = wi.name if wi else None
@@ -725,17 +768,22 @@ def crew_picks(db: Session, members: list, place_ids: list) -> dict:
     return out
 
 
-def crew_reason(pick: dict, members: list) -> tuple:
-    """(문구, 종류). 몇 명이 맞는지 세는 건 구성상 참이다."""
+def crew_reason(pick: dict, members: list, strict: bool = True) -> tuple:
+    """(문구, 종류). 몇 명이 맞는지 세는 건 구성상 참이다.
+
+    strict=False면 기준을 푼 상태다 — 같은 숫자라도 '취향에 맞아요'가 아니라
+    '무난해요'라고 말한다. 상위 20%를 상위 5%인 척하면 그게 거짓말이 된다.
+    """
     if not pick:
         return (None, None)
     sat, tot = pick["satisfied"], pick["total"]
     if tot == 0:
         return (None, None)
+    fit = "취향에 맞아요" if strict else "무난한 편이에요"
     if sat == tot and tot >= 2:
-        return (f"{tot}명 모두 취향에 맞아요", "group_all")
+        return (f"{tot}명 모두 {fit}", "group_all")
     if sat >= 2:
-        return (f"{tot}명 중 {sat}명 취향에 맞아요", "group_most")
+        return (f"{tot}명 중 {sat}명 {fit}", "group_most")
     if sat == 1:
-        return (f"{tot}명 중 1명만 맞아요 · {pick['weakest']}님이 참는 자리", "group_weak")
+        return (f"{tot}명 중 1명만 {fit} · {pick['weakest']}님이 참는 자리", "group_weak")
     return (f"{pick['weakest']}님 취향과 특히 안 맞아요", "group_none")
