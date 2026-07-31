@@ -588,6 +588,36 @@ async def confirm_poll(
     poll.status = "confirmed"
     poll.confirmed_option_id = opt.id
 
+    # 확정 → 예약으로 이어지도록 방의 '계획'을 맞춰 둔다.
+    # 장소 투표와 일정 투표가 서로를 몰라서, 둘 다 확정하고도 예약 화면에서 날짜를
+    # 처음부터 다시 골라야 했다. 어느 쪽을 나중에 확정하든 장소 투표 meta에
+    # plan_date/plan_time이 남게 한다(카드의 예약 버튼이 그걸 그대로 넘긴다).
+    # JSON 컬럼이라 제자리 수정 대신 새 dict를 대입한다(안 그러면 갱신이 안 잡힌다).
+    other = None
+    try:
+        other = (
+            db.query(models.ChatPoll)
+            .filter(models.ChatPoll.room_id == poll.room_id,
+                    models.ChatPoll.kind == ("schedule" if poll.kind == "place" else "place"),
+                    models.ChatPoll.status == "confirmed")
+            .order_by(models.ChatPoll.id.desc())
+            .first()
+        )
+        if other is not None:
+            if poll.kind == "place":
+                o = (db.query(models.ChatPollOption)
+                     .filter(models.ChatPollOption.id == other.confirmed_option_id).first())
+                m = (o.meta or {}) if o else {}
+                poll.meta = {**(poll.meta or {}),
+                             "plan_date": m.get("date"), "plan_time": m.get("time")}
+            else:
+                m = opt.meta or {}
+                other.meta = {**(other.meta or {}),
+                              "plan_date": m.get("date"), "plan_time": m.get("time")}
+    except Exception as _e:
+        print(f"[poll] plan link skip: {_e}")
+        other = None
+
     # 확정 시스템 메시지
     verb = "장소" if poll.kind == "place" else "일정"
     content = json.dumps(
@@ -600,6 +630,8 @@ async def confirm_poll(
     db.commit()
 
     await _broadcast_poll(db, poll)
+    if other is not None and poll.kind == "schedule":
+        await _broadcast_poll(db, other)   # 장소 카드에 날짜가 붙었으니 같이 갱신
     await manager.broadcast(
         {
             "id": msg.id,

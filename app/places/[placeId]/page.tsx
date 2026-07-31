@@ -92,7 +92,9 @@ const formatPrice = (price?: string | number | null) => {
 // --- 캐치테이블식 예약 슬롯 헬퍼 ---
 const DOW_KO = ["일", "월", "화", "수", "목", "금", "토"]
 
-function buildDateChips(days = 7) {
+// extra: 7일 밖의 날짜(일정 투표로 정한 날 등)도 칩으로 끼워 넣는다.
+// 안 넣으면 선택된 날짜가 화면 어디에도 안 보여서, 언제로 예약되는지 모른 채 결제한다.
+function buildDateChips(days = 7, extra?: string | null) {
   const chips: { date: string; day: string; dow: string; isToday: boolean }[] = []
   for (let i = 0; i < days; i += 1) {
     const d = new Date()
@@ -106,6 +108,13 @@ function buildDateChips(days = 7) {
       dow: i === 0 ? "오늘" : i === 1 ? "내일" : DOW_KO[d.getDay()],
       isToday: i === 0,
     })
+  }
+  if (extra && /^\d{4}-\d{2}-\d{2}$/.test(extra) && !chips.some((c) => c.date === extra)) {
+    const d = new Date(`${extra}T00:00:00`)
+    if (!Number.isNaN(d.getTime())) {
+      chips.push({ date: extra, day: String(d.getDate()), dow: DOW_KO[d.getDay()], isToday: false })
+      chips.sort((a, b) => (a.date < b.date ? -1 : 1))
+    }
   }
   return chips
 }
@@ -139,6 +148,12 @@ export default function PlaceDetailPage() {
   const placeId = Array.isArray(rawPlaceId) ? rawPlaceId[0] : rawPlaceId
   const offerParam = searchParams?.get("offer")
   const offerRuleId = offerParam && /^\d+$/.test(offerParam) ? Number(offerParam) : null
+  // 크루 채팅에서 '이 크루로 예약하기'로 넘어온 경우 — 투표로 정한 걸 다시 고르게 하지 않는다
+  const planCrew = searchParams?.get("crew") || null
+  const planDate = searchParams?.get("date") || null
+  const planTime = searchParams?.get("time") || null
+  const planPartyRaw = searchParams?.get("party")
+  const planParty = planPartyRaw && /^\d+$/.test(planPartyRaw) ? Number(planPartyRaw) : null
 
   const [place, setPlace] = useState<PlaceDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -332,14 +347,23 @@ export default function PlaceDetailPage() {
     }
   }
 
-  const openReserve = async () => {
+  // prefill: 크루 채팅의 확정 카드에서 넘어온 값(크루·날짜·시간·인원).
+  // 상태 setter는 비동기라 여기서 한 번에 반영해야 아래 기본값(내일)에 덮이지 않는다.
+  const openReserve = async (prefill?: {
+    crew?: string | null; date?: string | null; time?: string | null; party?: number | null
+  }) => {
     setReserveError(null)
     setReserveSuccess(null)
     if (!localStorage.getItem("token")) {
       alert("로그인이 필요합니다.")
       return
     }
-    if (!reserveDate) {
+    if (prefill?.crew) setReserveCrew(prefill.crew)
+    if (prefill?.time) setReserveTime(prefill.time)
+    if (prefill?.party && prefill.party > 0) setPartySize(prefill.party)
+    if (prefill?.date) {
+      setReserveDate(prefill.date)
+    } else if (!reserveDate) {
       const d = new Date()
       d.setDate(d.getDate() + 1)
       setReserveDate(
@@ -391,9 +415,15 @@ export default function PlaceDetailPage() {
       })
       setReserveSuccess(
         `예약 완료!${selectedTable ? ` ${selectedTable.zone} ${selectedTable.label} 지정 ·` : ""} 예약금 ${won(depositAmount)}이 캐시에서 결제됐어요.`
+        + (reserveCrew ? " 크루 예약함으로 갈게요 — 도착하면 거기서 체크인해요." : "")
       )
       recordActivity("reserve") // 게임 XP/퀘스트
-      setTimeout(() => setReserveOpen(false), 1400)
+      setTimeout(() => {
+        setReserveOpen(false)
+        // 크루 예약이면 크루 예약함으로 — 체크인 버튼이 거기 있다.
+        // 방문의 증거(PlaceCheckin)는 이 경로로만 쌓이고, 재방문·제휴 한도가 전부 거기서 나온다.
+        if (reserveCrew) router.push(`/crew/${reserveCrew}/reservations`)
+      }, 1400)
     } catch (err: any) {
       setReserveError(err?.message || "예약에 실패했습니다.")
     } finally {
@@ -444,6 +474,10 @@ export default function PlaceDetailPage() {
     // 핫딜에서 '예약하기'로 진입(?offer=) → 예약 모달 자동 오픈
     if (offerRuleId && !reserveOpen && !reserveSuccess) {
       openReserve()
+    }
+    // 크루 채팅 확정 카드에서 진입(?crew=) → 투표로 정한 값 채운 채로 자동 오픈
+    if (planCrew && !reserveOpen && !reserveSuccess) {
+      openReserve({ crew: planCrew, date: planDate, time: planTime, party: planParty })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [place, searchParams])
@@ -1113,7 +1147,7 @@ export default function PlaceDetailPage() {
             </a>
           </Button>
           <Button
-            onClick={openReserve}
+            onClick={() => openReserve()}
             className="flex-[1.4] bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
           >
             <CalendarCheck className="w-4 h-4 mr-2" />
@@ -1241,7 +1275,7 @@ export default function PlaceDetailPage() {
               <div>
                 <label className="text-xs font-semibold text-gray-500">날짜</label>
                 <div className="mt-1.5 flex gap-2 overflow-x-auto pb-1">
-                  {buildDateChips().map((c) => {
+                  {buildDateChips(7, reserveDate).map((c) => {
                     const selected = reserveDate === c.date
                     return (
                       <button

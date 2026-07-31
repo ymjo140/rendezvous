@@ -65,14 +65,28 @@ function dateLabel(dateStr: string, time?: string) {
 
 // ─────────────────────────────────────────────────────────────
 // 투표 카드
+// 확정된 장소 → 예약 화면으로 넘길 계획(크루·날짜·시간·인원).
+// 이게 없으면 방금 투표로 정한 걸 예약 모달에서 처음부터 다시 고르게 되고,
+// 무엇보다 크루를 안 고르면 예약에 community_id가 안 붙어서 체크인이 크루 방문으로
+// 안 쌓인다 — 재방문·제휴·양보 데이터가 전부 거기서 나온다.
+function reservePath(poll: Poll, placeId: number, memberCount?: number) {
+  const qs = new URLSearchParams({ crew: String(poll.room_id) })
+  if (poll.meta?.plan_date) qs.set("date", String(poll.meta.plan_date))
+  if (poll.meta?.plan_time) qs.set("time", String(poll.meta.plan_time))
+  if (memberCount && memberCount > 0) qs.set("party", String(memberCount))
+  return `/places/${placeId}?${qs.toString()}`
+}
+
 export function PollCard({
   poll,
   onUpdate,
   onAddCandidates,
+  memberCount,
 }: {
   poll: Poll
   onUpdate: (p: Poll) => void
   onAddCandidates: (poll: Poll) => void
+  memberCount?: number
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -211,12 +225,19 @@ export function PollCard({
             <Check className="w-3.5 h-3.5" /> {winner?.label}(으)로 확정!
           </div>
           {poll.kind === "place" && winner?.place_id && (
-            <Button
-              onClick={() => router.push(`/places/${winner.place_id}`)}
-              className="w-full h-8 mt-1.5 text-xs bg-[#14B8A6] hover:bg-[#0D9488] rounded-lg"
-            >
-              장소 보기 · 예약
-            </Button>
+            <>
+              <Button
+                onClick={() => router.push(reservePath(poll, winner.place_id as number, memberCount))}
+                className="w-full h-8 mt-1.5 text-xs bg-[#14B8A6] hover:bg-[#0D9488] rounded-lg"
+              >
+                이 크루로 예약하기
+              </Button>
+              <div className="text-[10px] text-gray-400 mt-1">
+                {poll.meta?.plan_date
+                  ? `${dateLabel(String(poll.meta.plan_date), poll.meta.plan_time ? String(poll.meta.plan_time) : undefined)}${memberCount ? ` · ${memberCount}명` : ""}으로 채워서 열어요`
+                  : "날짜는 예약 화면에서 고르면 돼요 · 일정 투표를 확정하면 여기 채워져요"}
+              </div>
+            </>
           )}
         </div>
       ) : (

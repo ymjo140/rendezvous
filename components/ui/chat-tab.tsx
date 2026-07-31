@@ -932,6 +932,7 @@ export function ChatTab({ openRoomId, openRoomTitle, onRoomOpened }: ChatTabProp
                                         poll={poll}
                                         onUpdate={upsertPoll}
                                         onAddCandidates={(p) => setCandidatePoll(p)}
+                                        memberCount={members.length}
                                     />
                                 ) : (
                                     <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3 text-xs text-gray-400 flex items-center gap-2">
