@@ -584,7 +584,8 @@ def _place_fallback(db: Session, sheet, interp: dict, limit: int,
 
     sql = """
         SELECT p.id, p.name, COALESCE(p.cuisine_type, ''), COALESCE(p.category, ''),
-               COALESCE(p.address, ''), p.hero_image, p.lat, p.lng
+               COALESCE(p.address, ''), p.hero_image, p.lat, p.lng,
+               p.opened_at, p.uptae, p.area_m2
         FROM places p
         WHERE p.main_category IN ('FOOD','RESTAURANT','CAFE','PUB')
           -- 폐업은 뺀다. NULL(아직 대조 못 함)은 남긴다 — 대조 실패를 폐업으로
@@ -595,8 +596,9 @@ def _place_fallback(db: Session, sheet, interp: dict, limit: int,
     params = {"la1": lat - dlat, "la2": lat + dlat, "ln1": lng - dlng, "ln2": lng + dlng}
     if kws:
         # category는 못 믿는다 — '경양식'이 %양식%에 걸려 포차가 파스타 검색에 나왔다
+        # 원본 업태(uptae)가 cuisine_type보다 정확하다 — 행안부 분류라 오염이 없다
         sql += " AND (" + " OR ".join(
-            f"p.cuisine_type ILIKE :k{i} OR p.name ILIKE :k{i}"
+            f"p.uptae ILIKE :k{i} OR p.cuisine_type ILIKE :k{i} OR p.name ILIKE :k{i}"
             for i in range(len(kws))) + ")"
         for i, k in enumerate(kws):
             params[f"k{i}"] = f"%{k}%"
@@ -631,7 +633,7 @@ def _place_fallback(db: Session, sheet, interp: dict, limit: int,
 
     out = []
     seen_place = set()   # 이름+좌표가 같은 중복 장소가 447그룹 있다(실측)
-    for pid, name, cz, cat, addr_, img, plat, plng in rows:
+    for pid, name, cz, cat, addr_, img, plat, plng, opened, uptae, area in rows:
         if pid in excluded:
             continue
         key = (name, round(plat or 0, 5), round(plng or 0, 5))
@@ -667,14 +669,21 @@ def _place_fallback(db: Session, sheet, interp: dict, limit: int,
             reason, kind = taste_service.taste_reason(sheet, fidx)
         elif saves_by_place.get(pid, 0) > 0:
             reason, kind = f"{saves_by_place[pid]}명이 저장한 곳", "popular"
+        elif (_years_open(opened) or 0) >= 10:
+            reason, kind = f"{opened.year}년부터 {_years_open(opened)}년째 영업 중", "longevity"
         else:
             reason, kind = f"{reg.get('name')} · {round(dist, 1)}km", "area"
 
+        yrs = _years_open(opened)
         out.append({
-            "id": pid, "name": name, "cuisine": cz, "category": cat, "address": addr_,
-            "image": img, "dist_km": round(dist, 2),
+            "id": pid, "name": name, "cuisine": (uptae or cz), "category": cat,
+            "address": addr_, "image": img, "dist_km": round(dist, 2),
             "taste_ok": bool(taste_ok), "score": sc, "rank": total,
             "reason": reason, "reason_kind": kind,
+            # 평점이 없어도 말할 수 있는 것들
+            "years_open": yrs,
+            "budget": _budget_hint(uptae, cz),
+            "seats_hint": (int(area // 1.6) if area and area > 0 else None),
         })
 
     out.sort(key=lambda x: x["rank"], reverse=True)
@@ -1563,6 +1572,48 @@ def _crew_visits(db: Session, community_id: str) -> int:
 
 
 _DOW = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+# 업태 → 1인 예상 예산. price_range가 12만 행 전부 비어 있어(실측) 추정으로 채운다.
+# 실제 결제·분담 기록이 생기면 그쪽이 이긴다 — 추정은 어디까지나 초기값이다.
+UPTAE_BUDGET = {
+    "까페": (5000, 12000), "커피숍": (5000, 12000), "제과점": (5000, 15000),
+    "분식": (7000, 13000), "김밥(도시락)": (7000, 13000),
+    "한식": (9000, 18000), "기타": (9000, 20000), "패스트푸드": (7000, 14000),
+    "통닭(치킨)": (16000, 26000), "호프/통닭": (16000, 28000),
+    "정종/대포집/소주방": (18000, 30000), "탕류(보신용)": (13000, 22000),
+    "중국식": (12000, 22000), "경양식": (15000, 28000), "패밀리레스토랑": (20000, 35000),
+    "일식": (20000, 40000), "식육(숯불구이)": (22000, 40000),
+    "횟집": (30000, 55000), "복어취급": (35000, 60000),
+    "출장조리": (20000, 40000), "뷔페식": (20000, 40000),
+}
+
+
+def _years_open(opened_at) -> Optional[int]:
+    """개업 연차. 27년은 조작할 수 없다 — 별점보다 위조가 어려운 신호다."""
+    if not opened_at:
+        return None
+    try:
+        y = datetime.now().year - opened_at.year
+        return y if y >= 0 else None
+    except AttributeError:
+        return None
+
+
+def _budget_hint(uptae: Optional[str], cuisine: Optional[str] = None) -> Optional[str]:
+    """1인 예상 예산 문구. 실제 결제 기록이 쌓이면 이 자리를 그게 대체한다."""
+    band = UPTAE_BUDGET.get((uptae or "").strip())
+    if band is None and cuisine:
+        band = UPTAE_BUDGET.get(cuisine.strip())
+    if band is None:
+        return None
+    def _w(v: int) -> str:
+        if v >= 10000:
+            man = v / 10000
+            return f"{int(man)}만" if abs(man - round(man)) < 0.05 else f"{man:.1f}만"
+        return f"{v // 1000}천"
+
+    lo, hi = band
+    return f"1인 {_w(lo)}~{_w(hi)}원 (예상)"
 
 # 도심 GPS는 실내·건물 사이에서 수십 m씩 튄다. 예약이 이미 한 겹 걸러주므로
 # 반경은 넉넉하게 — 못 찍는 쪽이 남용보다 아프다.

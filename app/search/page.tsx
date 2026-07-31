@@ -21,6 +21,8 @@ type PlaceHit = {
   id: number; name: string; cuisine: string; category: string; address: string
   image: string | null; dist_km: number; taste_ok: boolean
   reason: string; reason_kind: string
+  // 평점이 없어도 말할 수 있는 것들
+  years_open?: number | null; budget?: string | null; seats_hint?: number | null
 }
 type Interp = {
   region: { name: string; lat: number; lng: number; source: string } | null
@@ -279,9 +281,27 @@ export default function HomeSearchPage() {
                         </em>
                       )}
                     </span>
-                    <span className="mt-0.5 block truncate text-[11px] text-slate-400">
-                      {p.cuisine || p.category} · {p.dist_km}km
+                    <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-slate-400">
+                      <span>{p.cuisine || p.category}</span>
+                      <span>·</span>
+                      <span>{p.dist_km}km</span>
+                      {(p.years_open ?? 0) >= 10 && (
+                        <>
+                          <span>·</span>
+                          {/* 27년은 조작할 수 없다 — 별점보다 위조가 어려운 신호 */}
+                          <span className="font-medium text-amber-700">{p.years_open}년째</span>
+                        </>
+                      )}
+                      {p.seats_hint != null && p.seats_hint >= 20 && (
+                        <>
+                          <span>·</span>
+                          <span>약 {p.seats_hint}석</span>
+                        </>
+                      )}
                     </span>
+                    {p.budget && (
+                      <span className="mt-0.5 block text-[11px] text-slate-400">💰 {p.budget}</span>
+                    )}
                     <span className="mt-1 block truncate text-[11px] font-medium text-indigo-500">{p.reason}</span>
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
