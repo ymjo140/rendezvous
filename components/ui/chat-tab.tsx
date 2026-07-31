@@ -254,14 +254,21 @@ const CreateRoomSheet = ({ onClose, onCreated }: { onClose: () => void; onCreate
 // Props 타입 정의
 interface ChatTabProps {
     openRoomId?: string | null;
+    openRoomTitle?: string | null;
     onRoomOpened?: () => void;
 }
 
 // 🌟 [ChatTab] 메인 컴포넌트
-export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
-    const [view, setView] = useState<'list' | 'room'>('list')
+export function ChatTab({ openRoomId, openRoomTitle, onRoomOpened }: ChatTabProps = {}) {
+    // 방을 지정해 들어오면(크루 💬, 푸시 알림) 목록을 거치지 않는다.
+    // 예전엔 /api/chat/rooms 응답을 기다리는 동안 채팅 목록이 먼저 떴다가 방으로
+    // 갈아탔다 — 콜드스타트면 그 목록이 몇 초씩 보인다. 방을 여는 데 필요한 건
+    // id뿐이라(메시지·WS·멤버 전부 id로 붙는다) 껍데기로 먼저 열고 제목만 채운다.
+    const [view, setView] = useState<'list' | 'room'>(openRoomId ? 'room' : 'list')
     const [rooms, setRooms] = useState<any[]>([])
-    const [activeRoom, setActiveRoom] = useState<any>(null)
+    const [activeRoom, setActiveRoom] = useState<any>(
+        openRoomId ? { id: openRoomId, title: openRoomTitle || "" } : null
+    )
     const [messages, setMessages] = useState<any[]>([])
     const [input, setInput] = useState("")
     const { me } = useMe()
@@ -353,16 +360,23 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
         } catch { /* ignore */ }
     }, [])
     
-    // 📤 특정 채팅방 직접 열기 (공유 게시물에서 돌아올 때)
+    // 📤 목록이 도착하면 껍데기를 진짜 방 정보로 교체(제목·그룹 여부 등).
+    // id가 같아서 메시지·WS는 다시 붙지 않는다(아래 효과가 activeRoom?.id에 걸려 있다).
+    //
+    // ★한 번만 연다★ — 방에서 뒤로 가면 fetchRooms()가 돌아 rooms가 새 배열이 되고,
+    // 그때 이 효과가 다시 방을 열어버려서 목록으로 못 나가고 갇힌다(/chats는
+    // onRoomOpened를 안 넘겨서 openRoomId가 계속 남아 있다).
+    const deepLinkOpened = useRef(false)
     useEffect(() => {
-        if (openRoomId && rooms.length > 0) {
-            const room = rooms.find(r => r.id === openRoomId);
-            if (room) {
-                setRootTab("open");
-                setActiveRoom(room);
-                setView('room');
-                onRoomOpened?.();
-            }
+        if (!openRoomId || rooms.length === 0) return
+        const room = rooms.find(r => r.id === openRoomId)
+        if (!room) return
+        setRootTab("open")
+        setActiveRoom((prev: any) => (prev && prev.id !== room.id ? prev : room))
+        if (!deepLinkOpened.current) {
+            deepLinkOpened.current = true
+            setView('room')
+            onRoomOpened?.()
         }
     }, [openRoomId, rooms])
 
@@ -423,15 +437,20 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
         } catch(e) {}
     };
 
+    // 현재 방 저장 — 상세 페이지 갔다 와도 이 방으로 복원.
+    // WS 효과와 분리한 이유: 제목이 나중에 채워질 때 재연결이 일어나면 안 된다.
+    useEffect(() => {
+        if (view !== 'room' || !activeRoom?.id) return
+        try {
+            sessionStorage.setItem("chat:openRoom", JSON.stringify({
+                id: activeRoom.id, title: activeRoom.title, is_group: activeRoom.is_group,
+            }))
+        } catch { /* ignore */ }
+    }, [view, activeRoom])
+
     // WebSocket 연결 및 실시간 수신
     useEffect(() => {
-        if (view === 'room' && activeRoom) {
-            // 현재 방 저장 — 상세 페이지 갔다 와도 이 방으로 복원
-            try {
-                sessionStorage.setItem("chat:openRoom", JSON.stringify({
-                    id: activeRoom.id, title: activeRoom.title, is_group: activeRoom.is_group,
-                }))
-            } catch { /* ignore */ }
+        if (view === 'room' && activeRoom?.id) {
             setPlusOpen(false)
             setComposer(null)
             setCandidatePoll(null)
@@ -490,7 +509,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                 if (ws.readyState === 1) ws.close();
             };
         }
-    }, [view, activeRoom])
+    }, [view, activeRoom?.id])
 
     // 메시지에 등장하는 투표/분담 카드 로드(캐시에 없는 것만)
     useEffect(() => {
@@ -741,7 +760,7 @@ export function ChatTab({ openRoomId, onRoomOpened }: ChatTabProps = {}) {
                     }} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
                     <button className="text-left" onClick={() => setMembersOpen((v) => !v)}>
                         <h2 className="font-bold text-sm text-gray-900 truncate max-w-[160px] flex items-center gap-1">
-                            {activeRoom?.title || activeRoom?.name}
+                            {activeRoom?.title || activeRoom?.name || groupInfo?.title || ""}
                             {members.length > 0 && (
                                 <span className="text-[11px] font-normal text-gray-400">{members.length}</span>
                             )}

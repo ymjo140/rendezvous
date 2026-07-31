@@ -123,7 +123,6 @@ def suggest_poll_places(
     _require_member(db, room_id, current_user.id)
 
     members = taste_service.crew_members(db, room_id)
-    members = taste_service.apply_yield_weights(db, room_id, members)
     if not members:
         return {"items": [], "members": 0,
                 "note": "아직 멤버 취향을 모으지 못했어요. 저장 목록을 가져오면 추천이 시작돼요."}
@@ -144,7 +143,7 @@ def suggest_poll_places(
         in_sql = ", ".join(f":{k}" for k in keys)
         return db.execute(text(f"""
             SELECT p.id, p.name, COALESCE(p.uptae, p.cuisine_type, ''), COALESCE(p.address,''),
-                   p.hero_image, p.opened_at
+                   p.hero_image, p.opened_at, p.lat, p.lng
             FROM places p
             WHERE p.main_category IN ({in_sql})
               AND (p.biz_status IS NULL OR p.biz_status <> '폐업')
@@ -165,7 +164,28 @@ def suggest_poll_places(
     if not rows:
         return {"items": [], "members": len(members), "note": "근처에 후보가 없어요."}
 
-    meta = {r[0]: r for r in rows}
+    # 제외·중복은 홈 추천(home.py)이 이미 거르는 것들인데 여기만 빠져 있었다.
+    # ① 누가 '다신 안 가'라고 한 곳(재방문 아니요·별점 2 이하·블랙리스트)은 후보가 아니다.
+    #    임베딩 점수는 그 거부를 모른다 — 오히려 비슷한 집을 좋아하는 사람일수록 통과시켜서,
+    #    본인이 퇴짜 놓은 집에 "모두 무난해요"가 붙을 수 있다.
+    # ② 이름+좌표가 같은 중복 행이 447그룹 있다(실측). 투표에선 표가 갈려 1등이 뒤집힌다.
+    excluded = set()
+    for m in members:
+        excluded |= set(m.sheet.excluded or ())
+
+    meta, seen, dropped = {}, set(), 0
+    for r in rows:
+        if r[0] in excluded:
+            dropped += 1
+            continue
+        key = (r[1], round(float(r[6] or 0), 5), round(float(r[7] or 0), 5))
+        if key in seen:
+            continue
+        seen.add(key)
+        meta[r[0]] = r
+    if not meta:
+        return {"items": [], "members": len(members),
+                "note": "근처 후보가 전부 '안 맞았던 곳'이라 뺐어요."}
     ids = list(meta.keys())
 
     # 게이트를 단계적으로 푼다. 5%는 개인 배지용 문턱이라 5명 전원에게 동시에
@@ -206,6 +226,8 @@ def suggest_poll_places(
         note += f" · 상위 {int(round(gate_fpr * 100))}% 기준까지 넓혀서 봤어요"
     if relaxed:
         note += f" · 근처에 '{purpose}' 후보가 없어 전체에서 골랐어요"
+    if dropped:
+        note += f" · 안 맞았던 곳 {dropped}곳은 뺐어요"
     return {
         "items": items,
         "members": len(members),

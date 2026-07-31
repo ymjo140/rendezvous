@@ -609,11 +609,9 @@ def score_folders(db: Session, sheet: Optional[TasteSheet], folder_ids: list) ->
 
 W_MIN = 0.6          # 최소 만족도 비중. 1.0이면 한 명이 전부를 거부한다
 W_MEAN = 0.4
-# 지난번 양보한 사람의 가중치 상한. 0.05면 사실상 동점 처리용이다 — 가중치는
-# 평균 항(W_MEAN)에만 들어가서, 5명 크루에서 점수에 미치는 영향이
-# 0.4 × 0.05/5.05 ≈ 0.4%(그 사람 여유가 평균에서 벗어난 만큼의)에 그친다.
-# 즉 순위를 뒤집지는 못하고 비슷한 후보 둘 사이에서만 갈린다.
-YIELD_BOOST = 0.05
+# 양보 가중치는 뺐다(2026-07-31). '누가 양보하는지'는 문구로만 말하고 순위는 밀지 않는다.
+# 원래 기대한 보정은 크루 체크인이 쌓여야 도는데 그 루프가 아직 안 닫혀 있어서,
+# 지금 넣으면 효과는 0이면서 점수만 설명하기 어려워진다. 되살릴 땐 git 이력에 있다.
 
 
 @dataclass
@@ -621,7 +619,7 @@ class MemberTaste:
     user_id: int
     name: str
     sheet: TasteSheet
-    weight: float = 1.0     # 양보 보정. 최근에 참은 사람일수록 크다
+    weight: float = 1.0     # 지금은 전원 1.0(가중 평균 = 단순 평균)
 
 
 def crew_members(db: Session, community_id: str) -> list:
@@ -640,42 +638,6 @@ def crew_members(db: Session, community_id: str) -> list:
         if sh and sh.has_taste:
             out.append(MemberTaste(user_id=uid, name=names.get(uid, f"멤버{uid}"), sheet=sh))
     return out
-
-
-def apply_yield_weights(db: Session, community_id: str, members: list) -> list:
-    """최근 크루 방문에서 자기 취향과 안 맞는 곳에 간 사람에게 가중치를 준다.
-
-    '양보'의 정의: 그 방문 장소가 본인 게이트를 통과하지 못했다. 매번 같은
-    사람이 참고 있으면 다음 추천에서 그 사람 쪽으로 기울어야 공정하다.
-    """
-    if not members:
-        return members
-    try:
-        pids = [r[0] for r in (
-            db.query(models.PlaceCheckin.place_id)
-            .filter(models.PlaceCheckin.community_id == str(community_id))
-            .order_by(models.PlaceCheckin.created_at.desc()).limit(30).all())]
-    except Exception:
-        pids = []
-    pids = list(dict.fromkeys(p for p in pids if p))
-    if not pids:
-        return members
-
-    yielded = {}
-    for m in members:
-        sc = score_places(db, m.sheet, pids)
-        if not sc:
-            continue
-        n_bad = sum(1 for v in sc.values() if not v[2])
-        yielded[m.user_id] = n_bad / max(1, len(sc))
-
-    if not yielded:
-        return members
-    worst = max(yielded.values()) or 1.0
-    for m in members:
-        # 가장 많이 참은 사람이 +YIELD_BOOST, 아예 안 참은 사람은 1.0
-        m.weight = 1.0 + YIELD_BOOST * (yielded.get(m.user_id, 0.0) / worst)
-    return members
 
 
 def crew_scores(db: Session, members: list, place_ids: list) -> dict:

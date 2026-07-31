@@ -15,6 +15,8 @@ function ChatsInner() {
   const router = useRouter()
   const sp = useSearchParams()
   const room = sp.get("room")
+  // 크루에서 넘어올 땐 이름도 같이 온다 — 방 목록 응답 전에도 헤더가 비지 않게
+  const roomTitle = sp.get("title")
 
   return (
     <div className="mx-auto flex h-[100dvh] max-w-md flex-col bg-white">
@@ -23,7 +25,7 @@ function ChatsInner() {
         <h1 className="text-[15px] font-bold text-gray-900">채팅</h1>
       </div>
       <div className="min-h-0 flex-1">
-        <ChatTab openRoomId={room} />
+        <ChatTab openRoomId={room} openRoomTitle={roomTitle} />
       </div>
     </div>
   )

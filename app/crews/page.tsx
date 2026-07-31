@@ -102,7 +102,7 @@ export default function CrewsTabPage() {
                 {/* 💬 채팅 · 📅 예약 · 💌 초대 — 크루에서 반복하는 세 가지 행동 */}
                 <div className="mt-2 flex gap-1.5">
                   <button
-                    onClick={() => router.push(`/chats?room=${c.id}`)}
+                    onClick={() => router.push(`/chats?room=${c.id}&title=${encodeURIComponent(c.title || "")}`)}
                     className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-amber-50 py-2 text-[11.5px] font-semibold text-amber-700"
                   >
                     <MessageCircle className="h-3.5 w-3.5" />채팅
