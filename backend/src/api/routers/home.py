@@ -389,6 +389,40 @@ def home_feed(
                 for r in rs[:3]
             ]
 
+    # 크루 카드 순서 = 채팅이 온 순서. 목록이 고정이면 새 소식을 놓친다.
+    # 크루 id == 채팅방 id라 Message를 그대로 쓴다.
+    if my_crews and uid:
+        crew_ids = [e["id"] for e in my_crews]
+        try:
+            last_at = {
+                rid: ts for rid, ts in (
+                    db.query(models.Message.room_id, func.max(models.Message.timestamp))
+                    .filter(models.Message.room_id.in_(crew_ids))
+                    .group_by(models.Message.room_id).all()
+                ) if ts is not None
+            }
+            read_at = {
+                m.room_id: (getattr(m, "last_read_at", None) or getattr(m, "joined_at", None))
+                for m in db.query(models.ChatRoomMember).filter(
+                    models.ChatRoomMember.room_id.in_(crew_ids),
+                    models.ChatRoomMember.user_id == uid).all()
+            }
+            for e in my_crews:
+                q = db.query(func.count(models.Message.id)).filter(
+                    models.Message.room_id == e["id"],
+                    models.Message.user_id != uid)
+                since = read_at.get(e["id"])
+                if since is not None:
+                    q = q.filter(models.Message.timestamp > since)
+                e["unread"] = int(q.scalar() or 0)
+                ts = last_at.get(e["id"])
+                e["last_chat_at"] = ts.isoformat() if ts is not None else None
+            # 안 읽은 게 있는 크루가 먼저, 그다음 최근 대화 순
+            my_crews.sort(key=lambda e: (e.get("unread", 0) > 0, e.get("last_chat_at") or ""),
+                          reverse=True)
+        except Exception as _e:
+            print(f"[home] crew chat activity skip: {_e}")
+
     # 다가오는 크루 예약 — 카드의 '예약' 버튼에 건수를 띄운다
     if my_crews:
         _today = datetime.now().strftime("%Y-%m-%d")

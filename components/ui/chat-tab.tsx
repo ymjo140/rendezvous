@@ -260,6 +260,7 @@ interface ChatTabProps {
 
 // 🌟 [ChatTab] 메인 컴포넌트
 export function ChatTab({ openRoomId, openRoomTitle, onRoomOpened }: ChatTabProps = {}) {
+    const router = useRouter()
     // 방을 지정해 들어오면(크루 💬, 푸시 알림) 목록을 거치지 않는다.
     // 예전엔 /api/chat/rooms 응답을 기다리는 동안 채팅 목록이 먼저 떴다가 방으로
     // 갈아탔다 — 콜드스타트면 그 목록이 몇 초씩 보인다. 방을 여는 데 필요한 건
@@ -755,6 +756,10 @@ export function ChatTab({ openRoomId, openRoomTitle, onRoomOpened }: ChatTabProp
                         try { sessionStorage.removeItem("chat:openRoom") } catch {}
                         // 나가면서 읽음 처리 → 목록 뱃지 초기화
                         if (activeRoom) fetchChatAPI(`/api/chat/${activeRoom.id}/read`, { method: "POST" }).catch(() => {})
+                        // 크루에서 바로 들어온 방이면 왔던 곳으로 돌아간다.
+                        // 채팅 목록을 거치지 않고 들어왔는데 나갈 때 목록에 떨어지면,
+                        // 안 거치게 만든 의미가 없다.
+                        if (openRoomId) { router.back(); return }
                         setView('list')
                         fetchRooms()
                     }} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>

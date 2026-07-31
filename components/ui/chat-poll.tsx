@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation"
 import { Loader2, MapPin, Calendar, X, Check, Search, Plus, History, Calculator } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { MonthCalendar, type DayStatus } from "@/components/ui/month-calendar"
 import { fetchWithAuth } from "@/lib/api-client"
 
 export type PollOption = {
@@ -52,6 +53,20 @@ const PURPOSES = [
   { key: "카페", label: "☕ 카페" },
   { key: "데이트", label: "💖 데이트" },
 ]
+
+// 15분 단위. 네이티브 time 입력은 분 단위 휠이라 "오후 7시 3분" 같은 값이 나온다 —
+// 모임 시간으로 쓸 값이 아니고, 가게 예약 슬롯(30분)과도 안 맞는다.
+const QUARTER_TIMES = Array.from({ length: 24 * 4 }, (_, i) => {
+  const h = Math.floor(i / 4)
+  const m = (i % 4) * 15
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+})
+function timeLabel(t: string) {
+  const [h, m] = t.split(":").map(Number)
+  const ampm = h < 12 ? "오전" : "오후"
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${ampm} ${h12}:${String(m).padStart(2, "0")}`
+}
 
 const WD_KO = ["일", "월", "화", "수", "목", "금", "토"]
 function dateLabel(dateStr: string, time?: string) {
@@ -325,8 +340,11 @@ export function PlacePollComposer({
   onClose: () => void
   onCreated: (p: Poll) => void
 }) {
-  const [step, setStep] = useState<"where" | "search" | "purpose" | "loading" | "picks">("where")
+  const [step, setStep] = useState<"where" | "search" | "midpoints" | "purpose" | "loading" | "picks">("where")
   const [anchor, setAnchor] = useState<{ lat: number; lng: number; name: string } | "midpoint" | null>(null)
+  // 중간지점 후보 3곳 — 엔진(find_best_midpoints)이 원래 3개를 주는데 1등만 쓰고 있었다
+  const [regions, setRegions] = useState<{ lat: number; lng: number; name: string; places: any[] }[]>([])
+  const [regionsLoading, setRegionsLoading] = useState(false)
   const [query, setQuery] = useState("")
   const [hits, setHits] = useState<any[]>([])
   const [purpose, setPurpose] = useState("")
@@ -348,8 +366,45 @@ export function PlacePollComposer({
     } catch { setHits([]) }
   }
 
-  // 개인 추천(/api/recommend) — 중간지점 계산(교통 기준, 좌표 평균이 아니다)과
-  // 취향 시트가 없을 때의 폴백 두 가지 용도로만 남는다.
+  // 중간지점 후보 3곳을 받아 고르게 한다. 엔진은 191개 핫스팟 중 min-max(가장 오래
+  // 걸리는 사람의 시간을 최소화)로 3곳을 뽑는데, 1등만 쓰면 "왜 여기?"에 답할 수 없다.
+  const loadMidpoints = async () => {
+    setStep("midpoints")
+    setRegionsLoading(true)
+    try {
+      const located = members.filter((m) => m.lat && m.lng && Math.abs(Number(m.lat)) > 1)
+      const res = await fetchWithAuth(`/api/recommend`, {
+        method: "POST",
+        body: JSON.stringify({
+          purpose: "식사",
+          user_selected_tags: [],
+          member_user_ids: members.map((m) => m.id),
+          current_lat: located[0]?.lat ?? 37.5665,
+          current_lng: located[0]?.lng ?? 126.978,
+          users: located.slice(1).map((m) => ({ location: { lat: m.lat, lng: m.lng } })),
+        }),
+      })
+      const rs = res.ok ? await res.json() : []
+      const list = (Array.isArray(rs) ? rs : []).slice(0, 3).map((r: any) => ({
+        lat: r?.center?.lat ?? 37.5665,
+        lng: r?.center?.lng ?? 126.978,
+        name: r?.region_name || "중간지점",
+        places: r?.places || [],
+      }))
+      setRegions(list)
+      if (list.length === 0) {
+        alert("중간지점을 찾지 못했어요. 장소를 직접 입력해 주세요.")
+        setStep("where")
+      }
+    } catch {
+      alert("오류가 발생했어요.")
+      setStep("where")
+    } finally {
+      setRegionsLoading(false)
+    }
+  }
+
+  // 개인 추천(/api/recommend) — 취향 시트가 없을 때의 폴백.
   const recommend = async (p: string, at?: { lat: number; lng: number }) => {
     const located = members.filter((m) => m.lat && m.lng && Math.abs(Number(m.lat)) > 1)
     const payload: any = {
@@ -381,6 +436,8 @@ export function PlacePollComposer({
     setPurpose(p)
     setStep("loading")
     try {
+      // 앵커는 이 시점에 이미 정해져 있다(검색 결과 또는 고른 중간지점).
+      // "midpoint"는 옛 흐름의 잔재라 안전망으로만 남긴다.
       let at: { lat: number; lng: number; name: string }
       let fallback: any[] = []
       if (anchor && anchor !== "midpoint") {
@@ -486,7 +543,7 @@ export function PlacePollComposer({
         <div className="space-y-2">
           <p className="text-xs text-gray-500 mb-1">어디 기준으로 추천할까요?</p>
           <Button
-            onClick={() => { setAnchor("midpoint"); setStep("purpose") }}
+            onClick={loadMidpoints}
             className="w-full h-11 rounded-xl bg-[#F5A623] hover:bg-[#D97706]"
           >
             📍 멤버들 중간 지점
@@ -531,8 +588,43 @@ export function PlacePollComposer({
           ))}
         </div>
       )}
+      {step === "midpoints" && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">
+            멤버들이 모이기 좋은 곳 3군데예요. 가장 오래 걸리는 사람 기준으로 골랐어요.
+          </p>
+          {regionsLoading && (
+            <div className="py-6 text-center"><Loader2 className="w-5 h-5 animate-spin text-[#F5A623] mx-auto" /></div>
+          )}
+          {regions.map((r, i) => (
+            <button
+              key={`${r.name}-${i}`}
+              onClick={() => { setAnchor({ lat: r.lat, lng: r.lng, name: r.name }); setStep("purpose") }}
+              className="w-full text-left rounded-xl border border-gray-200 px-3 py-2.5 hover:bg-amber-50"
+            >
+              <div className="text-sm font-bold text-gray-800">
+                {i === 0 && <span className="mr-1 text-[10px] font-bold text-amber-700">추천</span>}
+                {r.name}
+              </div>
+              {r.places.length > 0 && (
+                <div className="text-[10px] text-gray-400 truncate">
+                  {r.places.slice(0, 3).map((p: any) => p.name).join(" · ")}
+                </div>
+              )}
+            </button>
+          ))}
+          {!regionsLoading && (
+            <Button onClick={() => setStep("where")} variant="outline" className="w-full h-10 rounded-xl">
+              다시 고르기
+            </Button>
+          )}
+        </div>
+      )}
       {step === "purpose" && (
         <div>
+          <p className="text-xs text-gray-500 mb-1">
+            {anchor && anchor !== "midpoint" ? `${anchor.name} 기준` : "중간지점 기준"}
+          </p>
           <p className="text-xs text-gray-500 mb-2">목적을 고르면 멤버 취향을 합쳐 후보를 뽑아요.</p>
           <div className="grid grid-cols-2 gap-2">
             {PURPOSES.map((p) => (
@@ -634,15 +726,28 @@ export function SchedulePollComposer({
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    fetchWithAuth(`/api/chat/rooms/${roomId}/available-dates`)
+    fetchWithAuth(`/api/chat/rooms/${roomId}/available-dates?days=60`)
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => {
         const arr = Array.isArray(d) ? d : []
         setDates(arr)
-        setSelected(arr.slice(0, 3).map((x: any) => x.fullDate))
+        // 기본 선택은 '비는 날' 앞에서 3개 — 바쁜 날을 기본으로 올리면 안 된다
+        setSelected(arr.filter((x: any) => !x.busy).slice(0, 3).map((x: any) => x.fullDate))
       })
       .catch(() => {})
   }, [roomId])
+
+  // 달력 색 구분 — free는 전원 일정 없음(추천), busy는 누군가 일정 있음
+  const status = useMemo(() => {
+    const m: Record<string, DayStatus> = {}
+    dates.forEach((d: any) => { m[d.fullDate] = d.busy ? "busy" : "free" })
+    return m
+  }, [dates])
+
+  const labelOf = (fd: string) => {
+    const hit = dates.find((d: any) => d.fullDate === fd)
+    return hit ? hit.displayDate : dateLabel(fd)
+  }
 
   const toggle = (fd: string) =>
     setSelected((prev) => (prev.includes(fd) ? prev.filter((x) => x !== fd) : [...prev, fd]))
@@ -656,13 +761,11 @@ export function SchedulePollComposer({
         body: JSON.stringify({
           kind: "schedule",
           meta: { anchor_name: "멤버들 비는 날" },
-          options: dates
-            .filter((d) => selected.includes(d.fullDate))
-            .map((d) => ({
-              label: `${d.displayDate} ${time}`,
-              added_by_ai: true,
-              meta: { date: d.fullDate, time },
-            })),
+          options: [...selected].sort().map((fd) => ({
+            label: `${labelOf(fd)} ${time}`,
+            added_by_ai: true,
+            meta: { date: fd, time },
+          })),
         }),
       })
       if (res.ok) {
@@ -674,31 +777,36 @@ export function SchedulePollComposer({
 
   return (
     <Sheet title="📅 일정 투표 만들기" onClose={onClose}>
-      <p className="text-xs text-gray-500 mb-2">멤버들 일정이 비는 날 후보예요. 올릴 날짜를 고르세요.</p>
-      <div className="grid grid-cols-3 gap-2 mb-3">
-        {dates.map((d) => {
-          const on = selected.includes(d.fullDate)
-          return (
-            <button
-              key={d.fullDate}
-              onClick={() => toggle(d.fullDate)}
-              className={`rounded-xl px-2 py-2.5 text-xs font-bold border transition-colors ${
-                on ? "border-[#F5A623] bg-amber-50 text-amber-800" : "border-gray-200 text-gray-600"
-              }`}
-            >
-              {d.displayDate}
-            </button>
-          )
-        })}
+      <p className="text-xs text-gray-500 mb-1">올릴 날짜를 고르세요. 여러 개 고를 수 있어요.</p>
+      <div className="flex items-center gap-3 mb-2 text-[10px] text-gray-400">
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> 다 비는 날
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-3 h-3 rounded bg-gray-100" /> 일정 있는 멤버 있음
+        </span>
       </div>
-      <div className="flex items-center gap-2 mb-4">
+      <MonthCalendar selected={selected} onToggle={toggle} status={status} />
+      {selected.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {[...selected].sort().map((fd) => (
+            <span key={fd} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+              {labelOf(fd)}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-2 my-4">
         <span className="text-xs text-gray-500">시간</span>
-        <input
-          type="time"
+        <select
           value={time}
           onChange={(e) => setTime(e.target.value)}
           className="h-9 rounded-lg border border-gray-200 px-2 text-sm"
-        />
+        >
+          {QUARTER_TIMES.map((t) => (
+            <option key={t} value={t}>{timeLabel(t)}</option>
+          ))}
+        </select>
       </div>
       <Button
         onClick={create}
@@ -826,19 +934,18 @@ export function CandidateSheet({
   if (poll.kind === "schedule") {
     return (
       <Sheet title="📅 날짜 후보 추가" onClose={onClose}>
-        <div className="flex items-center gap-2 mb-3">
-          <input
-            type="date"
-            value={newDate}
-            onChange={(e) => setNewDate(e.target.value)}
-            className="flex-1 h-10 rounded-lg border border-gray-200 px-2 text-sm"
-          />
-          <input
-            type="time"
+        <MonthCalendar selected={newDate ? [newDate] : []} onToggle={(d) => setNewDate(d)} />
+        <div className="flex items-center gap-2 my-3">
+          <span className="text-xs text-gray-500">시간</span>
+          <select
             value={newTime}
             onChange={(e) => setNewTime(e.target.value)}
             className="h-10 rounded-lg border border-gray-200 px-2 text-sm"
-          />
+          >
+            {QUARTER_TIMES.map((t) => (
+              <option key={t} value={t}>{timeLabel(t)}</option>
+            ))}
+          </select>
         </div>
         <Button
           onClick={() => {

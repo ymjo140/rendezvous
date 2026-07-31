@@ -489,10 +489,13 @@ _WD_KO = ["월", "화", "수", "목", "금", "토", "일"]
 
 
 @router.get("/api/chat/rooms/{room_id}/available-dates")
-def get_available_dates(room_id: str, db: Session = Depends(get_db),
+def get_available_dates(room_id: str, days: int = 45, db: Session = Depends(get_db),
                         current_user: models.User = Depends(get_current_user)):
-    """오늘 기준 다가오는 후보 날짜 — 멤버들의 기존 일정(events) 날짜는 '바쁜 날'로 제외.
-    (기존엔 2026-01-20 등으로 하드코딩돼 있었음)"""
+    """오늘 기준 다가오는 날짜들 — 멤버 중 누구든 일정이 있는 날은 busy=True.
+
+    달력으로 보여주려면 '비는 날 6개'가 아니라 그 기간 전체와 각 날의 상태가
+    필요하다. 거르지 않고 표시를 화면에 맡긴다(색으로 구분).
+    """
     now = datetime.now()
     # 오늘이 늦었으면(20시 이후) 내일부터 제안
     start = now + timedelta(days=1) if now.hour >= 20 else now
@@ -511,17 +514,15 @@ def get_available_dates(room_id: str, db: Session = Depends(get_db),
 
     slots = []
     cur = start
-    guard = 0
-    while len(slots) < 6 and guard < 30:
+    for _ in range(max(7, min(days, 120))):
         ds = cur.strftime("%Y-%m-%d")
-        if ds not in busy:
-            slots.append({
-                "fullDate": ds,
-                "displayDate": f"{cur.month}/{cur.day} ({_WD_KO[cur.weekday()]})",
-                "time": "19:00",
-            })
+        slots.append({
+            "fullDate": ds,
+            "displayDate": f"{cur.month}/{cur.day} ({_WD_KO[cur.weekday()]})",
+            "time": "19:00",
+            "busy": ds in busy,
+        })
         cur += timedelta(days=1)
-        guard += 1
     return slots
 
 

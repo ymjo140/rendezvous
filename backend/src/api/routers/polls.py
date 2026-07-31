@@ -205,6 +205,15 @@ def suggest_poll_places(
             break
     strict = abs(gate_fpr - taste_service.GATE_FPR) < 1e-9
 
+    # 통과한 후보가 하나라도 있으면 미달 후보는 내보내지 않는다.
+    # 순위는 상대적이라 250곳을 줄 세우면 미달도 뒤따라 나오는데, 화면에선 그게
+    # "5명 다 기준 밖인데 왜 추천이지"로 읽힌다. 게다가 상위 3개 자동선택이
+    # 통과 여부를 안 보고 앞에서 집어서, 아무도 안 맞는 곳이 체크된 채 올라갔다.
+    passing = [(pid, p) for pid, p in ranked if p["satisfied"] > 0]
+    below = len(ranked) - len(passing)
+    if passing:
+        ranked = passing
+
     items = []
     for pid, p in ranked:
         r = meta[pid]
@@ -228,6 +237,8 @@ def suggest_poll_places(
         note += f" · 근처에 '{purpose}' 후보가 없어 전체에서 골랐어요"
     if dropped:
         note += f" · 안 맞았던 곳 {dropped}곳은 뺐어요"
+    if passing and below:
+        note += f" · 기준 밖 {below}곳은 뺐어요"
     return {
         "items": items,
         "members": len(members),

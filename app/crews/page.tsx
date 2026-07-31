@@ -18,6 +18,8 @@ type Crew = {
   crew_type?: string; org_name?: string | null
   partnership?: CrewPartnership
   upcoming?: number       // 다가오는 크루 예약 건수
+  unread?: number         // 안 읽은 채팅 수(서버가 이 순서로 정렬해서 준다)
+  last_chat_at?: string | null
 }
 
 const TYPE_EMOJI: Record<string, string> = { university: "🎓", company: "🏢", community: "🏃" }
@@ -103,9 +105,14 @@ export default function CrewsTabPage() {
                 <div className="mt-2 flex gap-1.5">
                   <button
                     onClick={() => router.push(`/chats?room=${c.id}&title=${encodeURIComponent(c.title || "")}`)}
-                    className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-amber-50 py-2 text-[11.5px] font-semibold text-amber-700"
+                    className="relative flex flex-1 items-center justify-center gap-1 rounded-xl bg-amber-50 py-2 text-[11.5px] font-semibold text-amber-700"
                   >
                     <MessageCircle className="h-3.5 w-3.5" />채팅
+                    {(c.unread ?? 0) > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                        {(c.unread as number) > 99 ? "99+" : c.unread}
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={() => router.push(`/crew/${c.id}/reservations`)}
