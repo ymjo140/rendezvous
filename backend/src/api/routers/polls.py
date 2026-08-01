@@ -195,18 +195,22 @@ def suggest_poll_places(
     top_n = max(1, min(limit, 30))
     scores = taste_service.crew_scores(db, members, ids)
     ranked, gate_fpr, matched = [], taste_service.GATE_LEVELS[0], 0
+    def _order(kv):
+        return (-kv[1]["total_margin"], -kv[1]["score"])
+
     for lv in taste_service.GATE_LEVELS:
         picks = taste_service.crew_picks(db, members, ids, fpr=lv, per=scores)
         gate_fpr = lv
-        # 합집합 = 한 명이라도 자기 기준을 넘은 곳. 여기서 '여유 총합' 높은 순으로 뽑는다.
-        # ★거르고 나서 자른다★ — 먼저 상위 N을 자르고 거르면, 통과한 곳이 그 안에
-        # 몇 개 없다는 이유로 후보가 서너 곳으로 말라버린다(실제로 그랬다).
-        pool = {pid: p for pid, p in picks.items() if p["satisfied"] > 0}
-        matched = len(pool)
-        if not pool:
-            pool = picks   # 마지막 단계에서도 없으면 덜 어긋나는 순으로라도 보여준다
-        ranked = sorted(pool.items(),
-                        key=lambda kv: (-kv[1]["total_margin"], -kv[1]["score"]))[:top_n]
+        # 합집합 = 한 명이라도 자기 기준을 넘은 곳. 여유 총합이 높은 순으로 위에 둔다.
+        # 기준 밖은 '빼는' 게 아니라 '아래로 내린다' — 추천만 남기면 그게 마음에
+        # 안 들 때 크루가 다른 걸 볼 방법이 없다. 대신 추천 여부를 플래그로 넘겨
+        # 화면이 구분하고, 자동 선택은 추천에서만 집는다.
+        hit = sorted([kv for kv in picks.items() if kv[1]["satisfied"] > 0], key=_order)
+        rest = sorted([kv for kv in picks.items() if kv[1]["satisfied"] == 0], key=_order)
+        matched = len(hit)
+        # 순서는 유지하되 자르는 건 마지막에 — 먼저 자르면 통과한 곳이 그 안에 몇 개
+        # 없다는 이유로 추천이 서너 곳으로 말라버린다(실제로 그랬다).
+        ranked = (hit + rest)[:top_n]
         if matched:
             break
     strict = abs(gate_fpr - taste_service.GATE_FPR) < 1e-9
@@ -223,6 +227,7 @@ def suggest_poll_places(
             "place_id": pid, "name": r[1], "cuisine": r[2], "address": r[3], "image": r[4],
             "satisfied": p["satisfied"], "total": p["total"], "weakest": p["weakest"],
             "weakest_id": p.get("weakest_id"),
+            "recommended": p["satisfied"] > 0,
             "reason": reason, "reason_kind": kind,
             "reason_me": (reason_me if reason_me != reason else None),
             "years_open": ((datetime.now().year - r[5].year) if r[5] else None),
@@ -234,8 +239,10 @@ def suggest_poll_places(
         note += f" · 근처에 '{purpose}' 후보가 없어 전체에서 골랐어요"
     if dropped:
         note += f" · 안 맞았던 곳 {dropped}곳은 뺐어요"
-    if matched > len(items):
-        note += f" · 맞는 곳 {matched}곳 중 {len(items)}곳"
+    if matched:
+        note += f" · 추천 {min(matched, len(items))}곳"
+        if matched > len(items):
+            note += f"(전체 {matched}곳)"
     return {
         "items": items,
         "members": len(members),

@@ -320,6 +320,7 @@ type CrewPick = {
   reason_me?: string | null    // 지금 보는 사람용('내가') — 화면에만 쓴다
   reason_kind?: string | null
   years_open?: number | null
+  recommended?: boolean        // 한 명 이상 자기 기준을 넘음. 아래쪽은 참고용으로 남긴다
 }
 
 // 합성 결과의 색조 — '1명만 맞아요'를 초록으로 칠하면 거짓말이 된다
@@ -499,7 +500,9 @@ export function PlacePollComposer({
         setFromCrew(true)
         setNote(data?.note || "")
         setPicks(items)
-        setChosen(items.slice(0, 3).map((_, i) => i))
+        // 자동 선택은 추천에서만 집는다. 기준 밖인 곳이 체크된 채 올라가면 안 된다.
+        const rec = items.map((it, i) => (it.recommended ? i : -1)).filter((i) => i >= 0)
+        setChosen((rec.length ? rec : items.map((_, i) => i)).slice(0, 3))
         setShown(6)
         setStep("picks")
         return
@@ -536,6 +539,8 @@ export function PlacePollComposer({
   // 아무도 게이트를 못 넘은 목록 — 순위는 '덜 어긋나는 순'일 뿐이다.
   // 이걸 "다 같이 만족하는 순서"라고 부르면 화면이 거짓말을 한다.
   const noneSatisfied = fromCrew && picks.length > 0 && picks.every((p) => (p.satisfied ?? 0) === 0)
+  // 추천 구간이 끝나는 지점 — 여기부터는 기준 밖(참고용)이라고 화면이 밝힌다
+  const firstBelow = picks.findIndex((p) => !p.recommended)
 
   const create = async () => {
     if (chosen.length === 0 || !spot) return
@@ -812,8 +817,15 @@ export function PlacePollComposer({
             {picks.slice(0, shown).map((p, i) => {
               const on = chosen.includes(i)
               return (
+                <React.Fragment key={p.place_id ?? `i${i}`}>
+                {i === firstBelow && firstBelow > 0 && (
+                  <div className="flex items-center gap-2 pt-1.5 pb-0.5">
+                    <span className="h-px flex-1 bg-gray-100" />
+                    <span className="text-[10px] text-gray-400">여기부터는 기준 밖 · 직접 고를 수 있어요</span>
+                    <span className="h-px flex-1 bg-gray-100" />
+                  </div>
+                )}
                 <button
-                  key={p.place_id ?? `i${i}`}
                   onClick={() => toggle(i)}
                   className={`w-full text-left rounded-xl border px-3 py-2 transition-colors ${
                     on ? "border-[#F5A623] bg-amber-50" : "border-gray-200 hover:bg-gray-50"
@@ -821,7 +833,14 @@ export function PlacePollComposer({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-gray-800 truncate">{p.name}</div>
+                      <div className="text-xs font-bold text-gray-800 truncate">
+                        {p.recommended && (
+                          <span className="mr-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700">
+                            추천
+                          </span>
+                        )}
+                        {p.name}
+                      </div>
                       <div className="text-[10px] text-gray-400 truncate">
                         {[p.cuisine, p.address].filter(Boolean).join(" · ")}
                       </div>
@@ -843,6 +862,7 @@ export function PlacePollComposer({
                     <div className="text-[10px] text-gray-400 mt-0.5">{p.years_open}년째 영업 중</div>
                   ) : null}
                 </button>
+                </React.Fragment>
               )
             })}
             {picks.length > shown && (
@@ -1161,7 +1181,14 @@ export function CandidateSheet({
                   className="flex-1 min-w-0 text-left"
                   title="가게 상세 보기"
                 >
-                  <div className="text-xs font-bold text-gray-800 truncate">{p.name}</div>
+                  <div className="text-xs font-bold text-gray-800 truncate">
+                    {p.recommended && (
+                      <span className="mr-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700">
+                        추천
+                      </span>
+                    )}
+                    {p.name}
+                  </div>
                   <div className="text-[10px] text-gray-400 truncate">
                     {[p.cuisine, p.address].filter(Boolean).join(" · ")}
                   </div>
