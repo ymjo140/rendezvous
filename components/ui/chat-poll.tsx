@@ -493,7 +493,8 @@ export function PlacePollComposer({
     if (picksBy[i]) return
     setLoadingRegion(i)
     try {
-      const qs = `lat=${r.lat}&lng=${r.lng}&purpose=${encodeURIComponent(p)}&limit=24`
+      // 후보를 자르지 않는다 — 후보 추가 시트와 같은 목록을 봐야 한다(24 vs 247이었다)
+      const qs = `lat=${r.lat}&lng=${r.lng}&purpose=${encodeURIComponent(p)}&limit=250`
       const res = await fetchWithAuth(`/api/chat/rooms/${roomId}/polls/suggest?${qs}`)
       const data = res.ok ? await res.json() : null
       const items: CrewPick[] = Array.isArray(data?.items) ? data.items : []
@@ -831,14 +832,12 @@ export function PlacePollComposer({
                 >
                   <div className="flex items-start gap-2">
                     <button onClick={() => toggle(p)} className="flex flex-1 min-w-0 items-start gap-2 text-left">
+                      {/* 사진은 있을 때만 넣는다. 지금 places 12만 5천 곳 전부 hero_image가
+                          비어 있어(사장님이 올려야 채워진다) 빈 네모만 줄줄이 서면 자리 낭비다. */}
                       {p.image ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={p.image} alt="" className="w-11 h-11 rounded-lg object-cover flex-shrink-0 bg-gray-100" />
-                      ) : (
-                        <span className="w-11 h-11 rounded-lg bg-gray-100 flex items-center justify-center text-sm flex-shrink-0">
-                          🍽️
-                        </span>
-                      )}
+                      ) : null}
                       <span className="min-w-0 flex-1">
                         <span className="block text-xs font-bold text-gray-800 truncate">
                           {p.recommended && (
@@ -883,7 +882,7 @@ export function PlacePollComposer({
             })}
             {picks.length > shown && (
               <button
-                onClick={() => setShown((n) => n + 6)}
+                onClick={() => setShown((n) => n + 12)}
                 className="w-full rounded-xl border border-dashed border-gray-200 py-2 text-[11px] font-bold text-gray-500 hover:bg-gray-50"
               >
                 더보기 ({picks.length - shown}곳 남음)
