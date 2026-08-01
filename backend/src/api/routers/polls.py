@@ -7,6 +7,7 @@
 모든 변경은 기존 채팅 WS로 poll_update 브로드캐스트 → 전원 실시간 반영.
 """
 import json
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -100,6 +101,34 @@ _PURPOSE_MAIN_CATEGORIES = {
 }
 _ALL_MAIN_CATEGORIES = ("FOOD", "RESTAURANT", "CAFE", "PUB")
 
+# 같은 방·같은 지점·같은 목적이면 잠깐 재사용한다.
+# 이 엔드포인트는 요청 안에서 멤버 수만큼 취향 시트를 다시 만들 수 있다(체크인 한 번이면
+# dirty가 찍힌다). 그래서 첫 호출이 초 단위로 튀는데, 화면은 같은 조건을 연달아 부른다
+# (후보 추가 시트, 목적 바꾸기, 동네 다시 고르기). TTL은 짧게 — 후보가 달라지는 건
+# 취향이 바뀔 때뿐이고 그게 2분 안에 급한 경우는 없다.
+_SUGGEST_TTL = 120.0
+_SUGGEST_MAX = 200
+_suggest_cache: dict = {}
+
+
+def _cache_get(key):
+    hit = _suggest_cache.get(key)
+    if not hit:
+        return None
+    at, val = hit
+    if time.monotonic() - at > _SUGGEST_TTL:
+        _suggest_cache.pop(key, None)
+        return None
+    return val
+
+
+def _cache_put(key, val):
+    if len(_suggest_cache) >= _SUGGEST_MAX:
+        # 가장 오래된 것부터 버린다(요청량이 적어 정렬 비용은 무시할 수준)
+        for k, _ in sorted(_suggest_cache.items(), key=lambda kv: kv[1][0])[:_SUGGEST_MAX // 4]:
+            _suggest_cache.pop(k, None)
+    _suggest_cache[key] = (time.monotonic(), val)
+
 
 @router.get("/api/chat/rooms/{room_id}/polls/suggest")
 def suggest_poll_places(
@@ -121,6 +150,13 @@ def suggest_poll_places(
     if current_user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     _require_member(db, room_id, current_user.id)
+
+    # 캐시 키에 유저를 넣는 이유: reason_me('내가 양보해야 해요')가 보는 사람마다 다르다.
+    ckey = (room_id, current_user.id, round(lat or 0, 3), round(lng or 0, 3),
+            (purpose or "").strip(), round(radius_km, 2), limit)
+    cached = _cache_get(ckey)
+    if cached is not None:
+        return cached
 
     members = taste_service.crew_members(db, room_id)
     if not members:
@@ -243,7 +279,7 @@ def suggest_poll_places(
         note += f" · 추천 {min(matched, len(items))}곳"
         if matched > len(items):
             note += f"(전체 {matched}곳)"
-    return {
+    out = {
         "items": items,
         "members": len(members),
         "member_names": [m.name for m in members],
@@ -253,6 +289,8 @@ def suggest_poll_places(
         "gate_strict": strict,
         "note": note,
     }
+    _cache_put(ckey, out)
+    return out
 
 
 @router.post("/api/chat/rooms/{room_id}/polls")
