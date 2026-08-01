@@ -228,7 +228,10 @@ def suggest_poll_places(
     # 요구하면 통과가 거의 안 나온다 — 아무도 못 넘으면 상위 10%·20%로 넓혀 보고,
     # 어느 기준으로 봤는지는 note에 밝힌다. 점수(=순위)는 어차피 상대적이라
     # 기준을 풀어도 순서가 크게 바뀌지 않고, 바뀌는 건 '맞다'고 부를지 여부다.
-    top_n = max(1, min(limit, 30))
+    # 후보를 자르지 않는다 — 반경 안 250곳을 다 보내고, 그중 기준을 넘은 곳에만
+    # 'AI 추천' 딱지를 붙인다. 크루가 "이게 추천이고 나머지는 이런 게 있구나"를
+    # 보고 직접 고를 수 있어야 한다는 요구.
+    top_n = max(1, min(limit, 250))
     scores = taste_service.crew_scores(db, members, ids)
     ranked, gate_fpr, matched = [], taste_service.GATE_LEVELS[0], 0
     def _order(kv):
@@ -276,9 +279,7 @@ def suggest_poll_places(
     if dropped:
         note += f" · 안 맞았던 곳 {dropped}곳은 뺐어요"
     if matched:
-        note += f" · 추천 {min(matched, len(items))}곳"
-        if matched > len(items):
-            note += f"(전체 {matched}곳)"
+        note += f" · AI 추천 {min(matched, len(items))}곳 / 후보 {len(items)}곳"
     out = {
         "items": items,
         "members": len(members),

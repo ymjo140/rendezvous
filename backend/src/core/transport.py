@@ -306,6 +306,19 @@ class TransportEngine:
             print(f"Cache Bulk Read Error: {e}")
             return {}
 
+    # 스냅 임계 — 출발지를 최근접 핫스팟으로 붙여 캐시 행렬(191×191)을 쓴다.
+    # 2km는 도심 기준이라 외곽에서 구멍이 났다(실측: 노원역 2164m인 멤버가 164m 차이로
+    # 잘려 혼자만 추산값을 썼고, 그 한 명 때문에 수유가 76분으로 찍혀 최하위로 밀렸다).
+    SNAP_M = 4000
+    # 스냅도 실호출도 실패했을 때의 최후 추산. 15분/km는 도보 속도였다 —
+    # 대중교통은 대기·환승 10분 + km당 4분 정도가 현실에 가깝다.
+    FALLBACK_BASE_MIN = 10.0
+    FALLBACK_MIN_PER_KM = 4.0
+
+    @staticmethod
+    def _estimate_min(dist_m: float) -> float:
+        return TransportEngine.FALLBACK_BASE_MIN + (dist_m / 1000.0) * TransportEngine.FALLBACK_MIN_PER_KM
+
     # 🌟 [알고리즘 수정] Sum 대신 Min-Max (최대 소요시간 최소화) 적용
     @staticmethod
     def find_best_midpoints(db: Session, users_locations: list):
@@ -316,7 +329,7 @@ class TransportEngine:
         for u_loc in users_locations:
             node, dist = TransportEngine.get_nearest_hotspot(u_loc['lat'], u_loc['lng'])
             user_nodes.append((u_loc, node, dist))
-        start_names = {n['name'] for (_u, n, d) in user_nodes if n and d < 2000}
+        start_names = {n['name'] for (_u, n, d) in user_nodes if n and d < TransportEngine.SNAP_M}
         time_cache = TransportEngine._load_time_cache_bulk(db, start_names)
         # 캐시 미스 시 ODSAY 실호출은 요청당 상한(각 3초 timeout) — 초과분은 거리 추산으로.
         # 호출된 결과는 travel_time_cache에 저장되므로 요청이 반복될수록 커버리지가 차오름.
@@ -327,7 +340,7 @@ class TransportEngine:
 
             for (u_loc, start_node, dist) in user_nodes:
                 time_cost = None
-                if start_node and dist < 2000:
+                if start_node and dist < TransportEngine.SNAP_M:
                     if start_node['name'] == spot['name']:
                         time_cost = 0
                     else:
@@ -350,20 +363,19 @@ class TransportEngine:
                 # 실패 시 거리 기반 추산
                 if time_cost is None:
                     direct_dist = TransportEngine._haversine(u_loc['lat'], u_loc['lng'], spot['lat'], spot['lng'])
-                    time_cost = (direct_dist / 1000) * 15
+                    time_cost = TransportEngine._estimate_min(direct_dist)
 
                 times.append(time_cost)
-            
+
             if not times: continue
 
-            # 🌟 점수 계산 로직 변경 (핵심!)
-            # 1순위: 가장 오래 걸리는 사람의 시간 (Max Time) -> 낮을수록 좋음 (공평함)
-            # 2순위: 총 이동 시간 평균 (Avg Time) -> 낮을수록 좋음 (효율성)
+            # 공평함 = ①가장 오래 걸리는 사람이 덜 걸리고 ②서로 비슷하게 걸리는 것.
+            # 편차(max-min)를 안 보면 '한 명 30분, 한 명 70분'이 '둘 다 50분'과 같은
+            # 점수를 받는다. 그건 공평이 아니라 평균이다.
             max_t = max(times)
             avg_t = sum(times) / len(times)
-            
-            # Max Time에 가중치를 많이 둠 (80% Max, 20% Avg)
-            score = (max_t * 0.8) + (avg_t * 0.2)
+            spread = max_t - min(times)
+            score = (max_t * 0.6) + (avg_t * 0.2) + (spread * 0.2)
             
             candidates.append({
                 "spot": spot,
@@ -373,11 +385,40 @@ class TransportEngine:
         
         # 점수가 낮은 순(시간이 적게 걸리는 순)으로 정렬
         candidates.sort(key=lambda x: x["score"])
-        
-        # 🆕 이동 시간 정보도 함께 반환
+        top = candidates[:3]
+
+        # ── 2단계: 최종 후보만 실제 좌표로 다시 잰다 ──────────────────────
+        # 1단계는 191곳을 훑어야 해서 캐시 행렬(스냅)을 쓸 수밖에 없다. 하지만 최종
+        # 3곳은 (스냅 실패한 멤버 수 × 3)회면 실제 대중교통 시간을 받아올 수 있다.
+        # 스냅이 된 멤버는 이미 실측 캐시값이라 다시 부르지 않는다.
+        unsnapped = [(i, u) for i, (u, node, d) in enumerate(user_nodes)
+                     if not (node and d < TransportEngine.SNAP_M)]
+        if unsnapped and settings.ODSAY_API_KEY:
+            budget = 12
+            for c in top:
+                spot = c["spot"]
+                for idx, u_loc in unsnapped:
+                    if budget <= 0:
+                        break
+                    budget -= 1
+                    # 좌표를 소수 3자리(≈110m)로 끊어 이름을 만든다 — 같은 사람이
+                    # 다시 물으면 캐시에 걸린다(travel_time_cache는 이름 쌍이 키다).
+                    gname = f"geo:{u_loc['lat']:.3f},{u_loc['lng']:.3f}"
+                    real = TransportEngine.get_transit_time(
+                        db, gname, spot["name"],
+                        u_loc["lng"], u_loc["lat"], spot["lng"], spot["lat"])
+                    if real is not None:
+                        c["travel_times"][idx] = real
+            # 값이 바뀌었으니 순위를 다시 매긴다 — 추산값으로 정한 순서가 남으면
+            # 실측을 받아온 의미가 없다
+            for c in top:
+                ts = c["travel_times"]
+                c["score"] = (max(ts) * 0.6) + ((sum(ts) / len(ts)) * 0.2) + ((max(ts) - min(ts)) * 0.2)
+            top.sort(key=lambda x: x["score"])
+
         return [{
             "name": c["spot"]["name"],
             "lat": c["spot"]["lat"],
             "lng": c["spot"]["lng"],
             "travel_times": [int(t) for t in c["travel_times"]]  # 각 출발지별 소요시간 (분)
-        } for c in candidates[:3]]
+        } for c in top]

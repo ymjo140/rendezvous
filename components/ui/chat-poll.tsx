@@ -312,6 +312,7 @@ type CrewPick = {
   name: string
   cuisine?: string | null
   address?: string | null
+  image?: string | null
   satisfied?: number
   total?: number
   weakest?: string | null
@@ -820,43 +821,63 @@ export function PlacePollComposer({
                     <span className="h-px flex-1 bg-gray-100" />
                   </div>
                 )}
-                <button
-                  onClick={() => toggle(p)}
-                  className={`w-full text-left rounded-xl border px-3 py-2 transition-colors ${
-                    on ? "border-[#F5A623] bg-amber-50" : "border-gray-200 hover:bg-gray-50"
+                {/* 담을지 말지 판단하려면 이름만으론 부족하다 — 사진·업종·주소·연차·
+                    이유를 한 줄에 놓고, 더 보고 싶으면 상세로 나간다.
+                    상세는 새 탭으로 연다. 여기서 이동하면 만들던 투표가 날아간다. */}
+                <div
+                  className={`rounded-xl border px-3 py-2 transition-colors ${
+                    on ? "border-[#F5A623] bg-amber-50" : "border-gray-200"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-gray-800 truncate">
-                        {p.recommended && (
-                          <span className="mr-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700">
-                            추천
+                  <div className="flex items-start gap-2">
+                    <button onClick={() => toggle(p)} className="flex flex-1 min-w-0 items-start gap-2 text-left">
+                      {p.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.image} alt="" className="w-11 h-11 rounded-lg object-cover flex-shrink-0 bg-gray-100" />
+                      ) : (
+                        <span className="w-11 h-11 rounded-lg bg-gray-100 flex items-center justify-center text-sm flex-shrink-0">
+                          🍽️
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-xs font-bold text-gray-800 truncate">
+                          {p.recommended && (
+                            <span className="mr-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700">
+                              AI 추천
+                            </span>
+                          )}
+                          {p.name}
+                        </span>
+                        <span className="block text-[10px] text-gray-400 truncate">
+                          {[p.cuisine, p.years_open ? `${p.years_open}년째 영업` : null, p.address]
+                            .filter(Boolean).join(" · ")}
+                        </span>
+                        {(p.reason_me || p.reason) && (
+                          <span className={`block mt-0.5 text-[10px] font-bold ${reasonTone(p.reason_kind)}`}>
+                            {p.reason_me || p.reason}
                           </span>
                         )}
-                        {p.name}
-                      </div>
-                      <div className="text-[10px] text-gray-400 truncate">
-                        {[p.cuisine, p.address].filter(Boolean).join(" · ")}
-                      </div>
-                    </div>
-                    <span
-                      className={`w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0 ${
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => toggle(p)}
+                      className={`w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0 mt-0.5 ${
                         on ? "bg-[#F5A623] border-[#F5A623] text-white" : "border-gray-200 text-transparent"
                       }`}
+                      aria-label={on ? "빼기" : "담기"}
                     >
                       <Check className="w-3 h-3" />
-                    </span>
+                    </button>
                   </div>
-                  {(p.reason_me || p.reason) && (
-                    <div className={`mt-1 text-[10px] font-bold ${reasonTone(p.reason_kind)}`}>
-                      {p.reason_me || p.reason}
-                    </div>
+                  {p.place_id && (
+                    <button
+                      onClick={() => window.open(`/places/${p.place_id}`, "_blank")}
+                      className="mt-1 text-[10px] font-bold text-sky-600"
+                    >
+                      사진·메뉴·리뷰 보기 →
+                    </button>
                   )}
-                  {p.years_open ? (
-                    <div className="text-[10px] text-gray-400 mt-0.5">{p.years_open}년째 영업 중</div>
-                  ) : null}
-                </button>
+                </div>
                 </React.Fragment>
               )
             })}
@@ -1038,19 +1059,38 @@ export function CandidateSheet({
   const recoNoneSatisfied =
     fromCrew && recos.length > 0 && recos.every((p) => (p.satisfied ?? 0) === 0)
 
+  // 투표를 만든 사람이 본 동네들. 나중에 담는 사람도 같은 탭을 봐야
+  // 같은 목록을 놓고 "이걸 추가할까 말까"를 정할 수 있다.
+  const pollRegions: { name: string; lat: number; lng: number }[] = useMemo(() => {
+    const rs = (poll.meta?.regions || []) as any[]
+    if (Array.isArray(rs) && rs.length) {
+      return rs.filter((r) => r?.lat != null).map((r) => ({
+        name: r.name || "동네", lat: Number(r.lat), lng: Number(r.lng),
+      }))
+    }
+    // regions를 안 남기던 옛 투표 — 좌표 하나로 탭 하나
+    return [{
+      name: poll.meta?.anchor_name || "근처",
+      lat: poll.meta?.lat ?? 37.5665, lng: poll.meta?.lng ?? 126.978,
+    }]
+  }, [poll.meta])
+  const [regionIdx, setRegionIdx] = useState(0)
+
   // 후보 추가 목록도 투표를 만들 때와 같은 집단 합성으로 뽑는다 — 만든 사람과
   // 나중에 담는 사람이 서로 다른 기준의 목록을 보면 같은 투표가 아니다.
   useEffect(() => {
     if (poll.kind !== "place") return
     const meta = poll.meta || {}
-    const lat = meta.lat ?? 37.5665
-    const lng = meta.lng ?? 126.978
+    const here = pollRegions[regionIdx] || pollRegions[0]
+    const lat = here.lat
+    const lng = here.lng
     const purpose = meta.purpose || "식사"
     let alive = true
+    setLoading(true)
 
     const run = async () => {
       try {
-        const qs = `lat=${lat}&lng=${lng}&purpose=${encodeURIComponent(purpose)}&limit=24`
+        const qs = `lat=${lat}&lng=${lng}&purpose=${encodeURIComponent(purpose)}&limit=250`
         const res = await fetchWithAuth(`/api/chat/rooms/${poll.room_id}/polls/suggest?${qs}`)
         const data = res.ok ? await res.json() : null
         const items: CrewPick[] = Array.isArray(data?.items) ? data.items : []
@@ -1092,7 +1132,7 @@ export function CandidateSheet({
     }
     run()
     return () => { alive = false }
-  }, [poll.id])
+  }, [poll.id, regionIdx])
 
   const add = async (key: string, body: any) => {
     setBusyKey(key)
@@ -1167,6 +1207,29 @@ export function CandidateSheet({
 
       {tab === "reco" && (
         <div className="space-y-1.5">
+          {/* 투표를 만든 사람이 본 동네 탭 그대로 — 같은 목록을 봐야 같은 판단을 한다 */}
+          {pollRegions.length > 1 && (
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {pollRegions.map((r, i) => {
+                const on = i === regionIdx
+                const n = poll.options.filter((o) => (o.meta || {}).region === r.name).length
+                return (
+                  <button
+                    key={`${r.name}-${i}`}
+                    onClick={() => setRegionIdx(i)}
+                    className={`flex-shrink-0 rounded-xl border px-3 py-1.5 text-xs font-bold ${
+                      on ? "border-[#F5A623] bg-amber-50 text-amber-900" : "border-gray-200 text-gray-600"
+                    }`}
+                  >
+                    {r.name}
+                    {n > 0 && (
+                      <span className="ml-1 rounded-full bg-[#F5A623] px-1.5 text-[9px] text-white">{n}</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
           {loading && (
             <div className="py-6 text-center"><Loader2 className="w-5 h-5 animate-spin text-[#F5A623] mx-auto" /></div>
           )}
@@ -1191,7 +1254,7 @@ export function CandidateSheet({
                   <div className="text-xs font-bold text-gray-800 truncate">
                     {p.recommended && (
                       <span className="mr-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700">
-                        추천
+                        AI 추천
                       </span>
                     )}
                     {p.name}
