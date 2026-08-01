@@ -1,3 +1,5 @@
+import math
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -1683,6 +1685,154 @@ def crew_candidates(
         })
     items.sort(key=lambda x: (x["visits"], x["members"]), reverse=True)
     return {"items": items[:30], "visited_count": len([i for i in items if i["visits"] > 0])}
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = math.radians(lat2 - lat1), math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
+
+
+@router.get("/stores/{store_id}/demand")
+def store_demand(
+    store_id: int,
+    radius_km: float = 3.0,
+    fresh_hours: int = 72,
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    """지금 근처에서 장소를 찾고 있는 크루 — '미래 수요' 신호.
+
+    기존 CRM이 못 보는 자리다. POS도 도도포인트도 '왔던 사람'만 안다.
+    이건 아직 안 온 크루가 B2C 앱에서 장소 투표를 열어둔 순간을 잡는다
+    (ChatPoll kind=place, status=open + meta{lat,lng,purpose}).
+
+    ★신원은 안 준다★ — 사장님에게 나가는 건 '몇 명이 · 무슨 목적으로 · 언제쯤'까지다.
+    크루 이름·멤버·방 id는 크루가 제안을 수락한 뒤에야 열린다. 제안은
+    signal_id(투표 id)로 보내고 크루는 서버가 찾는다.
+    """
+    place = _assert_merchant_owns(db, store_id, merchant_uid)
+    if place.lat is None or place.lng is None:
+        return {"items": [], "count": 0, "note": "가게 좌표가 없어 근처 수요를 볼 수 없어요."}
+
+    polls = (
+        db.query(models.ChatPoll)
+        .filter(models.ChatPoll.kind == "place", models.ChatPoll.status == "open")
+        .order_by(models.ChatPoll.id.desc())
+        .limit(200)
+        .all()
+    )
+    now = datetime.now()
+    items = []
+    for p in polls:
+        meta = p.meta or {}
+        plat, plng = meta.get("lat"), meta.get("lng")
+        if plat is None or plng is None:
+            continue
+        try:
+            dist = _haversine_km(float(place.lat), float(place.lng), float(plat), float(plng))
+        except (TypeError, ValueError):
+            continue
+        if dist > radius_km:
+            continue
+        crew = db.query(models.Community).filter(models.Community.id == p.room_id).first()
+        if crew is None:
+            continue        # 크루가 아닌 방(1:1 등)은 제외
+        members = list(dict.fromkeys(([crew.host_id] if crew.host_id else []) + list(crew.member_ids or [])))
+        if len(members) < 2:
+            continue        # 0~1명짜리 방은 수요가 아니다(빈 방·테스트 방)
+
+        # ★신선도가 이 기능의 전부다★ — '지금 찾고 있다'가 기존 CRM과 갈리는 지점인데,
+        # 2주 전에 열어두고 잊은 투표를 그렇게 부르면 그 주장 자체가 무너진다.
+        age_h = (now - p.created_at).total_seconds() / 3600.0 if p.created_at else None
+        if age_h is None or age_h > fresh_hours:
+            continue
+        when = (p.meta or {}).get("plan_date")
+        if when:
+            try:
+                if datetime.strptime(str(when), "%Y-%m-%d").date() < now.date():
+                    continue    # 약속 날짜가 지났다 = 이미 끝난 모임
+            except ValueError:
+                pass
+
+        opts = db.query(models.ChatPollOption).filter(models.ChatPollOption.poll_id == p.id).all()
+        # 우리 가게가 이미 후보에 있으면 제안의 성격이 다르다(밀어주기 vs 진입)
+        on_list = any(o.place_id == place.id for o in opts)
+        age_h = max(0.0, age_h)
+        items.append({
+            "signal_id": p.id,
+            "party_size": len(members),
+            "purpose": meta.get("purpose") or "식사",
+            "when_date": meta.get("plan_date"),      # 일정 투표까지 확정한 크루만 채워진다
+            "when_time": meta.get("plan_time"),
+            "area": meta.get("anchor_name") or "",
+            "distance_km": round(dist, 2),
+            "candidates": len(opts),
+            "on_candidate_list": on_list,
+            "opened_hours_ago": round(age_h, 1),
+        })
+    # 가까운 순 → 인원 많은 순. 오늘 당장 붙일 수 있는 게 위로.
+    items.sort(key=lambda x: (x["distance_km"], -x["party_size"]))
+    return {"items": items[:30], "count": len(items), "radius_km": radius_km,
+            "fresh_hours": fresh_hours, "store_name": place.name}
+
+
+@router.post("/stores/{store_id}/demand/{signal_id}/offer")
+def offer_to_demand(
+    store_id: int,
+    signal_id: int,
+    req: dict,
+    merchant_uid: str = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+):
+    """수요 신호에 혜택 제안 — 크루 신원을 사장님에게 노출하지 않고 보낸다.
+
+    딜(partnership_id)을 주면 그 딜로 제안하고, 없으면 가장 최근 활성 딜을 쓴다.
+    """
+    place = _assert_merchant_owns(db, store_id, merchant_uid)
+    poll = db.query(models.ChatPoll).filter(models.ChatPoll.id == signal_id).first()
+    if not poll or poll.status != "open":
+        raise HTTPException(status_code=404, detail="이미 끝난 수요예요.")
+    crew = db.query(models.Community).filter(models.Community.id == poll.room_id).first()
+    if crew is None:
+        raise HTTPException(status_code=404, detail="크루를 찾을 수 없어요.")
+
+    pid = req.get("partnership_id")
+    deal = None
+    if pid:
+        deal = db.query(models.CrewPartnership).filter(
+            models.CrewPartnership.id == int(pid), models.CrewPartnership.place_id == place.id).first()
+    if deal is None:
+        deal = (db.query(models.CrewPartnership)
+                .filter(models.CrewPartnership.place_id == place.id,
+                        models.CrewPartnership.status == "active")
+                .order_by(models.CrewPartnership.id.desc()).first())
+    if deal is None:
+        raise HTTPException(status_code=400, detail={
+            "code": "no_deal", "detail": "먼저 제휴 혜택을 하나 만들어 주세요."})
+
+    exists = (db.query(models.CrewPartnershipApp)
+              .filter(models.CrewPartnershipApp.partnership_id == deal.id,
+                      models.CrewPartnershipApp.community_id == crew.id).first())
+    if exists:
+        return {"sent": 0, "already": True}
+
+    db.add(models.CrewPartnershipApp(
+        partnership_id=deal.id, community_id=crew.id, applicant_id=0,
+        direction="store_invite",
+        message=(req.get("message") or "").strip()[:200] or None,
+    ))
+    db.commit()
+
+    _notify_crew_members(
+        crew,
+        "🤝 %s에서 제휴 제안이 왔어요" % place.name,
+        "%s — 지금 고르는 중이면 바로 쓸 수 있어요." % deal.benefit,
+        data={"type": "partnership_invite", "community_id": crew.id, "poll_id": str(poll.id)},
+    )
+    return {"sent": 1, "already": False, "benefit": deal.benefit}
 
 
 @router.post("/partnerships/{pid}/invite")
