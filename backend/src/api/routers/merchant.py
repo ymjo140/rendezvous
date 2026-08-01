@@ -1728,15 +1728,22 @@ def store_demand(
     items = []
     for p in polls:
         meta = p.meta or {}
-        plat, plng = meta.get("lat"), meta.get("lng")
-        if plat is None or plng is None:
+        # 크루는 동네 3곳을 나란히 놓고 후보를 담는다. 그래서 '고른 한 곳'이 아니라
+        # 검토한 동네 전부와 대본다 — 우리 동네가 후보 중 하나였다면 그것도 기회다.
+        spots = [r for r in (meta.get("regions") or []) if r.get("lat") is not None]
+        if not spots and meta.get("lat") is not None:
+            spots = [{"name": meta.get("anchor_name") or "", "lat": meta["lat"], "lng": meta["lng"]}]
+        near = None
+        for r in spots:
+            try:
+                d = _haversine_km(float(place.lat), float(place.lng), float(r["lat"]), float(r["lng"]))
+            except (TypeError, ValueError):
+                continue
+            if d <= radius_km and (near is None or d < near[0]):
+                near = (d, r.get("name") or "")
+        if near is None:
             continue
-        try:
-            dist = _haversine_km(float(place.lat), float(place.lng), float(plat), float(plng))
-        except (TypeError, ValueError):
-            continue
-        if dist > radius_km:
-            continue
+        dist, region_name = near
         crew = db.query(models.Community).filter(models.Community.id == p.room_id).first()
         if crew is None:
             continue        # 크루가 아닌 방(1:1 등)은 제외
@@ -1767,9 +1774,12 @@ def store_demand(
             "purpose": meta.get("purpose") or "식사",
             "when_date": meta.get("plan_date"),      # 일정 투표까지 확정한 크루만 채워진다
             "when_time": meta.get("plan_time"),
-            "area": meta.get("anchor_name") or "",
+            "area": region_name or meta.get("anchor_name") or "",
+            "regions": [r.get("name") for r in spots if r.get("name")],
             "distance_km": round(dist, 2),
             "candidates": len(opts),
+            # 우리 동네에서 이미 담긴 후보가 있는지 — 없으면 '아직 우리 동네는 비었다'
+            "candidates_here": sum(1 for o in opts if ((o.meta or {}).get("region") == region_name)),
             "on_candidate_list": on_list,
             "opened_hours_ago": round(age_h, 1),
         })

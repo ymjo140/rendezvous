@@ -344,15 +344,14 @@ export function PlacePollComposer({
   onClose: () => void
   onCreated: (p: Poll) => void
 }) {
-  // 순서: 목적 → 동네 3곳 → 후보. 동네부터 고르면 "여기서 뭘 할 건데"가 빠진 채
+  // 순서: 목적 → 동네 3곳(탭) → 후보. 동네부터 고르면 "여기서 뭘 할 건데"가 빠진 채
   // 가게가 먼저 튀어나온다.
-  const [step, setStep] = useState<"purpose" | "origins" | "regions" | "search" | "loading" | "picks">("purpose")
-  const [anchor, setAnchor] = useState<{ lat: number; lng: number; name: string } | "midpoint" | null>(null)
+  const [step, setStep] = useState<"purpose" | "origins" | "search" | "loading" | "picks">("purpose")
+  const [loadingMsg, setLoadingMsg] = useState("모일 동네를 찾는 중...")
   // 중간지점 후보 3곳 — 엔진(find_best_midpoints)이 원래 3개를 주는데 1등만 쓰고 있었다
   const [regions, setRegions] = useState<
     { lat: number; lng: number; name: string; places: any[]; travel_times: number[] }[]
   >([])
-  const [regionsLoading, setRegionsLoading] = useState(false)
   // 출발지 — 프로필에 내 동네가 없는 멤버는 이 자리에서 찍는다.
   // 중간지점은 출발지가 2곳 이상이어야 계산된다(서버가 1곳이면 '내 주변'으로 뭉갠다).
   // 여기서 찍은 위치는 이 투표를 만드는 동안만 쓰고 남의 프로필을 고치지 않는다.
@@ -373,13 +372,25 @@ export function PlacePollComposer({
   const [query, setQuery] = useState("")
   const [hits, setHits] = useState<any[]>([])
   const [purpose, setPurpose] = useState("")
-  const [spot, setSpot] = useState<{ lat: number; lng: number; name: string } | null>(null)
-  const [picks, setPicks] = useState<CrewPick[]>([])
-  const [chosen, setChosen] = useState<number[]>([])
-  const [note, setNote] = useState("")
-  const [fromCrew, setFromCrew] = useState(true)
+  // 동네는 고르는 게 아니라 '필터'다 — 3곳을 탭으로 놓고 각각의 추천을 보면서
+  // 어느 동네에서든 후보를 담는다. 한 동네만 남기면 나머지 두 곳은 크루도 못 보고
+  // 그 동네 가게도 기회가 없다.
+  const [regionIdx, setRegionIdx] = useState(0)
+  const [picksBy, setPicksBy] = useState<Record<number, CrewPick[]>>({})
+  const [noteBy, setNoteBy] = useState<Record<number, string>>({})
+  const [crewBy, setCrewBy] = useState<Record<number, boolean>>({})
+  const [loadingRegion, setLoadingRegion] = useState<number | null>(null)
+  // 담은 후보는 동네를 넘나든다 — 어느 동네에서 담았는지 같이 들고 있어야
+  // 카드에 "노원 · 청구" 처럼 적어줄 수 있다
+  const [chosen, setChosen] = useState<{ region: number; pick: CrewPick }[]>([])
   const [creating, setCreating] = useState(false)
   const [shown, setShown] = useState(6)   // 더보기로 6개씩 늘린다
+
+  const picks = picksBy[regionIdx] ?? []
+  const note = noteBy[regionIdx] ?? ""
+  const fromCrew = crewBy[regionIdx] ?? true
+  const pickKey = (p: CrewPick) => (p.place_id != null ? `p${p.place_id}` : `n${p.name}`)
+  const isChosen = (p: CrewPick) => chosen.some((c) => pickKey(c.pick) === pickKey(p))
 
   // 출발지 검색 — 멤버 한 명의 출발 지점을 찍는다
   const searchPoint = async () => {
@@ -407,8 +418,8 @@ export function PlacePollComposer({
   // 걸리는 사람의 시간을 최소화)로 3곳을 뽑는데, 1등만 쓰면 "왜 여기?"에 답할 수 없다.
   const loadMidpoints = async (p: string, pts: Point[]) => {
     setPurpose(p)
-    setStep("regions")
-    setRegionsLoading(true)
+    setLoadingMsg("모일 동네를 찾는 중...")
+    setStep("loading")
     try {
       const res = await fetchWithAuth(`/api/recommend`, {
         method: "POST",
@@ -433,12 +444,15 @@ export function PlacePollComposer({
       if (list.length === 0) {
         alert("모일 동네를 찾지 못했어요. 지역을 직접 입력해 주세요.")
         setStep("search")
+        return
       }
+      // 동네를 고르라고 한 번 더 묻지 않는다 — 3곳을 탭으로 놓고 첫 동네를 바로 연다
+      setStep("picks")
+      setPicksBy({}); setNoteBy({}); setCrewBy({})
+      openRegion(0, p, list)
     } catch {
       alert("오류가 발생했어요.")
       setStep("purpose")
-    } finally {
-      setRegionsLoading(false)
     }
   }
 
@@ -468,73 +482,61 @@ export function PlacePollComposer({
     }
   }
 
-  // 목적을 고르면 후보를 '집단 합성'으로 뽑아 먼저 보여준다.
-  // 투표는 올리는 순간 전원에게 푸시가 나가므로, 뭘 올리는지 보고 올리게 한다.
-  // at을 인자로 받는다 — 방금 setAnchor한 값을 상태에서 읽으면 아직 갱신 전이다.
-  const loadPicks = async (
-    p: string,
-    at?: { lat: number; lng: number; name: string },
-    seedFallback?: any[],
-  ) => {
-    setPurpose(p)
-    setStep("loading")
+  // 동네 하나를 열어 그 동네의 추천을 채운다. 이미 불러왔으면 탭만 바꾼다.
+  // 담은 후보는 건드리지 않는다 — 동네를 옮겨 다니며 담는 게 이 화면의 요지다.
+  const openRegion = async (i: number, p = purpose, list = regions) => {
+    setRegionIdx(i)
+    setShown(6)
+    const r = list[i]
+    if (!r) return
+    if (picksBy[i]) return
+    setLoadingRegion(i)
     try {
-      let fallback: any[] = seedFallback || []
-      if (!at) {
-        if (anchor && anchor !== "midpoint") {
-          at = { lat: anchor.lat, lng: anchor.lng, name: anchor.name }
-        } else {
-          const r = await recommend(p)
-          at = { lat: r.lat, lng: r.lng, name: r.name }
-          fallback = r.places
-        }
-      }
-      setSpot(at)
-
-      const qs = `lat=${at.lat}&lng=${at.lng}&purpose=${encodeURIComponent(p)}&limit=24`
+      const qs = `lat=${r.lat}&lng=${r.lng}&purpose=${encodeURIComponent(p)}&limit=24`
       const res = await fetchWithAuth(`/api/chat/rooms/${roomId}/polls/suggest?${qs}`)
       const data = res.ok ? await res.json() : null
       const items: CrewPick[] = Array.isArray(data?.items) ? data.items : []
 
       if (items.length > 0) {
-        setFromCrew(true)
-        setNote(data?.note || "")
-        setPicks(items)
-        // 자동 선택은 추천에서만 집는다. 기준 밖인 곳이 체크된 채 올라가면 안 된다.
-        const rec = items.map((it, i) => (it.recommended ? i : -1)).filter((i) => i >= 0)
-        setChosen((rec.length ? rec : items.map((_, i) => i)).slice(0, 3))
-        setShown(6)
-        setStep("picks")
+        setCrewBy((s) => ({ ...s, [i]: true }))
+        setNoteBy((s) => ({ ...s, [i]: data?.note || "" }))
+        setPicksBy((s) => ({ ...s, [i]: items }))
+        // 첫 동네에서만 자동으로 담아준다. 그것도 추천에서만 — 기준 밖인 곳이
+        // 체크된 채 올라가면 안 된다. 나머지 동네는 사람이 보고 담는다.
+        if (i === 0 && chosen.length === 0) {
+          const rec = items.filter((it) => it.recommended).slice(0, 3)
+          setChosen((rec.length ? rec : items.slice(0, 3)).map((pick) => ({ region: i, pick })))
+        }
         return
       }
 
-      // 멤버 취향 시트가 없거나 반경 안에 후보가 없을 때 — 기존 추천으로라도 채운다
-      if (fallback.length === 0) fallback = (await recommend(p, at)).places
-      if (fallback.length === 0) {
-        alert(data?.note || "조건에 맞는 곳을 못 찾았어요. 다시 시도해 주세요.")
-        setStep("purpose")
-        return
-      }
-      setFromCrew(false)
-      setNote(data?.note || "멤버 취향을 아직 모으지 못해 일반 추천으로 채웠어요.")
-      setPicks(
-        fallback.slice(0, 5).map((x: any) => ({
-          place_id: x.id ?? null,
-          name: x.name,
-          cuisine: x.category,
-          reason: x.reason,
-        }))
-      )
-      setChosen([0, 1, 2].filter((i) => i < Math.min(5, fallback.length)))
-      setStep("picks")
+      // 취향 시트가 없거나 반경 안에 후보가 없을 때 — 기존 추천으로라도 채운다
+      const fallback = (r.places?.length ? r.places : (await recommend(p, r)).places) || []
+      setCrewBy((s) => ({ ...s, [i]: false }))
+      setNoteBy((s) => ({
+        ...s,
+        [i]: data?.note || (fallback.length ? "멤버 취향을 아직 모으지 못해 일반 추천으로 채웠어요." : "이 동네엔 후보가 없어요."),
+      }))
+      setPicksBy((s) => ({
+        ...s,
+        [i]: fallback.slice(0, 12).map((x: any) => ({
+          place_id: x.id ?? null, name: x.name, cuisine: x.category, reason: x.reason,
+        })),
+      }))
     } catch {
-      alert("오류가 발생했어요.")
-      setStep("purpose")
+      setNoteBy((s) => ({ ...s, [i]: "불러오지 못했어요." }))
+      setPicksBy((s) => ({ ...s, [i]: [] }))
+    } finally {
+      setLoadingRegion(null)
     }
   }
 
-  const toggle = (i: number) =>
-    setChosen((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]))
+  const toggle = (p: CrewPick) =>
+    setChosen((prev) =>
+      prev.some((c) => pickKey(c.pick) === pickKey(p))
+        ? prev.filter((c) => pickKey(c.pick) !== pickKey(p))
+        : [...prev, { region: regionIdx, pick: p }]
+    )
 
   // 아무도 게이트를 못 넘은 목록 — 순위는 '덜 어긋나는 순'일 뿐이다.
   // 이걸 "다 같이 만족하는 순서"라고 부르면 화면이 거짓말을 한다.
@@ -543,32 +545,44 @@ export function PlacePollComposer({
   const firstBelow = picks.findIndex((p) => !p.recommended)
 
   const create = async () => {
-    if (chosen.length === 0 || !spot) return
+    if (chosen.length === 0 || regions.length === 0) return
     setCreating(true)
     try {
+      // 담은 후보가 어느 동네에서 왔는지 세어, 가장 많이 담긴 동네를 대표로 쓴다.
+      // ★후보 동네는 전부 남긴다★ — 크루가 검토한 동네 셋을 다 기록해야, 그 동네
+      // 가게들도 '우리 동네가 후보였다'는 걸 알고 제안할 기회가 생긴다.
+      // tsconfig target이 es5라 Map/Set 순회(스프레드·for...of)가 막힌다 — 객체로 센다
+      const used: Record<number, number> = {}
+      chosen.forEach((c) => { used[c.region] = (used[c.region] || 0) + 1 })
+      const usedIdx = Object.keys(used).map(Number)
+      const mainIdx = usedIdx.slice().sort((a, b) => used[b] - used[a])[0] ?? regionIdx
+      const main = regions[mainIdx] || regions[0]
+      const usedNames = usedIdx.slice().sort((a, b) => a - b)
+        .map((i) => regions[i]?.name).filter(Boolean)
+
       const res = await fetchWithAuth(`/api/chat/rooms/${roomId}/polls`, {
         method: "POST",
         body: JSON.stringify({
           kind: "place",
-          meta: { anchor_name: spot.name, lat: spot.lat, lng: spot.lng, purpose },
-          options: chosen
-            .slice()
-            .sort((a, b) => a - b)
-            .map((i) => picks[i])
-            .filter(Boolean)
-            .map((p) => ({
-              label: p.name,
-              place_id: p.place_id,
-              added_by_ai: true,
-              meta: {
-                category: p.cuisine,
-                reason: p.reason,
-                reason_kind: p.reason_kind,
-                satisfied: p.satisfied,
-                total: p.total,
-                weakest: p.weakest,
-              },
-            })),
+          meta: {
+            anchor_name: usedNames.join(" · ") || main.name,
+            lat: main.lat, lng: main.lng, purpose,
+            regions: regions.map((r) => ({ name: r.name, lat: r.lat, lng: r.lng })),
+          },
+          options: chosen.map(({ region, pick: p }) => ({
+            label: p.name,
+            place_id: p.place_id,
+            added_by_ai: true,
+            meta: {
+              category: p.cuisine,
+              region: regions[region]?.name,
+              reason: p.reason,
+              reason_kind: p.reason_kind,
+              satisfied: p.satisfied,
+              total: p.total,
+              weakest: p.weakest,
+            },
+          })),
         }),
       })
       if (res.ok) {
@@ -632,8 +646,11 @@ export function PlacePollComposer({
               onClick={() => {
                 if (!p?.lat || !p?.lng) return
                 const name = String(p.title || p.name || query).replace(/^서울\S* /, "")
-                setAnchor({ lat: p.lat, lng: p.lng, name })
-                loadPicks(purpose, { lat: p.lat, lng: p.lng, name })
+                // 직접 고른 동네는 탭에 하나 더 붙는다 — 기존 후보를 밀어내지 않는다
+                const next = [...regions, { lat: p.lat, lng: p.lng, name, places: [], travel_times: [] }]
+                setRegions(next)
+                setStep("picks")
+                openRegion(next.length - 1, purpose, next)
               }}
               className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 hover:bg-amber-50 text-sm"
             >
@@ -729,83 +746,54 @@ export function PlacePollComposer({
           </Button>
         </div>
       )}
-      {step === "regions" && (
-        <div className="space-y-2">
-          {regionsLoading ? (
-            <div className="py-8 text-center">
-              <Loader2 className="w-5 h-5 animate-spin text-[#F5A623] mx-auto mb-2" />
-              <p className="text-xs text-gray-400">모일 동네를 찾는 중...</p>
-            </div>
-          ) : (
-            <>
-              <p className="text-xs text-gray-500">
-                {pointList.length >= 2
-                  ? `${purpose} · 출발지 ${pointList.length}곳 사이에서 골랐어요. 가장 오래 걸리는 사람 기준이에요.`
-                  : `${purpose} · 동네를 고르세요.`}
-              </p>
-              {pointList.length < 2 && (
-                <p className="text-[11px] text-rose-500">
-                  출발지가 {pointList.length}곳이라 중간지점을 못 잡았어요. 출발지를 더 찍으면 3곳을 뽑아드려요.
-                </p>
-              )}
-              <button
-                onClick={() => setStep("origins")}
-                className="text-[11px] font-bold text-amber-700 underline"
-              >
-                출발지 바꾸기 ({pointList.length}곳)
-              </button>
-              {regions.map((r, i) => {
-                const worst = r.travel_times.length ? Math.max(...r.travel_times) : null
-                return (
-                  <button
-                    key={`${r.name}-${i}`}
-                    onClick={() => {
-                      setAnchor({ lat: r.lat, lng: r.lng, name: r.name })
-                      loadPicks(purpose, { lat: r.lat, lng: r.lng, name: r.name }, r.places)
-                    }}
-                    className="w-full text-left rounded-xl border border-gray-200 px-3 py-2.5 hover:bg-amber-50"
-                  >
-                    <div className="text-sm font-bold text-gray-800">
-                      {i === 0 && pointList.length >= 2 && (
-                        <span className="mr-1 text-[10px] font-bold text-amber-700">가장 공평</span>
-                      )}
-                      {r.name}
-                    </div>
-                    {worst !== null && (
-                      <div className="text-[10px] text-gray-400">
-                        가장 먼 멤버 {worst}분
-                        {r.travel_times.length > 1 && ` · 평균 ${Math.round(r.travel_times.reduce((a, b) => a + b, 0) / r.travel_times.length)}분`}
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
-              <Button onClick={() => setStep("search")} variant="outline" className="w-full h-10 rounded-xl">
-                🔍 다른 지역 직접 입력
-              </Button>
-              <Button onClick={() => setStep("purpose")} variant="ghost" className="w-full h-9 rounded-xl text-xs text-gray-400">
-                목적 다시 고르기
-              </Button>
-            </>
-          )}
-        </div>
-      )}
       {step === "loading" && (
         <div className="py-8 text-center">
           <Loader2 className="w-6 h-6 animate-spin text-[#F5A623] mx-auto mb-2" />
-          <p className="text-xs text-gray-400">모임 취향을 합쳐 추천 중...</p>
+          <p className="text-xs text-gray-400">{loadingMsg}</p>
         </div>
       )}
       {step === "picks" && (
         <div>
+          {/* 동네 탭 — 3곳을 오가며 담는다. 한 곳만 고르는 화면이 아니다 */}
+          <div className="flex gap-1.5 overflow-x-auto pb-2 -mx-1 px-1">
+            {regions.map((r, i) => {
+              const on = i === regionIdx
+              const n = chosen.filter((c) => c.region === i).length
+              const worst = r.travel_times.length ? Math.max(...r.travel_times) : null
+              return (
+                <button
+                  key={`${r.name}-${i}`}
+                  onClick={() => openRegion(i)}
+                  className={`flex-shrink-0 rounded-xl border px-3 py-1.5 text-left transition-colors ${
+                    on ? "border-[#F5A623] bg-amber-50" : "border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  <div className={`text-xs font-bold ${on ? "text-amber-900" : "text-gray-700"}`}>
+                    {r.name}
+                    {n > 0 && (
+                      <span className="ml-1 rounded-full bg-[#F5A623] px-1.5 text-[9px] font-bold text-white">{n}</span>
+                    )}
+                  </div>
+                  {worst !== null && <div className="text-[9px] text-gray-400">먼 멤버 {worst}분</div>}
+                </button>
+              )
+            })}
+            <button
+              onClick={() => setStep("search")}
+              className="flex-shrink-0 rounded-xl border border-dashed border-gray-200 px-3 py-1.5 text-xs text-gray-400"
+            >
+              + 동네
+            </button>
+          </div>
+
           <div className="flex items-start justify-between gap-2 mb-2">
             <p className="text-xs text-gray-500">
-              {spot?.name} 기준 · {note}
+              {note}
               {fromCrew && (
                 <span className={`block text-[11px] ${noneSatisfied ? "text-rose-500" : "text-gray-400"}`}>
                   {noneSatisfied
-                    ? "기준을 넓혀도 넘는 곳이 없어요. 그나마 덜 어긋나는 순서라, 목적이나 지역을 바꾸는 게 나아요."
-                    : "올릴 후보를 고르세요. 한 명이라도 맞는 곳을 모아 취향 총합이 높은 순이에요."}
+                    ? "이 동네엔 기준을 넘는 곳이 없어요. 다른 동네 탭을 눌러보세요."
+                    : "동네를 오가며 담을 수 있어요. 한 명이라도 맞는 곳을 취향 총합 순으로 놓았어요."}
                 </span>
               )}
             </p>
@@ -813,9 +801,16 @@ export function PlacePollComposer({
               목적 바꾸기
             </button>
           </div>
-          <div className="space-y-1.5 max-h-[44vh] overflow-y-auto">
+
+          {loadingRegion === regionIdx && (
+            <div className="py-6 text-center">
+              <Loader2 className="w-5 h-5 animate-spin text-[#F5A623] mx-auto" />
+            </div>
+          )}
+
+          <div className="space-y-1.5 max-h-[40vh] overflow-y-auto">
             {picks.slice(0, shown).map((p, i) => {
-              const on = chosen.includes(i)
+              const on = isChosen(p)
               return (
                 <React.Fragment key={p.place_id ?? `i${i}`}>
                 {i === firstBelow && firstBelow > 0 && (
@@ -826,7 +821,7 @@ export function PlacePollComposer({
                   </div>
                 )}
                 <button
-                  onClick={() => toggle(i)}
+                  onClick={() => toggle(p)}
                   className={`w-full text-left rounded-xl border px-3 py-2 transition-colors ${
                     on ? "border-[#F5A623] bg-amber-50" : "border-gray-200 hover:bg-gray-50"
                   }`}
@@ -874,6 +869,18 @@ export function PlacePollComposer({
               </button>
             )}
           </div>
+          {chosen.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {chosen.map(({ region, pick: p }) => (
+                <span
+                  key={pickKey(p)}
+                  className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                >
+                  {regions[region]?.name ? `${regions[region].name} · ` : ""}{p.name}
+                </span>
+              ))}
+            </div>
+          )}
           <Button
             onClick={create}
             disabled={creating || chosen.length === 0}
