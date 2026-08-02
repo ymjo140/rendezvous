@@ -315,12 +315,108 @@ def build_sheet(db: Session, uid: int, signals: list, excluded: set) -> TasteShe
     return sheet
 
 
+def _menu_place_ids(db: Session, key: str, limit: int = 200) -> list:
+    """그 메뉴로 분류되는 가게 id. SQL로 크게 거르고 파이썬으로 확정한다.
+
+    분류는 '먼저 걸리는 규칙이 이긴다'라서 SQL만으로는 정확히 못 고른다. 예를 들어
+    '순대국'은 gukbap인데 '순대'가 들어가 bunsik 정규식에도 걸린다. 그래서 SQL은
+    후보만 넓게 뽑고, 최종 판정은 프론트와 같은 menu_key()로 한다.
+    """
+    from core import menu_taxonomy as mt
+
+    pattern = next((rx.pattern for rx, k in mt.POOLS if k == key), None)
+    if pattern:
+        sql = """
+            SELECT p.id, p.name, COALESCE(p.uptae,''), p.main_category
+            FROM places p JOIN place_embeddings pe ON pe.place_id = p.id
+            WHERE pe.embedding IS NOT NULL
+              AND p.main_category IN ('FOOD','RESTAURANT','CAFE','PUB')
+              AND (p.name ~ :pat OR COALESCE(p.uptae,'') ~ :pat)
+            LIMIT :cand
+        """
+        params = {"pat": pattern, "cand": limit * 4}
+    else:
+        # korean은 '아무 데도 안 걸린 나머지'라 정규식이 없다. 한식에서 뽑아 걸러낸다.
+        sql = """
+            SELECT p.id, p.name, COALESCE(p.uptae,''), p.main_category
+            FROM places p JOIN place_embeddings pe ON pe.place_id = p.id
+            WHERE pe.embedding IS NOT NULL AND p.cuisine_type = '한식'
+            LIMIT :cand
+        """
+        params = {"cand": limit * 6}
+
+    ids = []
+    for pid, name, uptae, mc in db.execute(text(sql), params).all():
+        if mt.menu_key(name or "", uptae, mc) == key:
+            ids.append(pid)
+            if len(ids) >= limit:
+                break
+    return ids
+
+
+def cold_start_from_menus(db: Session, uid: int, sheet: TasteSheet, keys: list) -> TasteSheet:
+    """온보딩에서 고른 메뉴 → 라벨 붙은 덩어리.
+
+    고른 메뉴의 가게들을 평균내 축을 만든다. '국밥'을 고르면 국밥집 임베딩 평균이
+    축이 되고, 그 축에서 무작위 장소 상위 5% 지점이 문턱이 된다. 그래서 이름에
+    '국밥'이 없어도 벡터가 가까우면 추천에 올라온다 — 단어 매칭이 아니다.
+
+    라벨을 '국밥·탕'처럼 화면에 보여준 말 그대로 쓴다. 기존 콜드스타트는 라벨이
+    없어서 이유 문장이 "취향에 맞아요"밖에 안 나왔다.
+    """
+    from core import menu_taxonomy as mt
+
+    keys = [k for k in (keys or []) if isinstance(k, str)][:MAX_FACETS]
+    if not keys or not _load_space(db):
+        return sheet
+    sample = _load_sample(db)
+    # 덩어리마다 배지 기회를 주므로 합쳐서 GATE_FPR을 넘지 않게 백분위를 조인다
+    gate_pct = 100.0 * (1.0 - GATE_FPR / max(1, len(keys)))
+
+    facets = []
+    for key in keys:
+        ids = _menu_place_ids(db, key)
+        if len(ids) < MIN_FACET_N:
+            continue
+        rows = db.execute(text("""
+            SELECT embedding FROM place_embeddings
+            WHERE place_id = ANY(:ids) AND embedding IS NOT NULL
+        """), {"ids": ids}).all()
+        vecs = [_as_vec(r[0]) for r in rows if r[0] is not None]
+        if len(vecs) < MIN_FACET_N:
+            continue
+        V = _center(np.array(vecs))
+        f = V.mean(axis=0)
+        nrm = np.linalg.norm(f)
+        if nrm == 0:
+            continue
+        f = f / nrm
+        gate = float(np.percentile(sample @ f, gate_pct)) if sample is not None else 0.0
+        facets.append(Facet(label=mt.menu_title(key), vec=f, n=len(vecs),
+                            weight=1.0, gate=gate))
+
+    if facets:
+        sheet.facets = facets
+    return sheet
+
+
 def _cold_start(db: Session, uid: int, sheet: TasteSheet) -> TasteSheet:
     """행동 신호가 없을 때 — 온보딩에서 받은 취향을 쓴다.
 
-    온보딩은 선호 음식·분위기·예산을 받아 UserEmbedding.preference_embedding에
-    벡터로 넣어두는데, 지금까지 홈·검색이 그걸 한 번도 읽지 않았다.
+    고른 메뉴가 있으면 그게 먼저다(라벨이 붙어서 이유 문장이 살아난다).
+    없으면 예전 방식대로 선호 단어에서 만든 벡터 하나를 쓴다.
     """
+    try:
+        picked = (db.query(models.User.preferences)
+                    .filter(models.User.id == uid).scalar() or {})
+        keys = picked.get("taste_menus") if isinstance(picked, dict) else None
+        if keys:
+            sheet = cold_start_from_menus(db, uid, sheet, keys)
+            if sheet.facets:
+                return sheet
+    except Exception as e:
+        print(f"[WARN] taste_menus cold start skipped: {e}")
+
     if not _load_space(db):
         return sheet
     row = db.query(models.UserEmbedding).filter(models.UserEmbedding.user_id == uid).first()

@@ -1,7 +1,17 @@
 ﻿/** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: false,
-  
+
+  // 배포 전 새 API를 로컬에서 화면으로 확인할 때만 쓴다.
+  // CSP의 connect-src가 'self'와 배포 도메인만 허용해서 브라우저가 localhost:8000을
+  // 직접 못 부른다. 그래서 같은 오리진(/api/...)으로 받아 개발서버가 대신 넘긴다.
+  // LOCAL_API_PROXY가 없으면 이 블록은 아예 안 붙어서 배포에는 영향이 없다.
+  async rewrites() {
+    const target = process.env.LOCAL_API_PROXY
+    if (!target) return []
+    return [{ source: "/api/:path*", destination: `${target}/api/:path*` }]
+  },
+
   async headers() {
     return [
       {

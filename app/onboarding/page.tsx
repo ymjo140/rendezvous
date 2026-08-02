@@ -10,7 +10,12 @@ import { Slider } from "@/components/ui/slider"
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "")
 
-const FOOD_TAGS = ["한식", "일식", "중식", "양식", "분식", "아시아음식", "패스트푸드", "카페/디저트"]
+// '한식'·'양식' 같은 굵은 말은 취향 축이 못 된다 — DB에서 '한식'만 46,541곳(37%)이라
+// 그걸로 만든 축은 아무 데나 가깝다. 그래서 메뉴 단위로 서버에서 받아 사진과 함께
+// 고르게 한다(GET /api/onboarding/menus). 배달앱들도 음식 이름으로 나눈다
+// (쿠팡이츠 23개·요기요 18개·배민 ~16개, 셋 다 가게당 최대 3개).
+type MenuCard = { key: string; title: string; image: string }
+type MenuGroup = { name: string; menus: MenuCard[] }
 const VIBE_TAGS = ["조용한", "감성적인", "힙한", "가성비", "고급스러운", "뷰맛집", "야외", "인스타감성"]
 const ALCOHOL_TAGS = ["소주", "맥주", "와인", "하이볼", "막걸리/전통주", "칵테일"]
 const AGE_GROUPS = ["10대", "20대", "30대", "40대", "50대+"]
@@ -30,6 +35,13 @@ export default function OnboardingPage() {
   const [coords, setCoords] = useState({ lat: 0, lng: 0 })
 
   const [selectedFoods, setSelectedFoods] = useState<string[]>([])
+  // 고른 메뉴 — 최대 3개. 취향 시트가 덩어리를 3개까지만 저장한다(MAX_FACETS).
+  // 더 고르게 해놓고 뒤에서 버리면 안 되니 화면에서 막는다.
+  const [menuGroups, setMenuGroups] = useState<MenuGroup[]>([])
+  const [pickedMenus, setPickedMenus] = useState<string[]>([])
+  const [menusLoading, setMenusLoading] = useState(false)
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
+  const MAX_MENU = 3
   const [selectedVibes, setSelectedVibes] = useState<string[]>([])
   const [selectedAlcohol, setSelectedAlcohol] = useState<string[]>([])
   const [budget, setBudget] = useState([20000])
@@ -61,6 +73,19 @@ export default function OnboardingPage() {
         if (data.name && !data.name.startsWith("User_")) setName(data.name)
       })
   }, [router])
+
+  // 메뉴 카드는 첫 화면에서 미리 받아둔다.
+  // 서버가 12만 곳을 훑어 곳수를 세느라 첫 요청이 1~2초 걸린다(그 뒤엔 캐시).
+  // 3단계에 와서 부르면 그 1~2초를 사용자가 빈 화면으로 본다. 1단계 입력하는
+  // 동안 받아두면 3단계에 도착했을 때 이미 준비돼 있다.
+  useEffect(() => {
+    setMenusLoading(true)
+    fetch(`${API_URL}/api/onboarding/menus`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.groups) setMenuGroups(d.groups) })
+      .catch(() => { /* 실패해도 온보딩은 계속된다 — 취향은 나중에 행동으로 쌓인다 */ })
+      .finally(() => setMenusLoading(false))
+  }, [])
 
   const handleGetLocation = () => {
     if (!navigator.geolocation) return alert("위치 권한을 허용해주세요.")
@@ -103,7 +128,9 @@ export default function OnboardingPage() {
         lat: coords.lat,
         lng: coords.lng,
         location_name: coords.lat !== 0 ? "GPS 인증 위치" : "위치 미설정",
-        preferred_foods: selectedFoods,
+        // 고른 메뉴 이름도 같이 실어둔다. 취향 덩어리는 아래 taste-menus가 만들지만,
+        // 예전 경로(선호 단어 → 벡터 하나)가 예비로 남아 있어서 비워두면 그게 빈손이 된다.
+        preferred_foods: selectedFoods.concat(picked.map((m) => m.title)),
         preferred_vibes: selectedVibes,
         preferred_alcohol: selectedAlcohol,
         avg_budget: budget[0],
@@ -120,6 +147,17 @@ export default function OnboardingPage() {
         body: JSON.stringify(payload)
       })
       if (res.ok) {
+        // 고른 메뉴는 별도로 보낸다 — 취향 덩어리를 만드는 재료라 실패해도
+        // 온보딩 자체는 끝나야 한다(다음부터 행동 신호로 쌓인다).
+        if (pickedMenus.length > 0) {
+          try {
+            await fetch(`${API_URL}/api/users/me/taste-menus`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              body: JSON.stringify({ menus: pickedMenus }),
+            })
+          } catch { /* noop */ }
+        }
         router.push(dest)
       } else {
         alert("저장 중 오류가 발생했습니다.")
@@ -232,17 +270,118 @@ export default function OnboardingPage() {
     </div>
   )
 
+  /** 고른 메뉴의 표시 정보 — 어느 대분류에 있든 위쪽 요약에 그대로 뜬다. */
+  const picked = pickedMenus
+    .map((k) => menuGroups.flatMap((g) => g.menus).find((m) => m.key === k))
+    .filter(Boolean) as MenuCard[]
+
+  /** 이미 3개면 더 못 고르고, 고른 걸 다시 누르면 빠진다. */
+  const toggleMenu = (key: string) => {
+    setPickedMenus((prev) =>
+      prev.indexOf(key) >= 0
+        ? prev.filter((k) => k !== key)
+        : prev.length >= MAX_MENU ? prev : prev.concat(key),
+    )
+  }
+
   const renderStep3 = () => (
     <div className="space-y-8 animate-in slide-in-from-right-4 fade-in duration-300 pb-10">
       <div className="space-y-3">
-        <label className="flex items-center gap-2 text-sm font-bold text-gray-800"><Utensils className="w-4 h-4 text-[#F5A623]" /> 좋아하는 음식 (복수 선택)</label>
-        <div className="flex flex-wrap gap-2">
-          {FOOD_TAGS.map(t => (
-            <Badge key={t} variant="outline" onClick={() => toggleSelection(selectedFoods, setSelectedFoods, t)} className={`cursor-pointer px-3 py-2 rounded-lg transition-all ${selectedFoods.includes(t) ? "bg-[#F5A623] text-white border-transparent" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
-              {t}
-            </Badge>
-          ))}
+        <div className="flex items-end justify-between">
+          <label className="flex items-center gap-2 text-sm font-bold text-gray-800">
+            <Utensils className="w-4 h-4 text-[#F5A623]" /> 좋아하는 메뉴
+          </label>
+          <span className={`text-[12px] font-bold ${pickedMenus.length >= MAX_MENU ? "text-[#F5A623]" : "text-gray-400"}`}>
+            {pickedMenus.length} / {MAX_MENU}
+          </span>
         </div>
+        <p className="text-[12.5px] leading-relaxed text-gray-500">
+          고른 메뉴로 취향 기준을 잡아요. 딱 그 메뉴만 보여드리는 게 아니라,
+          비슷한 결의 가게까지 찾아냅니다.
+        </p>
+
+        {menusLoading && (
+          <div className="flex items-center gap-2 py-8 text-sm text-gray-400">
+            <Loader2 className="w-4 h-4 animate-spin" /> 메뉴를 불러오는 중
+          </div>
+        )}
+
+        {/* 고른 것은 항상 위에 남긴다 — 다른 대분류를 열어도 뭘 골랐는지 보여야 한다 */}
+        {picked.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {picked.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => toggleMenu(m.key)}
+                className="flex items-center gap-1 rounded-full bg-[#F5A623] px-2.5 py-1 text-[11.5px] font-bold text-white"
+              >
+                {m.title}
+                <span className="text-white/80">✕</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 대분류 → 세부 메뉴. 25개를 한 번에 깔면 스크롤만 길다.
+            누른 대분류만 펼쳐서 한 번에 한 구역씩 보게 한다. */}
+        <div className="space-y-2">
+          {menuGroups.map((g) => {
+            const open = openGroup === g.name
+            const inGroup = g.menus.filter((m) => pickedMenus.indexOf(m.key) >= 0).length
+            return (
+              <div key={g.name} className="overflow-hidden rounded-xl border border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setOpenGroup(open ? null : g.name)}
+                  className={`flex w-full items-center gap-2 px-3.5 py-3 text-left transition-colors ${open ? "bg-amber-50/60" : "bg-white"}`}
+                >
+                  <span className="text-[14px] font-bold text-gray-900">{g.name}</span>
+                  {inGroup > 0 && (
+                    <span className="rounded-full bg-[#F5A623] px-1.5 text-[10.5px] font-bold text-white">{inGroup}</span>
+                  )}
+                  <span className="ml-auto text-[11.5px] text-gray-400">{g.menus.length}종</span>
+                  <ChevronRight className={`h-4 w-4 text-gray-300 transition-transform ${open ? "rotate-90" : ""}`} />
+                </button>
+
+                {open && (
+                  <div className="grid grid-cols-3 gap-2 border-t border-gray-100 p-2.5">
+                    {g.menus.map((m) => {
+                      const on = pickedMenus.indexOf(m.key) >= 0
+                      const full = !on && pickedMenus.length >= MAX_MENU
+                      return (
+                        <button
+                          key={m.key}
+                          type="button"
+                          onClick={() => toggleMenu(m.key)}
+                          disabled={full}
+                          className={`relative overflow-hidden rounded-xl text-left transition-all ${
+                            on ? "ring-2 ring-[#F5A623]" : full ? "opacity-40" : "ring-1 ring-gray-100"
+                          }`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={m.image} alt="" className="aspect-square w-full object-cover bg-gray-100" loading="lazy" />
+                          {on && (
+                            <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#F5A623]">
+                              <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                            </span>
+                          )}
+                          <span className="block px-1.5 py-1.5 text-[11.5px] font-bold leading-tight text-gray-800">
+                            {m.title}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        {/* 사진은 그 메뉴의 대표 이미지지 특정 가게 사진이 아니다 — 밝혀둔다 */}
+        {menuGroups.length > 0 && (
+          <p className="text-[11px] text-gray-400">사진은 메뉴를 나타내는 대표 이미지입니다</p>
+        )}
       </div>
 
       <div className="space-y-3">

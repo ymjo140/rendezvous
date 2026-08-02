@@ -25,6 +25,52 @@ def complete_onboarding(req: schemas.OnboardingRequest, current_user: models.Use
     if not current_user: raise HTTPException(401, "로그인 필요")
     return user_service.complete_onboarding(db, current_user, req)
 
+@router.get("/api/onboarding/menus")
+def onboarding_menus():
+    """온보딩에서 고를 메뉴 카드. 대분류로 묶어서 내려준다.
+
+    DB를 안 본다. 목록이 고정 25개라 볼 이유가 없다 — 한때 '표본이 부족한 메뉴는
+    숨긴다'고 매 요청마다 12만 4천 곳을 훑었는데(1.5초), 가장 적은 메뉴가 168곳이라
+    걸릴 일이 없는 방어였다. 온보딩은 누르면 바로 넘어가야 하는 화면이다.
+    """
+    from core import menu_taxonomy as mt
+
+    groups = {}
+    for card in mt.MENU_CARDS:
+        groups.setdefault(card["group"], []).append({
+            "key": card["key"],
+            "title": card["title"],
+            # 사진은 홈탭과 같은 규칙 — public/stock/{key}-1.jpg
+            "image": f"/stock/{card['key']}-1.jpg",
+        })
+    return {
+        "max_pick": 3,        # taste_service.MAX_FACETS와 같아야 한다
+        "groups": [{"name": g, "menus": groups[g]} for g in mt.GROUP_ORDER if g in groups],
+    }
+
+
+@router.post("/api/users/me/taste-menus")
+def save_taste_menus(req: dict, current_user: models.User = Depends(require_user),
+                     db: Session = Depends(get_db)):
+    """고른 메뉴를 저장하고 취향 시트를 다시 만들게 표시한다."""
+    from sqlalchemy.orm.attributes import flag_modified
+    from core import menu_taxonomy as mt
+    from services import taste_service
+
+    valid = {c["key"] for c in mt.MENU_CARDS}
+    keys = [k for k in (req.get("menus") or []) if k in valid][:3]
+    if not keys:
+        raise HTTPException(400, "메뉴를 1개 이상 골라주세요.")
+
+    prefs = current_user.preferences if isinstance(current_user.preferences, dict) else {}
+    prefs["taste_menus"] = keys
+    current_user.preferences = prefs
+    flag_modified(current_user, "preferences")
+    taste_service.mark_dirty(db, current_user.id)
+    db.commit()
+    return {"menus": keys, "titles": [mt.menu_title(k) for k in keys]}
+
+
 @router.put("/api/users/me/location")
 def update_user_location(req: schemas.LocationUpdate, current_user: models.User = Depends(require_user), db: Session = Depends(get_db)):
     return user_service.update_location(db, current_user, req)
