@@ -293,6 +293,8 @@ def home_feed(
             "icon": f.icon or "📁",
             "description": f.description or "",
             "context_tag": getattr(f, "context_tag", None),
+            # 리스트 대표 사진(선택) — 없으면 프론트가 그 줄을 통째로 빼고 그린다
+            "cover_image": getattr(f, "cover_image", None),
             "item_count": f.item_count or 0,
             "saves": int(saves_cnt.get(f.id, 0)),
             "revisit": int(revisit),
@@ -907,6 +909,8 @@ def home_search(
             "icon": f.icon or "📁",
             "description": f.description or "",
             "context_tag": getattr(f, "context_tag", None),
+            # 리스트 대표 사진(선택) — 없으면 프론트가 그 줄을 통째로 빼고 그린다
+            "cover_image": getattr(f, "cover_image", None),
             "item_count": f.item_count or 0,
             "saves": int(saves_cnt.get(f.id, 0)),
             "revisit": int(revisit),

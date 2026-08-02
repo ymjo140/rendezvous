@@ -1,7 +1,8 @@
 ﻿"use client"
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+import { compressImageFile } from "@/lib/image"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -116,6 +117,10 @@ function RevisitSurvey() {
     const [rated, setRated] = useState<any | null>(null);
     const [stars, setStars] = useState(0);
     const [comment, setComment] = useState("");
+    // 사진 한 장(선택). 이 가게에 대표 사진이 없으면 이게 첫 사진이 된다 —
+    // 12만 곳 전부 비어 있어서, 다녀온 사람의 한 장이 가장 값지다.
+    const [photo, setPhoto] = useState<string | null>(null);
+    const photoRef = useRef<HTMLInputElement>(null);
     const [ratingBusy, setRatingBusy] = useState(false);
     // '갔는데 아니었다'는 이 제품이 가진 가장 정확한 신호다. 방문한 사람에게만 묻고,
     // 이유까지 받으면 "싫어하신 OO은 뺐어요"를 말할 수 있게 된다.
@@ -185,6 +190,9 @@ function RevisitSurvey() {
                     checkin_id: rated.checkin_id ?? null,
                     rating: stars,
                     comment: comment.trim() || null,
+                    // 사진은 선택. 4점 이상이고 그 가게에 대표 사진이 없으면
+                    // 서버가 이 사진을 가게 얼굴로 올린다.
+                    image_urls: photo ? [photo] : [],
                 }),
             });
         } catch {
@@ -221,13 +229,57 @@ function RevisitSurvey() {
                         ))}
                     </div>
                     {stars > 0 && (
-                        <textarea
-                            value={comment}
-                            onChange={(e) => setComment(e.target.value.slice(0, 200))}
-                            placeholder="한 줄로 남겨주세요 (선택)"
-                            rows={2}
-                            className="mt-3 w-full resize-none rounded-xl border border-gray-200 p-2.5 text-sm outline-none focus:border-[#F5A623]"
-                        />
+                        <>
+                            <textarea
+                                value={comment}
+                                onChange={(e) => setComment(e.target.value.slice(0, 200))}
+                                placeholder="한 줄로 남겨주세요 (선택)"
+                                rows={2}
+                                className="mt-3 w-full resize-none rounded-xl border border-gray-200 p-2.5 text-sm outline-none focus:border-[#F5A623]"
+                            />
+                            {/* 사진 한 장(선택) — 4점 이상이면 이 가게의 첫 대표 사진이 된다 */}
+                            <div className="mt-2 flex items-center gap-2.5">
+                                {photo ? (
+                                    <div className="relative">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={photo} alt="" className="h-16 w-16 rounded-xl object-cover" />
+                                        <button
+                                            type="button"
+                                            onClick={() => setPhoto(null)}
+                                            className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-[11px] text-white"
+                                            aria-label="사진 빼기"
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => photoRef.current?.click()}
+                                        className="flex h-16 w-16 flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 text-[10px] font-semibold text-gray-400"
+                                    >
+                                        <span className="text-base leading-none">＋</span>
+                                        사진
+                                    </button>
+                                )}
+                                <p className="flex-1 text-[11px] leading-snug text-slate-400">
+                                    사진은 선택이에요. 아직 사진이 없는 가게라면
+                                    <b className="text-slate-600"> 첫 대표 사진</b>이 됩니다.
+                                </p>
+                            </div>
+                            <input
+                                ref={photoRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                    const f = e.target.files?.[0]
+                                    e.target.value = ""
+                                    if (!f) return
+                                    try { setPhoto(await compressImageFile(f)) } catch { /* 무시 — 선택 항목이다 */ }
+                                }}
+                            />
+                        </>
                     )}
                     <div className="mt-3 flex gap-2">
                         <button
@@ -527,6 +579,9 @@ export function MyPageTab() {
   const [fName, setFName] = useState("");
   const [fIcon, setFIcon] = useState("🍜");
   const [fColor, setFColor] = useState(FOLDER_COLORS[0]);
+  // 리스트 대표 사진(선택) — 홈·탐색 카드의 얼굴이 된다. 안 올리면 업종 대표 이미지로 간다.
+  const [fCover, setFCover] = useState<string | null>(null);
+  const coverRef = useRef<HTMLInputElement>(null);
   const [fSaving, setFSaving] = useState(false);
 
   const openFolderDialog = (folder: SaveFolder | null) => {
@@ -534,6 +589,7 @@ export function MyPageTab() {
       setFName(folder?.name || "");
       setFIcon(folder?.icon && folder.icon !== "📁" ? folder.icon : "🍜");
       setFColor(folder?.color && FOLDER_COLORS.includes(folder.color) ? folder.color : FOLDER_COLORS[0]);
+      setFCover((folder as any)?.cover_image || null);
       setFolderDialogOpen(true);
   };
 
@@ -545,7 +601,8 @@ export function MyPageTab() {
           const res = editingFolder
               ? await fetchWithAuth(`/api/folders/${editingFolder.id}`, {
                     method: "PUT",
-                    body: JSON.stringify({ name, icon: fIcon, color: fColor }),
+                    // 빈 문자열은 '지우기'다 — null이면 서버가 미전달로 보고 유지한다
+                    body: JSON.stringify({ name, icon: fIcon, color: fColor, cover_image: fCover ?? "" }),
                 })
               : await fetchWithAuth(`/api/folders`, {
                     method: "POST",
@@ -1092,6 +1149,47 @@ export function MyPageTab() {
                                     <DialogDescription className="hidden">폴더 이름, 아이콘, 색 설정</DialogDescription>
                                 </DialogHeader>
                                 <div className="space-y-4">
+                                    {/* 대표 사진(선택) — 안 올려도 되고, 없으면 업종 대표 이미지로 간다 */}
+                                    <div className="flex items-center gap-3">
+                                        {fCover ? (
+                                            <div className="relative flex-shrink-0">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img src={fCover} alt="" className="h-16 w-16 rounded-xl object-cover" />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFCover(null)}
+                                                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-[11px] text-white"
+                                                    aria-label="사진 빼기"
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => coverRef.current?.click()}
+                                                className="flex h-16 w-16 flex-shrink-0 flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 text-[10px] font-semibold text-gray-400"
+                                            >
+                                                <span className="text-base leading-none">＋</span>
+                                                대표 사진
+                                            </button>
+                                        )}
+                                        <p className="text-[11px] leading-snug text-slate-400">
+                                            선택이에요. 올리면 홈·탐색에서 이 리스트 카드의 얼굴이 됩니다.
+                                        </p>
+                                    </div>
+                                    <input
+                                        ref={coverRef}
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={async (e) => {
+                                            const f = e.target.files?.[0]
+                                            e.target.value = ""
+                                            if (!f) return
+                                            try { setFCover(await compressImageFile(f)) } catch { /* 선택 항목이라 무시 */ }
+                                        }}
+                                    />
                                     <div className="flex items-center gap-3">
                                         <div
                                             className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"

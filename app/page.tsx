@@ -74,6 +74,7 @@ type ListCard = {
   // 대신 '왜 이게 떴는지'를 문장으로 말하고, 근거가 충분할 때만 배지를 붙인다.
   score?: number | null; taste_ok?: boolean; reason?: string | null; reason_kind?: string | null
   crew_score?: number | null
+  cover_image?: string | null   // 크루·큐레이터가 올린 리스트 대표 사진(선택)
 }
 type Rack = { tag: string; label: string; emoji: string; items: ListCard[] }
 type CrewBrief = { id: string; title: string; icon: string; members: number; lists: number }
@@ -455,11 +456,18 @@ export default function HomeNextPage() {
         if (g.by.kind === "crew" && g.by.id) router.push(`/crew/${g.by.id}`)
         else if (g.folder_id > 0) router.push(`/lists/${g.folder_id}`)
       }}
-      className="w-[250px] shrink-0 cursor-pointer rounded-2xl border border-amber-100 bg-amber-50/40 p-3.5"
+      className="w-[250px] shrink-0 cursor-pointer overflow-hidden rounded-2xl bg-amber-50/60"
     >
+      {/* 크루·큐레이터가 올린 대표 사진(선택). 없으면 이 줄이 통째로 빠진다 —
+          빈 자리를 만들지 않는다. */}
+      {g.cover_image && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={g.cover_image} alt="" className="h-[120px] w-full object-cover" />
+      )}
+      <div className="p-3.5">
       <div className="flex items-center gap-2.5">
         {/* 사람 축은 원형 아바타 — 사각 썸네일의 가게 카드와 구분 */}
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl ring-2 ring-amber-200">{g.by.icon}</div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl ring-1 ring-amber-200">{g.by.icon}</div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             <span className="truncate text-sm font-semibold text-gray-900">{g.by.name}</span>
@@ -495,6 +503,7 @@ export default function HomeNextPage() {
             <RotateCw className="h-2.5 w-2.5" />재방문 의사 {g.revisit}명
           </span>
         )}
+      </div>
       </div>
     </article>
   )
