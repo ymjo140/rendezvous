@@ -168,6 +168,11 @@ def submit_review(req: dict, user: models.User = Depends(get_current_user), db: 
             return {"status": "already"}
 
     place = db.query(models.Place).filter(models.Place.id == int(place_id)).first()
+
+    # 사진은 선택이다 — 필수로 걸면 후기 자체를 안 쓴다.
+    # 다만 한 장이라도 오면 그게 가장 값진 데이터다: 그 가게 사진이 지금 12만 곳 전부 비어 있다.
+    images = [s for s in (req.get("image_urls") or []) if isinstance(s, str) and s][:3]
+
     rv = models.Review(
         user_id=user.id,
         place_id=int(place_id),
@@ -176,12 +181,20 @@ def submit_review(req: dict, user: models.User = Depends(get_current_user), db: 
         rating=rating,
         comment=(req.get("comment") or None),
         tags=list(req.get("tags") or []),
-        image_urls=[],
+        image_urls=images,
     )
     db.add(rv)
+
+    # 가게에 대표 사진이 없고, 다녀온 사람이 좋게 본 곳이면 그 사진을 가게 얼굴로 올린다.
+    # 별점이 낮은 방문의 사진을 대표로 걸면 가게에 불리하다 — 4점 이상만.
+    promoted = False
+    if images and place is not None and not (place.hero_image or "").strip() and rating >= 4:
+        place.hero_image = images[0]
+        promoted = True
+
     taste_service.mark_dirty(db, user.id)
     db.commit()
-    return {"status": "ok", "id": rv.id}
+    return {"status": "ok", "id": rv.id, "hero_promoted": promoted}
 
 
 @router.get("/api/feedback/place/{place_id}")

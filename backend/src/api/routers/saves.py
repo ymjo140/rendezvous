@@ -32,6 +32,8 @@ class FolderUpdate(BaseModel):
     name: Optional[str] = None
     icon: Optional[str] = None
     color: Optional[str] = None
+    # 대표 사진(선택). ""을 보내면 지운다 — None(미전달)과 구분해야 해제가 된다.
+    cover_image: Optional[str] = None
 
 class FolderResponse(BaseModel):
     id: int
@@ -44,6 +46,7 @@ class FolderResponse(BaseModel):
     created_at: str
     is_public: bool = False
     description: Optional[str] = None
+    cover_image: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -272,7 +275,10 @@ def update_folder(
         folder.icon = req.icon
     if req.color:
         folder.color = req.color
-    
+    # 빈 문자열은 '지우기'다 — 사진을 잘못 올렸을 때 되돌릴 방법이 있어야 한다
+    if req.cover_image is not None:
+        folder.cover_image = req.cover_image.strip() or None
+
     db.commit()
     db.refresh(folder)
     
@@ -286,6 +292,7 @@ def update_folder(
         created_at=format_datetime(folder.created_at),
         is_public=bool(getattr(folder, "is_public", False)),
         description=getattr(folder, "description", None),
+        cover_image=getattr(folder, "cover_image", None),
     )
 
 

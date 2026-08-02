@@ -587,6 +587,9 @@ class SaveFolder(Base):
     # 큐레이터 '맛집 리스트' 공개 — 공개 시 프로필에 노출되고 남들이 팔로우/열람
     is_public = Column(Boolean, default=False)
     description = Column(String, nullable=True)  # 리스트 소개 문구
+    # 리스트 대표 사진(선택) — 홈·탐색 카드의 얼굴. 안 올려도 되고, 없으면 업종
+    # 대표 이미지로 떨어진다. 필수로 걸면 리스트를 아예 안 만든다.
+    cover_image = Column(String, nullable=True)
     community_id = Column(String, ForeignKey("communities.id"), nullable=True, index=True)  # 모임 소유 폴더(개인 폴더면 null)
     # 맥락 태그(발견 랙·검색·광고 타깃 공통 뼈대): date/work/friends/solo/cafe/drink/family/special
     context_tag = Column(String, nullable=True, index=True)
