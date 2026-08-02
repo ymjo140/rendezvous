@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, Loader2, Info, X } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
+import { stockCandidates } from "@/lib/stock-image"
 
 type Tab = "taste" | "meetings" | "hotdeals"
 
@@ -61,12 +62,48 @@ function categoryEmoji(name?: string, cat?: string): string {
   return "🍽️"
 }
 
+// 칩은 서버에 보낼 purpose까지 정한다.
+// 이 화면은 /api/recommend를 purpose="식사"로 부른다. 그러면 응답에 RESTAURANT·FOOD만
+// 담기는데(meeting_service의 main_category_map), 그 뒤에 '카페'·'술집' 칩으로 걸러봐야
+// 남을 게 없어서 늘 "조건에 맞는 곳이 없어요"가 떴다. 칩이 요청을 바꾸게 한다.
+// '전체'는 purpose를 비운다 — 빈 값이면 서버가 업종 조건을 안 걸어 전부 내려준다.
 const CATEGORY_FILTERS = [
-  { key: "all", label: "전체", re: null as RegExp | null },
-  { key: "food", label: "맛집", re: /식당|한식|중식|일식|양식|고기|분식|음식|FOOD|RESTAURANT/i },
-  { key: "cafe", label: "카페", re: /카페|커피|디저트|베이커리|CAFE/i },
-  { key: "pub", label: "술집", re: /술|주점|포차|호프|바|이자카야|PUB/i },
+  { key: "all", label: "전체", purpose: "", re: null as RegExp | null },
+  { key: "food", label: "맛집", purpose: "식사", re: /식당|한식|중식|일식|양식|고기|분식|음식|FOOD|RESTAURANT/i },
+  { key: "cafe", label: "카페", purpose: "카페", re: /카페|커피|디저트|베이커리|제과|빵|CAFE/i },
+  { key: "pub", label: "술집", purpose: "술집", re: /술|주점|포차|호프|이자카야|맥주|와인|PUB/i },
 ]
+
+/** 목록 썸네일 — 등록 사진 → 대표 이미지 → 이모지 타일.
+ *  홈탭과 같은 lib/stock-image를 쓴다. 규칙이 두 벌이면 같은 가게가 화면마다
+ *  다른 사진으로 보인다.
+ *  56px라 "실제 가게 사진이 아닙니다"를 칸 안에 적을 수 없어서, 목록 위에 한 줄로
+ *  대신 밝힌다(아래 STOCK_NOTE). */
+function Thumb({ name, category, image }: { name: string; category?: string | null; image?: string | null }) {
+  const chain = useMemo(
+    () => (image ? [image, ...stockCandidates(name, category)] : stockCandidates(name, category)),
+    [image, name, category],
+  )
+  const [step, setStep] = useState(0)
+  const src: string | null = chain[step] ?? null
+  if (!src) {
+    return (
+      <div className="w-14 h-14 rounded-xl flex-shrink-0 bg-amber-50 flex items-center justify-center text-2xl">
+        {categoryEmoji(name, category ?? undefined)}
+      </div>
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className="w-14 h-14 rounded-xl object-cover flex-shrink-0 bg-gray-100"
+      loading="lazy"
+      onError={() => setStep((s) => s + 1)}
+    />
+  )
+}
 
 function distKm(lat1: number, lng1: number, lat2?: number | null, lng2?: number | null) {
   if (!lat2 || !lng2) return Infinity
@@ -114,7 +151,14 @@ function PicksContent() {
 
   const [tab, setTab] = useState<Tab>(saved?.tab || initTab)
   const [sort, setSort] = useState(saved?.sort || "reco")
-  const [cat, setCat] = useState(saved?.cat || "all")
+  // 들어올 때의 목적(?purpose=카페)을 칩 초기값으로 옮긴다. 안 그러면 카페를 보러
+  // 들어왔는데 '전체'가 눌려 있어 식당까지 같이 나온다.
+  const catFromPurpose =
+    CATEGORY_FILTERS.find((c) => c.purpose && c.purpose === purpose)?.key ||
+    (/술|주점|포차/.test(purpose) ? "pub" : purpose ? "food" : "all")
+  const [cat, setCat] = useState(saved?.cat || catFromPurpose)
+  // 칩이 정하는 요청 업종. '전체'는 빈 값 → 서버가 업종 조건을 안 걸고 전부 내려준다.
+  const catPurpose = CATEGORY_FILTERS.find((c) => c.key === cat)?.purpose ?? ""
   const [roomFilter, setRoomFilter] = useState(saved?.roomFilter || "all")
   const [roomMenuOpen, setRoomMenuOpen] = useState(false)
   const [criteriaOpen, setCriteriaOpen] = useState(false)
@@ -162,7 +206,7 @@ function PicksContent() {
       fetchWithAuth("/api/recommend", {
         method: "POST",
         body: JSON.stringify({
-          purpose,
+          purpose: catPurpose,
           user_selected_tags: filterTags,
           current_lat: base.lat,
           current_lng: base.lng,
@@ -189,7 +233,9 @@ function PicksContent() {
         .finally(done)
     }
     return () => { active = false }
-  }, [tab, base])
+    // catPurpose가 들어가야 칩을 누를 때 다시 받아온다. 내 취향 탭만 서버가 업종을
+    // 거르고, 모임·핫딜은 전 업종이 내려와서 아래 re로 화면에서 거른다.
+  }, [tab, base, catPurpose])
 
   const roomNames = useMemo(() => {
     const names: string[] = []
@@ -225,8 +271,10 @@ function PicksContent() {
     const src = tab === "meetings" ? meetings : places
     let list = src.map((p: any, i: number) => ({ ...p, _idx: i }))
     if (tab === "meetings" && roomFilter !== "all") list = list.filter((p: any) => p.room_name === roomFilter)
+    // 내 취향 탭은 서버가 이미 업종으로 걸러 왔다. 여기서 또 걸면 '제과점'처럼
+    // 정규식에 안 걸리는 이름이 통째로 사라진다. 모임·핫딜만 화면에서 거른다.
     const c = CATEGORY_FILTERS.find((x) => x.key === cat)
-    if (c?.re) list = list.filter((p: any) => c.re!.test(String(p.category || "")))
+    if (c?.re && tab !== "taste") list = list.filter((p: any) => c.re!.test(String(p.category || "")))
     const b = base!
     const cmp: Record<string, (a: any, x: any) => number> = {
       reco: (a, x) => a._idx - x._idx,
@@ -268,7 +316,9 @@ function PicksContent() {
           {base && <span className="text-xs text-gray-400">· {base.label}</span>}
           {tab === "taste" && (
             <span className="text-[10px] font-bold text-amber-600 bg-amber-50 rounded-full px-2 py-0.5">
-              {purpose}{filterTags.length > 0 ? ` +${filterTags.length}` : ""}
+              {/* 실제로 보낸 업종을 적는다. 칩으로 카페를 골랐는데 배지가 '식사'면
+                  화면이 거짓말을 한다. '전체'는 업종을 안 거니까 그대로 적는다. */}
+              {catPurpose || "전체"}{filterTags.length > 0 ? ` +${filterTags.length}` : ""}
             </span>
           )}
           <button
@@ -360,6 +410,9 @@ function PicksContent() {
               ))}
             </div>
           )}
+          {/* 썸네일이 56px라 칸 안에 고지를 못 적는다. 목록 위에서 한 번 밝힌다 —
+              안 적으면 "가보니 다르더라"로 신뢰를 잃는다. */}
+          <p className="text-[10.5px] text-gray-400">사진이 없는 곳은 업종 대표 이미지로 보여드려요</p>
         </div>
       </div>
 
@@ -408,13 +461,7 @@ function PicksContent() {
                 className="w-full text-left flex items-start gap-3 px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50"
               >
                 <span className={`w-5 text-center text-sm font-extrabold pt-4 ${i < 3 ? "text-[#F5A623]" : "text-gray-300"}`}>{i + 1}</span>
-                {p.image ? (
-                  <img src={p.image} alt="" className="w-14 h-14 rounded-xl object-cover flex-shrink-0 bg-gray-100" loading="lazy" />
-                ) : (
-                  <div className="w-14 h-14 rounded-xl flex-shrink-0 bg-amber-50 flex items-center justify-center text-2xl">
-                    {categoryEmoji(p.name, p.category)}
-                  </div>
-                )}
+                <Thumb name={p.name} category={p.category} image={p.image} />
                 <div className="flex-1 min-w-0">
                   <div className="font-bold text-sm text-gray-900 truncate">
                     {p.name}
