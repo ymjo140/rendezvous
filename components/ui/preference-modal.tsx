@@ -7,14 +7,22 @@ import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
 import { fetchWithAuth } from "@/lib/api-client"
 import { ChevronRight, Check } from "lucide-react"
+// 온보딩과 같은 컴포넌트 — 두 벌이면 한쪽만 고쳐서 어긋난다.
+import { MenuPicker, useMenuGroups, toggleMenuKey } from "@/components/ui/menu-picker"
+
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "")
 
 const OPTIONS = {
-  foods: ["한식", "일식", "중식", "양식", "아시아음식", "고기/구이", "해산물", "분식", "패스트푸드", "카페/디저트"],
+  // 좋아하는 음식은 더 이상 여기 없다. '한식·양식' 같은 굵은 말로는 취향 축이 안 서서
+  // (DB에서 '한식'만 46,541곳=37%) 메뉴 단위 MenuPicker로 대체했다.
   // 불호(감점) + 알레르기(추천 제외). 그룹 추천 시 멤버 전원 반영.
   dislikes: ["매운맛", "내장/곱창", "날것/회", "고수", "오이", "양고기", "해산물", "없음"],
   allergies: ["갑각류", "조개류", "견과류", "유제품", "계란", "밀/글루텐", "복숭아"],
   vibes: ["조용한", "감성적인", "힙한", "가성비", "뷰맛집", "인스타감성", "고급진", "야외", "깔끔한", "이국적인"],
-  alcohol: ["소주", "맥주", "와인", "하이볼", "칵테일", "막걸리/전통주"],
+  // 술은 '소주·맥주·와인'만으론 얇다. 위스키·사케·고량주는 가게 성격이 확 갈리고,
+  // '안 마셔요'는 그룹 추천에서 술집을 빼야 할지 정하는 신호라 알레르기만큼 중요하다.
+  alcohol: ["소주", "맥주", "막걸리/전통주", "와인", "위스키", "하이볼",
+            "칵테일", "사케/청주", "고량주", "안 마셔요"],
 }
 
 interface PreferenceModalProps {
@@ -25,6 +33,10 @@ interface PreferenceModalProps {
 
 export function PreferenceModal({ isOpen, onClose, onComplete }: PreferenceModalProps) {
   const [step, setStep] = useState(1)
+  // 모달이 열릴 때만 받는다. 이 컴포넌트는 마이페이지에 늘 렌더돼 있어서,
+  // 조건 없이 받으면 마이페이지를 열 때마다 쓰지도 않을 요청이 나간다.
+  const { groups: menuGroups, loading: menusLoading } = useMenuGroups(API_URL, isOpen)
+  const [pickedMenus, setPickedMenus] = useState<string[]>([])
   const [selections, setSelections] = useState<{
     foods: string[]
     disliked_foods: string[]
@@ -49,11 +61,25 @@ export function PreferenceModal({ isOpen, onClose, onComplete }: PreferenceModal
 
   const handleSave = async () => {
     try {
+      // 고른 메뉴 이름도 foods에 실어둔다 — 취향 덩어리는 아래 taste-menus가 만들지만,
+      // 예전 경로(선호 단어 → 벡터 하나)가 예비로 남아 있어서 비워두면 그게 빈손이 된다.
+      const titles = pickedMenus
+        .map((k) => menuGroups.flatMap((g) => g.menus).find((m) => m.key === k)?.title)
+        .filter(Boolean) as string[]
       const res = await fetchWithAuth("/api/users/me/preferences", {
         method: "PUT",
-        body: JSON.stringify(selections)
+        body: JSON.stringify({ ...selections, foods: titles })
       })
       if (res.ok) {
+        // 메뉴 선택은 별도 경로다. 실패해도 나머지 취향은 저장됐으니 흐름을 막지 않는다.
+        if (pickedMenus.length > 0) {
+          try {
+            await fetchWithAuth("/api/users/me/taste-menus", {
+              method: "POST",
+              body: JSON.stringify({ menus: pickedMenus }),
+            })
+          } catch { /* noop */ }
+        }
         alert("취향 분석이 완료되었습니다! 🎉")
         onComplete()
       }
@@ -70,7 +96,7 @@ export function PreferenceModal({ isOpen, onClose, onComplete }: PreferenceModal
       <DialogContent className="sm:max-w-md h-[60vh] flex flex-col bg-white">
         <DialogHeader>
           <DialogTitle>
-            {step === 1 && "선호하는 음식 (복수 선택)"}
+            {step === 1 && "좋아하는 메뉴 (최대 3개)"}
             {step === 2 && "싫어하는 음식 · 알레르기"}
             {step === 3 && "선호하는 분위기"}
             {step === 4 && "주류 취향"}
@@ -81,18 +107,13 @@ export function PreferenceModal({ isOpen, onClose, onComplete }: PreferenceModal
 
         <div className="flex-1 overflow-y-auto py-4">
           {step === 1 && (
-            <div className="flex flex-wrap gap-2">
-              {OPTIONS.foods.map(opt => (
-                <Badge
-                  key={opt}
-                  variant={selections.foods.includes(opt) ? "default" : "outline"}
-                  className="cursor-pointer py-2 px-3 text-sm"
-                  onClick={() => toggleItem("foods", opt)}
-                >
-                  {opt} {selections.foods.includes(opt) && <Check className="w-3 h-3 ml-1" />}
-                </Badge>
-              ))}
-            </div>
+            <MenuPicker
+              groups={menuGroups}
+              loading={menusLoading}
+              picked={pickedMenus}
+              onToggle={(k) => setPickedMenus((prev) => toggleMenuKey(prev, k, 3))}
+              max={3}
+            />
           )}
           {step === 2 && (
             <div className="space-y-4">
