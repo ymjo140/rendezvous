@@ -171,11 +171,15 @@ const STOCK_KEY: [RegExp, string][] = [
   [/분식|떡볶이|김밥|만두|튀김/, "snack"],
 ]
 const STOCK_N = 6
-const stockOf = (category: string | undefined, seed: string) => {
+/** 후보를 순서대로 준다 — 사진(jpg) → 그림(svg) → 없음(색면).
+ *  Unsplash·Pexels처럼 상업적 이용이 명시된 곳에서 받은 사진을
+ *  public/stock/{업종}-{1~6}.jpg 로 넣으면 코드를 안 고쳐도 그날부터 사진이 나온다. */
+const stockCandidates = (category: string | undefined, seed: string) => {
   const key = STOCK_KEY.find(([re]) => re.test(category || ""))?.[1] || "korean"
   let h = 0
   for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0
-  return `/stock/${key}-${(h % STOCK_N) + 1}.svg`
+  const n = (h % STOCK_N) + 1
+  return [`/stock/${key}-${n}.jpg`, `/stock/${key}-${n}.svg`]
 }
 
 function PlaceCard({
@@ -186,10 +190,15 @@ function PlaceCard({
 }) {
   const tone = toneOf(name)
   const area = address ? address.split(" ").slice(1, 2).join("") : ""
-  // 등록 사진 → 대표 이미지 → 색면. 앞의 것이 실패하면 다음으로 조용히 내려간다.
-  const stock = stockOf(category, name)
-  const [src, setSrc] = React.useState<string | null>(image || stock)
-  const isStock = !!src && src === stock && !image
+  // 등록 사진 → 대표 사진(jpg) → 대표 그림(svg) → 색면.
+  // 앞의 것이 404든 뭐든 실패하면 다음으로 조용히 내려간다.
+  const chain = React.useMemo(
+    () => (image ? [image, ...stockCandidates(category, name)] : stockCandidates(category, name)),
+    [image, category, name],
+  )
+  const [step, setStep] = React.useState(0)
+  const src: string | null = chain[step] ?? null
+  const isStock = !!src && src !== image   // 등록 사진이 아니면 대표 이미지다
   return (
     <article onClick={onClick} className="min-w-0 cursor-pointer">
       <div className={`relative aspect-square overflow-hidden rounded-2xl ${tone.bg}`}>
@@ -204,7 +213,7 @@ function PlaceCard({
             <img
               src={src}
               alt=""
-              onError={() => setSrc(image && src !== stock ? stock : null)}
+              onError={() => setStep((s) => s + 1)}
               className="h-full w-full object-cover"
             />
             {isStock && (
