@@ -495,6 +495,158 @@ async def delete_offer_rule(
 
 
 # =========================================================
+# 메뉴판 사진 → 메뉴 목록
+#
+# 메뉴 30~80개를 이름·가격 손입력하라는 건 사장님이 가장 하기 싫어하는 일이다.
+# 배달앱은 주문이 들어오니까 그걸 시킬 수 있지만 우리는 아직 줄 게 없다.
+# 그래서 촬영 한 번으로 끝내게 한다.
+#
+# 저장은 하지 않는다. 뽑아낸 목록을 돌려주기만 하고, 사장님이 화면에서 확인·수정한
+# 뒤에 아래 bulk로 넣는다. 잘못 읽은 걸 조용히 저장해두면 손으로 지우게 되고
+# 그러면 손입력보다 나쁘다.
+# =========================================================
+
+_MENU_SCAN_MODEL = "gemini-3.1-flash-lite"   # 실제 메뉴판 23개를 100% 읽었다. pro가 필요 없다.
+_MENU_SCAN_PROMPT = """이 사진은 한국 식당의 메뉴판이다. 적혀 있는 메뉴를 전부 뽑아라.
+
+규칙:
+- name: 메뉴 이름 그대로. 괄호 주석이나 크기 표시는 name에 넣지 말고 note로 뺀다.
+- price: 원 단위 정수. 천 단위 구분자가 마침표일 수 있다('4.000'은 4000이다).
+  '1.5만'은 15000으로 환산한다. '시가'·'품절'처럼 숫자가 아니면 price를 null로
+  두고 note에 그 말을 적는다.
+- section: 메뉴판에 적힌 구역 이름(식사/주류 등). 없으면 null.
+- 한 메뉴에 크기별 가격이 여러 개면(대/중/소) 각각 한 줄로 나누고 note에 크기를 적는다.
+- 사진에 없는 메뉴를 지어내지 마라. 안 보이면 빼라.
+
+JSON만 출력한다. 설명 문장을 붙이지 마라.
+{"items":[{"name":"","price":0,"section":"","note":""}]}"""
+
+
+class MenuScanRequest(BaseModel):
+    image_base64: str                 # data URL 접두사는 붙어 있어도 된다
+    mime_type: str = "image/jpeg"
+
+
+@router.post("/stores/{store_id}/menus/scan")
+async def scan_menu_board(
+    store_id: int,
+    req: MenuScanRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    import base64 as _b64
+    import json as _json
+    import os as _os
+    import urllib.error as _uerr
+    import urllib.request as _ureq
+
+    _assert_store_owner(db, store_id, current_user)
+
+    key = _os.getenv("GEMINI_API_KEY")
+    if not key:
+        raise HTTPException(status_code=503, detail="이미지 인식 키가 설정되지 않았습니다.")
+
+    raw = req.image_base64
+    if "," in raw[:64] and raw.lstrip().startswith("data:"):
+        raw = raw.split(",", 1)[1]
+    try:
+        size = len(_b64.b64decode(raw, validate=False))
+    except Exception:
+        raise HTTPException(status_code=400, detail="이미지를 읽을 수 없습니다.")
+    if size > 8 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="사진이 너무 큽니다(8MB 이하).")
+
+    body = {
+        "contents": [{"parts": [
+            {"text": _MENU_SCAN_PROMPT},
+            {"inline_data": {"mime_type": req.mime_type or "image/jpeg", "data": raw}},
+        ]}],
+        "generationConfig": {"responseMimeType": "application/json"},
+    }
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{_MENU_SCAN_MODEL}:generateContent?key={key}")
+    try:
+        r = _ureq.urlopen(_ureq.Request(
+            url, data=_json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"}), timeout=120)
+        res = _json.load(r)
+    except _uerr.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:200]
+        print(f"[WARN] menu scan failed {e.code}: {detail}")
+        raise HTTPException(status_code=502, detail="사진을 읽지 못했습니다. 다시 시도해주세요.")
+    except Exception as e:
+        print(f"[WARN] menu scan error: {e}")
+        raise HTTPException(status_code=502, detail="사진을 읽지 못했습니다. 다시 시도해주세요.")
+
+    txt = ""
+    for c in res.get("candidates", []):
+        for p in c.get("content", {}).get("parts", []):
+            txt += p.get("text", "")
+    try:
+        parsed = _json.loads(txt)
+    except Exception:
+        raise HTTPException(status_code=502, detail="사진에서 메뉴를 찾지 못했습니다.")
+    # 모델이 {"items":[...]}로도 배열로도 돌려준다 — 둘 다 받는다
+    rows = parsed.get("items", []) if isinstance(parsed, dict) else parsed
+
+    items = []
+    for it in rows if isinstance(rows, list) else []:
+        name = str(it.get("name") or "").strip()
+        if not name:
+            continue
+        price = it.get("price")
+        items.append({
+            "name": name[:80],
+            "price": int(price) if isinstance(price, (int, float)) and price >= 0 else None,
+            "section": (str(it.get("section")).strip()[:40] if it.get("section") else None),
+            "note": (str(it.get("note")).strip()[:60] if it.get("note") else None),
+        })
+    return {"items": items, "model": _MENU_SCAN_MODEL}
+
+
+class MenuBulkRequest(BaseModel):
+    items: List[Dict[str, Any]]
+    replace: bool = False             # True면 기존 메뉴를 지우고 새로 넣는다
+
+
+@router.post("/stores/{store_id}/menus/bulk")
+async def create_menus_bulk(
+    store_id: int,
+    req: MenuBulkRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """확인을 마친 메뉴를 한 번에 넣는다. 23개를 한 건씩 보내면 왕복이 23번이다."""
+    _assert_store_owner(db, store_id, current_user)
+
+    rows = []
+    for it in req.items[:300]:
+        name = str(it.get("name") or "").strip()
+        if not name:
+            continue
+        price = it.get("price")
+        cat = str(it.get("category") or "MAIN").upper()
+        rows.append({
+            "store_id": str(store_id),
+            "name": name[:80],
+            "price": int(price) if isinstance(price, (int, float)) and price >= 0 else None,
+            "category": cat if cat in ("MAIN", "SIDE", "DRINK") else "MAIN",
+            "is_recommended": bool(it.get("is_recommended")),
+        })
+    if not rows:
+        raise HTTPException(status_code=400, detail="넣을 메뉴가 없습니다.")
+
+    if req.replace:
+        db.execute(text("DELETE FROM store_menus WHERE store_id = :sid"), {"sid": str(store_id)})
+    db.execute(text("""
+        INSERT INTO store_menus (store_id, name, price, category, is_recommended)
+        VALUES (:store_id, :name, :price, :category, :is_recommended)
+    """), rows)
+    db.commit()
+    return {"inserted": len(rows)}
+
+
+# =========================================================
 # Generic merchant resources (store_id text 키 테이블)
 # 컬럼 화이트리스트 기반 — 테이블/컬럼명은 코드 고정값, 값만 파라미터화(인젝션 안전).
 # 머천트 프론트의 supabase 직접 쓰기를 대체.
