@@ -1,5 +1,8 @@
 # node / next 프로젝트 공통
 node_modules/
+# E: 드라이브가 exFAT라 심볼릭 링크가 안 된다 → pnpm install이 링크 단계에서 죽고
+# 반쯤 만들어진 디렉터리가 남는다. npm으로 설치하므로 이건 그냥 잔해다.
+node_modules_pnpm_broken/
 .next/
 dist/
 out/

@@ -11,6 +11,7 @@ import React, { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Search, Sparkles, RotateCw, MapPin, Bookmark, ChevronRight, ChevronDown, BadgeCheck, Flame, Users, SlidersHorizontal, X, MessageCircle, Store, Clock, Armchair } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
+import { stockCandidates } from "@/lib/stock-image"
 import { TabBar } from "./tab-bar"
 
 const BRAND = "#F5A623"   // 가게·혜택 축
@@ -153,34 +154,9 @@ const toneOf = (seed: string) => {
   for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0
   return TONES[h % TONES.length]
 }
-// 업종 → 일반 사진 묶음. 쿠팡이츠처럼 등록 사진이 없으면 대표 이미지를 채운다.
-// 파일은 public/stock/{키}-{n}.jpg 규칙으로 두면 자동으로 붙고, 없으면 색면으로 떨어진다
-// (없는 상태로 배포해도 화면이 깨지지 않는다).
-// ★실제 가게 사진이 아니다★ — 메뉴를 짐작하게 하는 대표 이미지다.
-// 그래서 카드에 그 사실을 적는다. 안 적으면 "가보니 다르더라"로 신뢰를 잃는다.
-// 지금은 저장소에 있는 음식 사진만 쓰고, 업종별로 파일을 더 넣으면 자동으로 늘어난다.
-// 사진이 아니라 직접 그린 일러스트다 — 남의 사진을 받아오면 라이선스를 확인할 수 없고,
-// 실사를 쓰면 "가보니 다르더라"가 된다. public/stock/{업종}-{1~6}.svg, 업종당 6장.
-const STOCK_KEY: [RegExp, string][] = [
-  [/빵|베이커리|도넛|크루아상|베이글/, "bakery"],
-  [/카페|커피|디저트|케이크/, "cafe"],
-  [/일식|초밥|스시|라멘|돈카츠|우동|이자카야/, "japanese"],
-  [/중식|중국|마라|양꼬치|딤섬|짜장/, "chinese"],
-  [/양식|파스타|피자|스테이크|버거|브런치|외국|경양식/, "western"],
-  [/술|주점|포차|바|펍|호프|와인|맥주/, "pub"],
-  [/분식|떡볶이|김밥|만두|튀김/, "snack"],
-]
-const STOCK_N = 6
-/** 후보를 순서대로 준다 — 사진(jpg) → 그림(svg) → 없음(색면).
- *  Unsplash·Pexels처럼 상업적 이용이 명시된 곳에서 받은 사진을
- *  public/stock/{업종}-{1~6}.jpg 로 넣으면 코드를 안 고쳐도 그날부터 사진이 나온다. */
-const stockCandidates = (category: string | undefined, seed: string) => {
-  const key = STOCK_KEY.find(([re]) => re.test(category || ""))?.[1] || "korean"
-  let h = 0
-  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0
-  const n = (h % STOCK_N) + 1
-  return [`/stock/${key}-${n}.jpg`, `/stock/${key}-${n}.svg`]
-}
+// 등록 사진이 없는 가게에 붙일 대표 이미지는 lib/stock-image가 고른다.
+// 이름+업종을 같이 보고 24개 풀로 나눈다 — 업종만 보면 '한식'에 절반이 몰려서
+// 곱창집에 국밥 사진이 간다.
 
 function PlaceCard({
   name, category, address, image, badge, onClick,
@@ -193,7 +169,7 @@ function PlaceCard({
   // 등록 사진 → 대표 사진(jpg) → 대표 그림(svg) → 색면.
   // 앞의 것이 404든 뭐든 실패하면 다음으로 조용히 내려간다.
   const chain = React.useMemo(
-    () => (image ? [image, ...stockCandidates(category, name)] : stockCandidates(category, name)),
+    () => (image ? [image, ...stockCandidates(name, category)] : stockCandidates(name, category)),
     [image, category, name],
   )
   const [step, setStep] = React.useState(0)
@@ -217,9 +193,11 @@ function PlaceCard({
               className="h-full w-full object-cover"
             />
             {isStock && (
-              // 실제 그 가게 사진이 아니라는 걸 카드 안에서 말한다
-              <span className="absolute inset-x-0 bottom-0 bg-black/45 px-2 py-1 text-[9.5px] font-medium leading-tight text-white">
-                실제 가게 사진이 아닌 메뉴 대표 이미지입니다
+              // 실제 그 가게 사진이 아니라는 건 밝혀야 한다. 다만 검은 띠로 하단을
+              // 가로지르면 사진이 죽는다 — 카드 여섯 장에 검은 줄 여섯 개가 그어졌다.
+              // 작은 배지 하나로 줄이고, 자세한 설명은 사진 아래 회색 줄이 맡는다.
+              <span className="absolute right-1.5 bottom-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-[2px]">
+                대표 이미지
               </span>
             )}
           </>
@@ -235,6 +213,9 @@ function PlaceCard({
         {[area, category].filter(Boolean).join(" · ")}
       </div>
       <div className="mt-0.5 line-clamp-2 text-[13.5px] font-bold leading-snug text-slate-900">{name}</div>
+      {isStock && (
+        <div className="mt-0.5 text-[10px] text-slate-400">실제 가게 사진이 아닙니다</div>
+      )}
     </article>
   )
 }
