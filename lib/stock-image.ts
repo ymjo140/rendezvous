@@ -81,7 +81,7 @@ function hash(seed: string) {
  *  '인카페(in cafe)'는 업종이 '호프/통닭'이다. 둘을 한 문자열로 합쳐서 훑으면
  *  chicken이 cafe보다 위라서 치킨 사진이 갔다. '세계맥주3도씨'도 같은 이유로
  *  치킨이 됐다. 이름은 주인이 붙인 말이고 업종은 인허가 분류일 뿐이라, 이름이 먼저다. */
-export function stockKey(name: string, category?: string | null) {
+export function stockKey(name: string, category?: string | null, mainCategory?: string | null) {
   for (let i = 0; i < POOLS.length; i += 1) if (POOLS[i][0].test(name)) return POOLS[i][1]
   const cat = category || ""
   if (cat) {
@@ -90,13 +90,18 @@ export function stockKey(name: string, category?: string | null) {
       if (CATEGORY_ONLY[i][0].test(cat)) return CATEGORY_ONLY[i][1]
     }
   }
+  // 이름에도 업종에도 단서가 없을 때의 마지막 힌트.
+  // '그린하우스'는 이름이 말이 없고 업종이 '기타'라 한식으로 떨어져 반찬 사진이 갔는데,
+  // 실은 카페였다. '기타'만 2만 곳이라 이 한 줄이 꽤 많은 카드를 바로잡는다.
+  if (mainCategory === "CAFE") return "cafe"
+  if (mainCategory === "PUB") return "pub"
   return FALLBACK
 }
 
 /** 후보를 순서대로 준다 — 사진(jpg) → 그림(svg) → 없음(색면).
  *  앞의 것이 404든 뭐든 실패하면 다음으로 조용히 내려간다. */
-export function stockCandidates(name: string, category?: string | null) {
-  const key = stockKey(name, category)
+export function stockCandidates(name: string, category?: string | null, mainCategory?: string | null) {
+  const key = stockKey(name, category, mainCategory)
   const pool = PHOTO_ALIAS[key] || key
   const n = (hash(name) % PER_POOL) + 1
   return [`/stock/${pool}-${n}.jpg`, `/stock/${pool}-${n}.svg`]

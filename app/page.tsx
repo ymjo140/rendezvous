@@ -95,6 +95,8 @@ type CrewPlace = {
   id?: number; place_id?: number; name: string; category?: string; address?: string
   room_name?: string; reason?: string; factors?: { key?: string; label: string }[]
   image?: string | null
+  // 이름에도 업종에도 단서가 없을 때 대표 이미지를 고르는 마지막 힌트
+  main_category?: string | null
 }
 
 // ── 필터 정의 ────────────────────────────────────────────────
@@ -159,18 +161,21 @@ const toneOf = (seed: string) => {
 // 곱창집에 국밥 사진이 간다.
 
 function PlaceCard({
-  name, category, address, image, badge, onClick,
+  name, category, address, image, badge, mainCategory, onClick,
 }: {
   name: string; category?: string; address?: string | null; image?: string | null
-  badge?: string | null; onClick: () => void
+  badge?: string | null; mainCategory?: string | null; onClick: () => void
 }) {
   const tone = toneOf(name)
   const area = address ? address.split(" ").slice(1, 2).join("") : ""
   // 등록 사진 → 대표 사진(jpg) → 대표 그림(svg) → 색면.
   // 앞의 것이 404든 뭐든 실패하면 다음으로 조용히 내려간다.
   const chain = React.useMemo(
-    () => (image ? [image, ...stockCandidates(name, category)] : stockCandidates(name, category)),
-    [image, category, name],
+    () => {
+      const stock = stockCandidates(name, category, mainCategory)
+      return image ? [image, ...stock] : stock
+    },
+    [image, category, name, mainCategory],
   )
   const [step, setStep] = React.useState(0)
   const src: string | null = chain[step] ?? null
@@ -914,6 +919,7 @@ export default function HomeNextPage() {
                 category={p.category}
                 address={p.address}
                 image={p.image}
+                mainCategory={p.main_category}
                 badge={p.factors?.[0]?.label}
                 onClick={() => { const pid = p.place_id || p.id; if (pid) router.push(`/places/${pid}`) }}
               />
@@ -946,6 +952,7 @@ export default function HomeNextPage() {
                 category={p.category}
                 address={p.address}
                 image={p.image}
+                mainCategory={p.main_category}
                 onClick={() => { const pid = p.place_id || p.id; if (pid) router.push(`/places/${pid}`) }}
               />
             ))}

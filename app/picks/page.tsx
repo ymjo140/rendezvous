@@ -79,10 +79,15 @@ const CATEGORY_FILTERS = [
  *  다른 사진으로 보인다.
  *  56px라 "실제 가게 사진이 아닙니다"를 칸 안에 적을 수 없어서, 목록 위에 한 줄로
  *  대신 밝힌다(아래 STOCK_NOTE). */
-function Thumb({ name, category, image }: { name: string; category?: string | null; image?: string | null }) {
+function Thumb({ name, category, image, mainCategory }: {
+  name: string; category?: string | null; image?: string | null; mainCategory?: string | null
+}) {
   const chain = useMemo(
-    () => (image ? [image, ...stockCandidates(name, category)] : stockCandidates(name, category)),
-    [image, name, category],
+    () => {
+      const stock = stockCandidates(name, category, mainCategory)
+      return image ? [image, ...stock] : stock
+    },
+    [image, name, category, mainCategory],
   )
   const [step, setStep] = useState(0)
   const src: string | null = chain[step] ?? null
@@ -461,7 +466,7 @@ function PicksContent() {
                 className="w-full text-left flex items-start gap-3 px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50"
               >
                 <span className={`w-5 text-center text-sm font-extrabold pt-4 ${i < 3 ? "text-[#F5A623]" : "text-gray-300"}`}>{i + 1}</span>
-                <Thumb name={p.name} category={p.category} image={p.image} />
+                <Thumb name={p.name} category={p.category} image={p.image} mainCategory={p.main_category} />
                 <div className="flex-1 min-w-0">
                   <div className="font-bold text-sm text-gray-900 truncate">
                     {p.name}

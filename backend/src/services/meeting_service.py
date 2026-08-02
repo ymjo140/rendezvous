@@ -645,6 +645,10 @@ class MeetingService:
                         "name": p.name,
                         "address": p.address,
                         "category": p.category,
+                        # 프론트가 대표 이미지를 고를 때 마지막 힌트로 쓴다.
+                        # 이름에도 업종에도 단서가 없는 가게가 많다 — '기타'가 2만 곳이다.
+                        # 그럴 때 CAFE/PUB인 걸 알면 반찬 사진 대신 커피·맥주 사진이 간다.
+                        "main_category": getattr(p, "main_category", None),
                         "lat": float(p.location[0]),
                         "lng": float(p.location[1]),
                         "wemeet_rating": p.avg_rating,
