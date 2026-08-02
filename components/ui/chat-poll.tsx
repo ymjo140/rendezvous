@@ -324,12 +324,24 @@ type CrewPick = {
   recommended?: boolean        // 한 명 이상 자기 기준을 넘음. 아래쪽은 참고용으로 남긴다
 }
 
-// 합성 결과의 색조 — '1명만 맞아요'를 초록으로 칠하면 거짓말이 된다
+// 합성 결과의 색조 — '1명만 맞아요'를 초록으로 칠하면 거짓말이 된다.
+// 부분 만족을 앰버로 두면 AI 추천 뱃지와 같은 색이라 뭐가 강조인지 흐려진다 →
+// 앰버는 브랜드·선택에만 쓰고, 여기선 틸(전원) / 회색(부분) / 로즈(전무) 셋만.
 function reasonTone(kind?: string | null) {
   if (kind === "group_all") return "text-teal-700"
-  if (kind === "group_most") return "text-amber-700"
+  if (kind === "group_most") return "text-slate-600"
   if (kind === "group_weak" || kind === "group_none") return "text-rose-500"
-  return "text-gray-400"
+  return "text-slate-500"
+}
+
+// 주소에서 동만 뽑는다 — "서울특별시 강북구 숭인로 73 (미아동,1층)" → "미아동".
+// 전체 주소는 카드 한 줄을 먹는데 담을지 정하는 데는 안 쓰인다.
+function areaOf(addr?: string | null) {
+  if (!addr) return null
+  const m = addr.match(/\(([^),]+)/)
+  if (m) return m[1].trim()
+  const parts = addr.split(" ").filter(Boolean)
+  return parts.length >= 2 ? parts[1] : null
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -756,8 +768,10 @@ export function PlacePollComposer({
       )}
       {step === "picks" && (
         <div>
-          {/* 동네 탭 — 3곳을 오가며 담는다. 한 곳만 고르는 화면이 아니다 */}
-          <div className="flex gap-1.5 overflow-x-auto pb-2 -mx-1 px-1">
+          {/* 동네 탭 — 3곳을 오가며 담는다. 한 곳만 고르는 화면이 아니다.
+              세그먼트(회색 트랙 + 흰 알약)로 둔 이유: 카드마다 테두리를 주면
+              목록의 테두리와 겹쳐 화면이 격자처럼 보인다. */}
+          <div className="flex gap-1 rounded-full bg-slate-100 p-1 mb-3 overflow-x-auto">
             {regions.map((r, i) => {
               const on = i === regionIdx
               const n = chosen.filter((c) => c.region === i).length
@@ -766,43 +780,44 @@ export function PlacePollComposer({
                 <button
                   key={`${r.name}-${i}`}
                   onClick={() => openRegion(i)}
-                  className={`flex-shrink-0 rounded-xl border px-3 py-1.5 text-left transition-colors ${
-                    on ? "border-[#F5A623] bg-amber-50" : "border-gray-200 hover:bg-gray-50"
+                  className={`flex-1 min-w-[76px] rounded-full py-2 text-center transition-colors ${
+                    on ? "bg-white shadow-sm" : ""
                   }`}
                 >
-                  <div className={`text-xs font-bold ${on ? "text-amber-900" : "text-gray-700"}`}>
+                  <div className={`text-[13.5px] font-bold ${on ? "text-slate-900" : "text-slate-500"}`}>
                     {r.name}
-                    {n > 0 && (
-                      <span className="ml-1 rounded-full bg-[#F5A623] px-1.5 text-[9px] font-bold text-white">{n}</span>
-                    )}
+                    {n > 0 && <span className="ml-1 text-[11px] font-bold text-[#C2620F]">{n}</span>}
                   </div>
-                  {worst !== null && <div className="text-[9px] text-gray-400">먼 멤버 {worst}분</div>}
+                  {worst !== null && (
+                    <div className="text-[11px] font-medium text-slate-500">{worst}분</div>
+                  )}
                 </button>
               )
             })}
             <button
               onClick={() => setStep("search")}
-              className="flex-shrink-0 rounded-xl border border-dashed border-gray-200 px-3 py-1.5 text-xs text-gray-400"
+              className="flex-shrink-0 rounded-full px-3 py-2 text-[13px] font-bold text-slate-400"
             >
               + 동네
             </button>
           </div>
 
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <p className="text-xs text-gray-500">
-              {note}
-              {fromCrew && (
-                <span className={`block text-[11px] ${noneSatisfied ? "text-rose-500" : "text-gray-400"}`}>
-                  {noneSatisfied
-                    ? "이 동네엔 기준을 넘는 곳이 없어요. 다른 동네 탭을 눌러보세요."
-                    : "동네를 오가며 담을 수 있어요. 한 명이라도 맞는 곳을 취향 총합 순으로 놓았어요."}
-                </span>
-              )}
-            </p>
-            <button onClick={() => setStep("purpose")} className="text-[11px] text-gray-400 flex-shrink-0 underline">
+          <div className="flex items-baseline justify-between gap-2 mb-2">
+            <p className="text-[12px] font-medium text-slate-500 min-w-0 truncate">{note}</p>
+            <button
+              onClick={() => setStep("purpose")}
+              className="text-[12px] font-medium text-slate-500 flex-shrink-0 underline"
+            >
               목적 바꾸기
             </button>
           </div>
+          {fromCrew && (
+            <p className={`-mt-1 mb-2 text-[12px] font-medium ${noneSatisfied ? "text-rose-500" : "text-slate-400"}`}>
+              {noneSatisfied
+                ? "이 동네엔 기준을 넘는 곳이 없어요. 다른 동네 탭을 눌러보세요."
+                : "동네를 오가며 담을 수 있어요."}
+            </p>
+          )}
 
           {loadingRegion === regionIdx && (
             <div className="py-6 text-center">
@@ -816,64 +831,57 @@ export function PlacePollComposer({
               return (
                 <React.Fragment key={p.place_id ?? `i${i}`}>
                 {i === firstBelow && firstBelow > 0 && (
-                  <div className="flex items-center gap-2 pt-1.5 pb-0.5">
-                    <span className="h-px flex-1 bg-gray-100" />
-                    <span className="text-[10px] text-gray-400">여기부터는 기준 밖 · 직접 고를 수 있어요</span>
-                    <span className="h-px flex-1 bg-gray-100" />
+                  <div className="flex items-center gap-2 pt-2 pb-1">
+                    <span className="h-px flex-1 bg-slate-100" />
+                    <span className="text-[11px] font-medium text-slate-400">여기부터는 기준 밖</span>
+                    <span className="h-px flex-1 bg-slate-100" />
                   </div>
                 )}
-                {/* 담을지 말지 판단하려면 이름만으론 부족하다 — 사진·업종·주소·연차·
-                    이유를 한 줄에 놓고, 더 보고 싶으면 상세로 나간다.
+                {/* 세 줄 고정 — ①이름+AI ②취향 판정 ③업종·연차·동+상세.
+                    주소 전체는 뺐다(담을지 정하는 데 안 쓰이고 상세에 있다).
                     상세는 새 탭으로 연다. 여기서 이동하면 만들던 투표가 날아간다. */}
-                <div
-                  className={`rounded-xl border px-3 py-2 transition-colors ${
-                    on ? "border-[#F5A623] bg-amber-50" : "border-gray-200"
-                  }`}
-                >
-                  <div className="flex items-start gap-2">
-                    <button onClick={() => toggle(p)} className="flex flex-1 min-w-0 items-start gap-2 text-left">
-                      {/* 사진은 있을 때만 넣는다. 지금 places 12만 5천 곳 전부 hero_image가
-                          비어 있어(사장님이 올려야 채워진다) 빈 네모만 줄줄이 서면 자리 낭비다. */}
-                      {p.image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.image} alt="" className="w-11 h-11 rounded-lg object-cover flex-shrink-0 bg-gray-100" />
-                      ) : null}
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-xs font-bold text-gray-800 truncate">
-                          {p.recommended && (
-                            <span className="mr-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700">
-                              AI 추천
-                            </span>
-                          )}
-                          {p.name}
-                        </span>
-                        <span className="block text-[10px] text-gray-400 truncate">
-                          {[p.cuisine, p.years_open ? `${p.years_open}년째 영업` : null, p.address]
-                            .filter(Boolean).join(" · ")}
-                        </span>
-                        {(p.reason_me || p.reason) && (
-                          <span className={`block mt-0.5 text-[10px] font-bold ${reasonTone(p.reason_kind)}`}>
-                            {p.reason_me || p.reason}
+                <div className={`rounded-xl px-3 py-2.5 ${on ? "bg-amber-50 ring-1 ring-[#F5A623]" : "bg-slate-50"}`}>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => toggle(p)} className="min-w-0 flex-1 text-left">
+                      <span className="flex items-center gap-1.5">
+                        {p.recommended && (
+                          <span className="rounded-full bg-[#F5A623] px-1.5 py-[1px] text-[10px] font-bold text-white flex-shrink-0">
+                            AI
                           </span>
                         )}
+                        {/* 사진은 있을 때만. 지금 places 전부 hero_image가 비어 있다 */}
+                        {p.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={p.image} alt="" className="w-5 h-5 rounded object-cover flex-shrink-0" />
+                        ) : null}
+                        <span className="truncate text-[14px] font-bold text-slate-900">{p.name}</span>
+                      </span>
+                      {(p.reason_me || p.reason) && (
+                        <span className={`mt-1 block text-[12px] font-semibold leading-snug ${reasonTone(p.reason_kind)}`}>
+                          {p.reason_me || p.reason}
+                        </span>
+                      )}
+                      <span className="mt-1 block text-[11px] font-medium text-slate-500 truncate">
+                        {[p.cuisine, p.years_open ? `${p.years_open}년째` : null, areaOf(p.address)]
+                          .filter(Boolean).join(" · ")}
                       </span>
                     </button>
                     <button
                       onClick={() => toggle(p)}
-                      className={`w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                        on ? "bg-[#F5A623] border-[#F5A623] text-white" : "border-gray-200 text-transparent"
+                      className={`h-6 w-6 shrink-0 rounded-full flex items-center justify-center ${
+                        on ? "bg-[#F5A623] text-white" : "bg-white text-slate-300 ring-1 ring-slate-200"
                       }`}
                       aria-label={on ? "빼기" : "담기"}
                     >
-                      <Check className="w-3 h-3" />
+                      <Check className="w-3.5 h-3.5" />
                     </button>
                   </div>
                   {p.place_id && (
                     <button
                       onClick={() => window.open(`/places/${p.place_id}`, "_blank")}
-                      className="mt-1 text-[10px] font-bold text-sky-600"
+                      className="mt-1 text-[11px] font-bold text-[#C2620F]"
                     >
-                      사진·메뉴·리뷰 보기 →
+                      상세 ↗
                     </button>
                   )}
                 </div>
@@ -883,18 +891,18 @@ export function PlacePollComposer({
             {picks.length > shown && (
               <button
                 onClick={() => setShown((n) => n + 12)}
-                className="w-full rounded-xl border border-dashed border-gray-200 py-2 text-[11px] font-bold text-gray-500 hover:bg-gray-50"
+                className="w-full rounded-xl bg-slate-50 py-2.5 text-[12px] font-bold text-slate-500"
               >
                 더보기 ({picks.length - shown}곳 남음)
               </button>
             )}
           </div>
           {chosen.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
+            <div className="mt-3 flex flex-wrap gap-1">
               {chosen.map(({ region, pick: p }) => (
                 <span
                   key={pickKey(p)}
-                  className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                  className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-900"
                 >
                   {regions[region]?.name ? `${regions[region].name} · ` : ""}{p.name}
                 </span>
@@ -904,9 +912,9 @@ export function PlacePollComposer({
           <Button
             onClick={create}
             disabled={creating || chosen.length === 0}
-            className="w-full h-11 rounded-xl bg-[#F5A623] hover:bg-[#D97706] mt-3"
+            className="w-full h-12 rounded-xl bg-[#F5A623] hover:bg-[#D97706] mt-3 text-[15px] font-bold"
           >
-            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : `투표 올리기 (${chosen.length}곳)`}
+            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : "투표 올리기"}
           </Button>
         </div>
       )}

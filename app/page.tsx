@@ -60,7 +60,7 @@ function saveHomeCache() {
   }, 300)
 }
 
-const CREW = "#5B5BD6"    // 사람·크루 축 — 가게 카드와 한눈에 구분되도록 쿨톤
+const CREW = "#C2620F"    // 사람·크루 축 — 가게 카드와 한눈에 구분되도록 쿨톤
 
 // ── 타입 ─────────────────────────────────────────────────────
 type ListBy = { kind: "crew" | "curator"; id: string | number | null; name: string; icon: string; members?: number }
@@ -134,6 +134,99 @@ const FOOD_MATCH: Record<string, string[]> = {
   빵: ["빵", "베이커리", "베이글", "도넛", "크루아상"],
   술집: ["술집", "주점", "포차", "바", "펍", "호프", "와인", "맥주", "이자카야"],
   분식: ["분식", "떡볶이", "김밥", "만두", "튀김"],
+}
+
+// ── 가게 카드 ────────────────────────────────────────────────
+// 사진이 있으면 사진, 없으면 색면. 구조는 하나다 — 사진이 들어오는 순간
+// 같은 카드가 그대로 사진 카드가 된다(썸네일 자리만 바뀐다).
+// 지금 places 125,318곳 전부 hero_image가 비어 있어 대부분 색면으로 나온다.
+const TONES = [
+  { bg: "bg-amber-100", fg: "text-amber-900" },
+  { bg: "bg-orange-100", fg: "text-orange-900" },
+  { bg: "bg-stone-200", fg: "text-stone-800" },
+  { bg: "bg-rose-100", fg: "text-rose-900" },
+]
+/** 같은 가게는 늘 같은 색 — 새로고침마다 색이 바뀌면 어수선하다 */
+const toneOf = (seed: string) => {
+  let h = 0
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0
+  return TONES[h % TONES.length]
+}
+// 업종 → 일반 사진 묶음. 쿠팡이츠처럼 등록 사진이 없으면 대표 이미지를 채운다.
+// 파일은 public/stock/{키}-{n}.jpg 규칙으로 두면 자동으로 붙고, 없으면 색면으로 떨어진다
+// (없는 상태로 배포해도 화면이 깨지지 않는다).
+// ★실제 가게 사진이 아니다★ — 메뉴를 짐작하게 하는 대표 이미지다.
+// 그래서 카드에 그 사실을 적는다. 안 적으면 "가보니 다르더라"로 신뢰를 잃는다.
+// 지금은 저장소에 있는 음식 사진만 쓰고, 업종별로 파일을 더 넣으면 자동으로 늘어난다.
+// 사진이 아니라 직접 그린 일러스트다 — 남의 사진을 받아오면 라이선스를 확인할 수 없고,
+// 실사를 쓰면 "가보니 다르더라"가 된다. public/stock/{업종}-{1~6}.svg, 업종당 6장.
+const STOCK_KEY: [RegExp, string][] = [
+  [/빵|베이커리|도넛|크루아상|베이글/, "bakery"],
+  [/카페|커피|디저트|케이크/, "cafe"],
+  [/일식|초밥|스시|라멘|돈카츠|우동|이자카야/, "japanese"],
+  [/중식|중국|마라|양꼬치|딤섬|짜장/, "chinese"],
+  [/양식|파스타|피자|스테이크|버거|브런치|외국|경양식/, "western"],
+  [/술|주점|포차|바|펍|호프|와인|맥주/, "pub"],
+  [/분식|떡볶이|김밥|만두|튀김/, "snack"],
+]
+const STOCK_N = 6
+const stockOf = (category: string | undefined, seed: string) => {
+  const key = STOCK_KEY.find(([re]) => re.test(category || ""))?.[1] || "korean"
+  let h = 0
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0
+  return `/stock/${key}-${(h % STOCK_N) + 1}.svg`
+}
+
+function PlaceCard({
+  name, category, address, image, badge, onClick,
+}: {
+  name: string; category?: string; address?: string | null; image?: string | null
+  badge?: string | null; onClick: () => void
+}) {
+  const tone = toneOf(name)
+  const area = address ? address.split(" ").slice(1, 2).join("") : ""
+  // 등록 사진 → 대표 이미지 → 색면. 앞의 것이 실패하면 다음으로 조용히 내려간다.
+  const stock = stockOf(category, name)
+  const [src, setSrc] = React.useState<string | null>(image || stock)
+  const isStock = !!src && src === stock && !image
+  return (
+    <article onClick={onClick} className="min-w-0 cursor-pointer">
+      <div className={`relative aspect-square overflow-hidden rounded-2xl ${tone.bg}`}>
+        {badge && (
+          <span className="absolute left-2 top-2 z-10 rounded-md bg-[#F5A623] px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
+            {badge}
+          </span>
+        )}
+        {src ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt=""
+              onError={() => setSrc(image && src !== stock ? stock : null)}
+              className="h-full w-full object-cover"
+            />
+            {isStock && (
+              // 실제 그 가게 사진이 아니라는 걸 카드 안에서 말한다
+              <span className="absolute inset-x-0 bottom-0 bg-black/45 px-2 py-1 text-[9.5px] font-medium leading-tight text-white">
+                실제 가게 사진이 아닌 메뉴 대표 이미지입니다
+              </span>
+            )}
+          </>
+        ) : (
+          // 사진이 하나도 없을 때 — 이름을 크게 쓴다. 업종을 쓰면 '한식' 카드가
+          // 넷 연속으로 뜨고 색만 달라져 정보가 되지 않는다(실측으로 확인).
+          <span className={`absolute inset-x-3 bottom-3 line-clamp-2 text-[17px] font-black leading-tight ${tone.fg}`}>
+            {name}
+          </span>
+        )}
+      </div>
+      <div className="mt-2 truncate text-[11px] font-medium text-slate-500">
+        {[area, category].filter(Boolean).join(" · ")}
+      </div>
+      <div className="mt-0.5 line-clamp-2 text-[13.5px] font-bold leading-snug text-slate-900">{name}</div>
+    </article>
+  )
 }
 
 const catEmoji = (c?: string) => {
@@ -346,7 +439,7 @@ export default function HomeNextPage() {
     <span
       className={
         axis === "crew"
-          ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600"
+          ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700"
           : axis === "live"
             ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-rose-50 text-rose-500"
             : "flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600"
@@ -362,11 +455,11 @@ export default function HomeNextPage() {
         if (g.by.kind === "crew" && g.by.id) router.push(`/crew/${g.by.id}`)
         else if (g.folder_id > 0) router.push(`/lists/${g.folder_id}`)
       }}
-      className="w-[250px] shrink-0 cursor-pointer rounded-2xl border border-indigo-100 bg-indigo-50/30 p-3.5"
+      className="w-[250px] shrink-0 cursor-pointer rounded-2xl border border-amber-100 bg-amber-50/40 p-3.5"
     >
       <div className="flex items-center gap-2.5">
         {/* 사람 축은 원형 아바타 — 사각 썸네일의 가게 카드와 구분 */}
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl ring-2 ring-indigo-200">{g.by.icon}</div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl ring-2 ring-amber-200">{g.by.icon}</div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             <span className="truncate text-sm font-semibold text-gray-900">{g.by.name}</span>
@@ -375,7 +468,7 @@ export default function HomeNextPage() {
           <div className="text-[11px] text-gray-400">{g.by.kind === "crew" ? `멤버 ${g.by.members}명 · 크루` : "큐레이터"}</div>
         </div>
         {g.taste_ok && (
-          <span className="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">
+          <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
             취향 적중
           </span>
         )}
@@ -389,16 +482,16 @@ export default function HomeNextPage() {
         <Bookmark className="h-3 w-3" />{g.saves}
       </div>
       {g.reason && (
-        <p className="mt-1.5 text-[10.5px] leading-snug text-indigo-500">{g.reason}</p>
+        <p className="mt-1.5 text-[10.5px] leading-snug text-amber-700">{g.reason}</p>
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         {axis === "crew" && (g.shared_visits ?? 0) > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+          <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
             <MapPin className="h-2.5 w-2.5" />같은 가게 {g.shared_visits}곳 방문
           </span>
         )}
         {g.revisit > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+          <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
             <RotateCw className="h-2.5 w-2.5" />재방문 의사 {g.revisit}명
           </span>
         )}
@@ -488,7 +581,7 @@ export default function HomeNextPage() {
           데이터가 없으면 아래 섹션이 전부 비므로 여기서 다음 행동을 준다. */}
       {feedReady && filterCount === 0 && (feed.my_crews?.length ?? 0) === 0 && (
         <section className="px-4 pt-4">
-          <div className="rounded-3xl border border-indigo-100 bg-indigo-50/40 p-5">
+          <div className="rounded-3xl border border-amber-100 bg-amber-50/50 p-5">
             <div className="flex items-center gap-1.5">
               <Users className="h-4 w-4" style={{ color: CREW }} />
               <span className="text-[12px] font-bold" style={{ color: CREW }}>크루로 시작하기</span>
@@ -502,8 +595,8 @@ export default function HomeNextPage() {
             </p>
             <button
               onClick={() => router.push(feed.logged_in ? "/crew-new" : "/login")}
-              className="mt-3.5 w-full rounded-2xl py-3 text-[14px] font-bold text-white"
-              style={{ backgroundColor: CREW }}
+              className="mt-3.5 w-full rounded-2xl py-3.5 text-[15px] font-bold text-white"
+              style={{ backgroundColor: BRAND }}
             >
               {feed.logged_in ? "우리 크루 만들기" : "로그인하고 시작하기"}
             </button>
@@ -512,10 +605,9 @@ export default function HomeNextPage() {
           {(feed.crew_suggestions?.length ?? 0) > 0 && (
             <div className="mt-4">
               <div className="mb-2 flex items-center gap-1.5">
-                <SecMark axis="crew"><Users className="h-3.5 w-3.5" /></SecMark>
-                <h3 className="text-[15px] font-bold text-gray-900">이미 활동 중인 크루</h3>
-                <button onClick={() => router.push("/crews")} className="ml-auto text-[12px] font-semibold" style={{ color: CREW }}>
-                  전체 보기
+                <h3 className="text-[16px] font-bold text-slate-900">이미 활동 중인 크루</h3>
+                <button onClick={() => router.push("/crews")} className="ml-auto flex items-center text-[12px] font-semibold text-slate-400">
+                  더보기<ChevronRight className="h-4 w-4" />
                 </button>
               </div>
               <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
@@ -523,9 +615,9 @@ export default function HomeNextPage() {
                   <button
                     key={c.id}
                     onClick={() => router.push(`/crew/${c.id}`)}
-                    className="flex w-[168px] shrink-0 items-center gap-2.5 rounded-2xl border border-indigo-100 bg-white p-3 text-left"
+                    className="flex w-[168px] shrink-0 items-center gap-2.5 rounded-2xl border border-amber-100 bg-white p-3 text-left"
                   >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xl ring-2 ring-indigo-100">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-xl ring-2 ring-amber-100">
                       {c.icon}
                     </span>
                     <span className="min-w-0 flex-1">
@@ -608,7 +700,7 @@ export default function HomeNextPage() {
               const i = Math.round(el.scrollLeft / (el.clientWidth * 0.88))
               if (i !== rackIdx) setRackIdx(Math.max(0, Math.min(shownRacks.length - 1, i)))
             }}
-            className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-pl-4 px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {shownRacks.map((rack) => {
               const top = rack.items[0]
@@ -618,20 +710,21 @@ export default function HomeNextPage() {
                     onClick={() => router.push(`/browse?mode=tag&tag=${rack.tag}`)}
                     className="mb-2 flex w-full items-center gap-1.5"
                   >
-                    <span className="text-[17px]">{rack.emoji}</span>
-                    <h2 className="min-w-0 flex-1 truncate text-left text-[15px] font-bold text-gray-900">{rack.label}</h2>
-                    <span className="flex shrink-0 items-center text-[12px] font-semibold" style={{ color: CREW }}>
-                      전체 보기<ChevronRight className="h-4 w-4" />
+                    {/* 이모지를 섹션 아이콘으로 쓰면 기기마다 다르게 그려지고 크기·정렬이 안 맞는다.
+                        맥락은 라벨(글자)로 말하고, 아이콘 자리는 비운다. */}
+                    <h2 className="min-w-0 flex-1 truncate text-left text-[16px] font-bold text-slate-900">{rack.label}</h2>
+                    <span className="flex shrink-0 items-center text-[12px] font-semibold text-slate-400">
+                      더보기<ChevronRight className="h-4 w-4" />
                     </span>
                   </button>
 
                   {top ? (
                     <article
                       onClick={() => { if (top.folder_id > 0) router.push(`/lists/${top.folder_id}`) }}
-                      className="cursor-pointer rounded-2xl border border-indigo-100 bg-indigo-50/30 p-3.5"
+                      className="cursor-pointer rounded-2xl bg-slate-50 p-3.5"
                     >
                       <div className="flex items-center gap-2.5">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-xl ring-2 ring-indigo-200">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-xl ring-1 ring-slate-200">
                           {top.by.icon}
                         </div>
                         <div className="min-w-0 flex-1">
@@ -644,7 +737,7 @@ export default function HomeNextPage() {
                           </div>
                         </div>
                         {top.match !== null && (
-                          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
+                          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
                             {top.match}%
                           </span>
                         )}
@@ -658,7 +751,7 @@ export default function HomeNextPage() {
                         <Bookmark className="h-3 w-3" />{top.saves}
                       </div>
                       {top.revisit > 0 && (
-                        <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+                        <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
                           <RotateCw className="h-2.5 w-2.5" />재방문 의사 {top.revisit}명
                         </div>
                       )}
@@ -759,14 +852,14 @@ export default function HomeNextPage() {
                     <span className="flex items-center gap-1.5">
                       <b className="truncate text-[13px] font-semibold text-gray-900">{it.name}</b>
                       {it.taste_ok && (
-                        <em className="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold not-italic text-indigo-700">취향 적중</em>
+                        <em className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold not-italic text-amber-800">취향 적중</em>
                       )}
                     </span>
                     <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400">
                       <span className="truncate">by {it.by.name}</span>
                       <span>·</span><span className="shrink-0">{it.item_count}곳</span>
                       {isCrew && (it.shared_visits ?? 0) > 0 && (
-                        <span className="shrink-0 font-medium text-indigo-600">같은 가게 {it.shared_visits}곳</span>
+                        <span className="shrink-0 font-medium text-amber-700">같은 가게 {it.shared_visits}곳</span>
                       )}
                       {it.revisit > 0 && <span className="shrink-0 font-medium text-amber-700">🔁 {it.revisit}</span>}
                     </span>
@@ -809,30 +902,22 @@ export default function HomeNextPage() {
               </div>
             )}
           </div>
-          <p className="text-[11px] text-indigo-400">크루 취향·저장·재방문 기록으로 골랐어요</p>
-          <div className="mt-2.5 flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+          <p className="text-[12px] font-medium text-slate-500">크루 취향·저장·재방문 기록으로 골랐어요</p>
+          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-4">
             {shownCrewPlaces.length === 0 ? (
-              <div className="w-full rounded-2xl border-2 border-dashed border-gray-200 py-8 text-center text-[12px] text-gray-400">
+              <div className="col-span-2 rounded-2xl bg-slate-50 py-8 text-center text-[12px] font-medium text-slate-400">
                 이 크루 추천 중엔 필터에 맞는 곳이 없어요 — 필터를 빼면 다시 보여요
               </div>
-            ) : shownCrewPlaces.map((p, i) => (
-              <article
+            ) : shownCrewPlaces.slice(0, 6).map((p, i) => (
+              <PlaceCard
                 key={`${p.name}-${i}`}
+                name={p.name}
+                category={p.category}
+                address={p.address}
+                image={p.image}
+                badge={p.factors?.[0]?.label}
                 onClick={() => { const pid = p.place_id || p.id; if (pid) router.push(`/places/${pid}`) }}
-                className="w-[136px] shrink-0 cursor-pointer rounded-2xl border border-gray-100 p-2.5"
-              >
-                {p.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.image} alt="" className="h-[68px] w-full rounded-xl object-cover" />
-                ) : (
-                  <div className="flex h-[68px] w-full items-center justify-center rounded-xl bg-gray-50 text-3xl">{catEmoji(p.category)}</div>
-                )}
-                <div className="mt-1.5 truncate text-[12px] font-semibold text-gray-900">{p.name}</div>
-                <div className="truncate text-[10px] text-gray-400">{p.category || "맛집"}{p.address ? ` · ${p.address.split(" ").slice(1, 2)}` : ""}</div>
-                {p.factors && p.factors[0] && (
-                  <span className="mt-1 inline-block rounded-md bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-medium text-amber-700">{p.factors[0].label}</span>
-                )}
-              </article>
+              />
             ))}
           </div>
         </section>
@@ -842,35 +927,28 @@ export default function HomeNextPage() {
       {filterCount === 0 && myPlaces.length > 0 && (
         <section className="px-4 pt-5">
           <div className="mb-1 flex items-center justify-between">
-            <h2 className="flex items-center gap-1.5 text-[15px] font-bold text-gray-900">
-              <SecMark axis="me"><Store className="h-3.5 w-3.5" /></SecMark>오늘 뭐 먹지 — 내 입맛 추천
-            </h2>
+            <h2 className="text-[16px] font-bold text-slate-900">오늘 뭐 먹지</h2>
             <button
               onClick={() => {
                 try { sessionStorage.setItem("picks_view_state_v1", JSON.stringify({ tab: "taste", scrollY: 0 })) } catch { /* noop */ }
                 router.push("/picks")
               }}
-              className="text-[12px] font-semibold"
-              style={{ color: BRAND }}
-            >전체 보기</button>
+              className="flex items-center text-[12px] font-semibold text-slate-400"
+            >더보기<ChevronRight className="h-4 w-4" /></button>
           </div>
-          <p className="text-[11px] text-gray-400">저장·재방문 기록으로 고른 내 취향 맛집</p>
-          <div className="mt-2.5 flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
-            {myPlaces.filter((p) => foodTest(p.category)).slice(0, 12).map((p, i) => (
-              <article
+          <p className="text-[12px] font-medium text-slate-500">저장·재방문 기록으로 고른 내 취향 맛집</p>
+          {/* 가로 스크롤 → 2열 그리드. 스와이프는 한 화면에 여러 번 나오면 단조롭고,
+              작은 카드가 옆으로 흐르면 훑기만 하고 고르지 않는다. */}
+          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-4">
+            {myPlaces.filter((p) => foodTest(p.category)).slice(0, 6).map((p, i) => (
+              <PlaceCard
                 key={`${p.name}-${i}`}
+                name={p.name}
+                category={p.category}
+                address={p.address}
+                image={p.image}
                 onClick={() => { const pid = p.place_id || p.id; if (pid) router.push(`/places/${pid}`) }}
-                className="w-[136px] shrink-0 cursor-pointer rounded-2xl border border-gray-100 p-2.5"
-              >
-                {p.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.image} alt="" className="h-[68px] w-full rounded-xl object-cover" />
-                ) : (
-                  <div className="flex h-[68px] w-full items-center justify-center rounded-xl bg-gray-50 text-3xl">{catEmoji(`${p.category} ${p.name}`)}</div>
-                )}
-                <div className="mt-1.5 truncate text-[12px] font-semibold text-gray-900">{p.name}</div>
-                <div className="truncate text-[10px] text-gray-400">{p.category || "맛집"}{p.address ? ` · ${p.address.split(" ").slice(1, 2)}` : ""}</div>
-              </article>
+              />
             ))}
           </div>
         </section>
@@ -884,7 +962,7 @@ export default function HomeNextPage() {
             <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">우리 크루와 취향이 겹치는 크루</h2>
             <button onClick={() => router.push("/browse?mode=crew")} className="shrink-0 text-[12px] font-semibold" style={{ color: CREW }}>전체 보기</button>
           </div>
-          <p className="mb-2 text-[11px] text-indigo-400">우리 크루가 담은 곳·같이 다녀온 가게를 기준으로 골랐어요</p>
+          <p className="mb-2 text-[11px] text-slate-500">우리 크루가 담은 곳·같이 다녀온 가게를 기준으로 골랐어요</p>
           <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
             {crewLists.map((g) => <ListCardView key={g.folder_id} g={g} axis="crew" />)}
           </div>
@@ -899,7 +977,7 @@ export default function HomeNextPage() {
             <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-gray-900">내 입맛과 닮은 큐레이터</h2>
             <button onClick={() => router.push("/browse?mode=curator")} className="shrink-0 text-[12px] font-semibold" style={{ color: CREW }}>전체 보기</button>
           </div>
-          <p className="mb-2 text-[11px] text-indigo-400">내 저장·재방문 기록과 겹치는 사람들의 리스트예요</p>
+          <p className="mb-2 text-[11px] text-slate-500">내 저장·재방문 기록과 겹치는 사람들의 리스트예요</p>
           <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
             {curatorLists.map((g) => <ListCardView key={g.folder_id} g={g} />)}
           </div>
