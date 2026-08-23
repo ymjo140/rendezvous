@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ChevronLeft, Users, Heart, UserPlus, UserCheck, MapPin, ChevronRight, Loader2, Lock, List, Globe } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
+import { CrewKitchen } from "@/components/ui/crew-kitchen"
 
 type GList = {
   id: number
@@ -170,6 +171,8 @@ export default function GroupDetailPage() {
           </div>
         )}
       </div>
+
+      {groupId && <CrewKitchen groupId={groupId} />}
 
       {/* 모임의 맛집 리스트 */}
       <div className="px-4 py-4">

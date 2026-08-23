@@ -1,12 +1,14 @@
 "use client"
 
-// 🧪 [redesign/group-home] 하단 5탭 — 홈·지도·탐색·내 크루·프로필
-// 지도/탐색/프로필은 기존 탭 컴포넌트를 프로토타입 라우트에 직접 편입(외부 점프 없음).
+// 하단 5탭 — 홈·우리 크루·탐색·내 크루 목록·프로필
+// 지도 자리를 '우리 크루'가 대체한다. 지도 탭은 구 홈탭을 감싼 19줄 껍데기였고,
+// 중간지점 추천은 이미 채팅·투표 안에 있어서 탭이 없어도 흐름이 안 끊긴다.
+// 지도가 필요하면 내 크루에서 연다(/map은 라우트로 남겨둠).
 // 브랜드색 #F5A623 유지.
 
 import React from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { Compass, Map, LayoutGrid, Users, User } from "lucide-react"
+import { Compass, ChefHat, LayoutGrid, Users, User } from "lucide-react"
 
 const BRAND = "#F5A623"
 
@@ -16,7 +18,7 @@ export function TabBar() {
 
   const tabs = [
     { key: "home", label: "홈", icon: Compass, path: "/", exact: true },
-    { key: "map", label: "지도", icon: Map, path: "/map" },
+    { key: "kitchen", label: "우리 크루", icon: ChefHat, path: "/kitchen" },
     { key: "feed", label: "탐색", icon: LayoutGrid, path: "/feed" },
     { key: "crews", label: "내 크루", icon: Users, path: "/crews" },
     { key: "profile", label: "프로필", icon: User, path: "/profile" },

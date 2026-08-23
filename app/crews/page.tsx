@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Users, Plus, ChevronRight, Sparkles, MessageCircle, Share2, Handshake, CalendarCheck } from "lucide-react"
+import { Users, Plus, ChevronRight, Sparkles, MessageCircle, Share2, Handshake, CalendarCheck, Map as MapIcon } from "lucide-react"
 import { Copy, Check, X } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "../tab-bar"
@@ -138,6 +138,15 @@ export default function CrewsTabPage() {
                     <Share2 className="h-3.5 w-3.5" />초대
                   </button>
                 </div>
+
+                {/* 🗺️ 지도 — 탭에서 내려온 자리. 장소를 찾을 때 쓰는 도구지 목적지가 아니라
+                    탭 하나를 차지할 이유가 없었다. 크루에서 열면 맥락도 더 맞다. */}
+                <button
+                  onClick={() => router.push("/map")}
+                  className="mt-1.5 flex w-full items-center justify-center gap-1 rounded-xl border border-slate-200 py-2 text-[11.5px] font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  <MapIcon className="h-3.5 w-3.5" />지도에서 찾아보기
+                </button>
 
                 {/* 방문 히스토리 · 지출 (분담 결제 완료 건 집계) + 제휴 관리 */}
                 <div className="mt-2.5 grid grid-cols-3 gap-2">

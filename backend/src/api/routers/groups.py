@@ -351,3 +351,71 @@ def save_place_to_group(cid: str, req: dict, user: Optional[models.User] = Depen
     taste_service.mark_dirty(db, user.id)
     db.commit()
     return {"folder_id": folder.id, "folder_name": folder.name, "item_count": cnt, "saved": exists is None}
+
+
+# ── 크루 주방 ─────────────────────────────────────────────────
+# 같이 간 기록이 '우리 가게'로 쌓인다. 정하고 끝나던 제품에 다시 열 이유를 만든다.
+# 상태 테이블이 없어서 지난 방문도 소급 적용된다 — services/crew_kitchen_service.py 참고.
+
+@router.get("/api/groups/{cid}/kitchen")
+def crew_kitchen(cid: str, user: Optional[models.User] = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """우리 가게 — 등급·해금한 메뉴·단골집."""
+    from services import crew_kitchen_service as kitchen
+
+    c = db.query(models.Community).filter(models.Community.id == cid).first()
+    if c is None:
+        raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
+    # 비공개 모임의 주방은 멤버만 본다. 공개 모임은 남도 구경할 수 있어야
+    # '다른 크루 리스트 보기' 미션이 돌아간다.
+    if (c.visibility or "private") == "private" and not _is_member(c, user):
+        raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
+
+    data = kitchen.get_kitchen(db, cid)
+    data["title"] = c.title
+    data["icon"] = c.icon
+    data["is_member"] = _is_member(c, user)
+    # 화면에 크루 멤버를 캐릭터로 세운다 — 우리 공간이라는 게 사람으로 보여야 한다
+    ids = _members(c)
+    if ids:
+        rows = (db.query(models.User.id, models.User.name, models.User.avatar)
+                  .filter(models.User.id.in_(ids)).all())
+        by = {r[0]: r for r in rows}
+        data["members"] = [
+            {"id": i,
+             "name": (by[i][1] if i in by else None) or "멤버",
+             "avatar": (by[i][2] if i in by else None) or "🙂",
+             "is_host": i == c.host_id}
+            for i in ids if i in by
+        ][:8]     # 8명 넘어가면 지면에 다 못 세운다
+    else:
+        data["members"] = []
+    return data
+
+
+@router.get("/api/groups/{cid}/missions")
+def crew_missions(cid: str, user: models.User = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """미션 — 계단 3개(일회성) + 주간 3개(반복)."""
+    from services import crew_kitchen_service as kitchen
+
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    c = db.query(models.Community).filter(models.Community.id == cid).first()
+    if c is None or not _is_member(c, user):
+        raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
+    return kitchen.get_missions(db, cid, user.id)
+
+
+@router.get("/api/groups/{cid}/showcase")
+def crew_showcase(cid: str, user: Optional[models.User] = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """크루의 얼굴 — 리스트·방문기록·게시물. 놀러온 사람도 본다."""
+    from services import crew_kitchen_service as kitchen
+
+    c = db.query(models.Community).filter(models.Community.id == cid).first()
+    if c is None:
+        raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
+    if (c.visibility or "private") == "private" and not _is_member(c, user):
+        raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
+    return kitchen.get_showcase(db, cid, _members(c))
