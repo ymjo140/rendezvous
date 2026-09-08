@@ -17,7 +17,7 @@ type Benefit = {
   conditions?: DealConditions
 }
 type Blocked = {
-  reason: "limit" | "expired" | "members" | "days" | "time" | "party"
+  reason: "limit" | "expired" | "members" | "days" | "time" | "party" | "unavailable"
   title: string; monthly_uses?: number | null; max_members?: number | null
   conditions?: DealConditions
 }
@@ -55,6 +55,8 @@ const DOW_KO: Record<string, string> = {
 function blockedText(b: Blocked): string {
   const c = b.conditions || {}
   switch (b.reason) {
+    case "unavailable":
+      return "제휴 혜택 사용은 준비 중이에요. 방문 기록은 저장됩니다."
     case "limit":
       return `이번 달 한도(${b.monthly_uses}회)를 다 썼어요 · 다음 달 1일에 초기화돼요`
     case "expired":

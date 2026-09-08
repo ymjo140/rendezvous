@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from domain import models
 from repositories.coin_repository import CoinRepository
 from schemas import coins as schemas
+from services.payment_policy import can_mock_charge, require_mock_charge, require_cash_payments
 
 # 지도 보물찾기 하루 최대 획득 횟수(남용 방지)
 MAP_LOOT_DAILY_CAP = 20
@@ -16,7 +17,10 @@ class CoinService:
 
     def get_wallet_info(self, db: Session, user: models.User):
         history = self.repo.get_history(db, user.id)
-        return {"balance": user.wallet_balance, "history": history}
+        can_charge = can_mock_charge(user)
+        return {"balance": user.wallet_balance or 0, "history": history,
+                "can_charge": can_charge, "can_pay": False,
+                "mode": "test" if can_charge else "disabled"}
 
     @staticmethod
     def charge_bonus(amount: int) -> int:
@@ -31,11 +35,11 @@ class CoinService:
         return 0
 
     def charge_coins(self, db: Session, user: models.User, req: schemas.CoinChargeRequest):
-        # 실제 PG사 연동 로직이 들어갈 자리 (여기선 성공 가정)
+        require_mock_charge(user)
         try:
             bonus = self.charge_bonus(req.amount)
             user.wallet_balance = (user.wallet_balance or 0) + req.amount + bonus
-            self.repo.create_history(db, user.id, req.amount, "charge", f"{req.payment_method} 충전")
+            self.repo.create_history(db, user.id, req.amount, "mock_charge", "테스트 캐시 충전 (결제 불가)")
             if bonus > 0:
                 self.repo.create_history(db, user.id, bonus, "reward", f"충전 보너스 (+{bonus}원)")
             db.commit()
@@ -51,6 +55,7 @@ class CoinService:
             raise HTTPException(status_code=500, detail="Transaction failed")
 
     def use_coins(self, db: Session, user: models.User, req: schemas.CoinUsageRequest):
+        require_cash_payments()
         if user.wallet_balance < req.amount:
             raise HTTPException(status_code=400, detail="Insufficient balance")
         
@@ -65,6 +70,7 @@ class CoinService:
             
     def loot_coin(self, db: Session, user: models.User, lat: float, lng: float):
         """지도에서 보물상자 열기 (하루 획득 횟수 제한 — 무한 적립 남용 방지)."""
+        require_mock_charge(user)
         today_count = (
             db.query(models.CoinHistory)
             .filter(

@@ -2,10 +2,18 @@
   "name": "my-v0-project",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@11.9.0",
+  "engines": {
+    "node": "24.x",
+    "npm": "11.x"
+  },
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 93",
+    "typecheck": "next typegen && tsc --noEmit --incremental false",
+    "check": "npm run lint && npm run typecheck",
+    "test:backend": "python -m pytest backend/tests",
     "start": "next start"
   },
   "dependencies": {
@@ -50,18 +58,18 @@
     "framer-motion": "^12.23.25",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
-    "next": "16.0.10",
+    "next": "16.3.4",
     "next-themes": "^0.4.6",
-    "react": "^19.2.1",
+    "react": "19.2.8",
     "react-day-picker": "9.8.0",
-    "react-dom": "^19.2.1",
+    "react-dom": "19.2.8",
     "react-hook-form": "^7.60.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.4",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.0",
     "three": "^0.181.2",
-    "vaul": "^0.9.9",
+    "vaul": "1.1.2",
     "zod": "3.25.76"
   },
   "devDependencies": {
@@ -70,6 +78,8 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.22",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.4",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from domain import models
 from api.dependencies import get_current_user
+from services.payment_policy import require_cash_payments
 from api.routers.chat import manager, _require_member_helper, kst_hhmm
 
 router = APIRouter()
@@ -128,6 +129,7 @@ async def create_split(
 ):
     if current_user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    require_cash_payments()
     _require_member_helper(db, room_id, current_user.id)
 
     place_name = str(req.get("place_name") or "").strip()
@@ -195,9 +197,12 @@ def get_split(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     split = db.query(models.ChatSplitRequest).filter(models.ChatSplitRequest.id == split_id).first()
     if not split:
         raise HTTPException(status_code=404, detail="분담 요청을 찾을 수 없어요.")
+    _require_member_helper(db, split.room_id, current_user.id)
     _lazy_expire(db, split)
     return _serialize_split(db, split)
 
@@ -211,6 +216,7 @@ async def pay_split(
 ):
     if current_user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    require_cash_payments()
     split = db.query(models.ChatSplitRequest).filter(models.ChatSplitRequest.id == split_id).first()
     if not split:
         raise HTTPException(status_code=404, detail="분담 요청을 찾을 수 없어요.")

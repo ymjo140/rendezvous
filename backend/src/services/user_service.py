@@ -171,6 +171,8 @@ class UserService:
         return self.repo.get_all_items(db)
 
     def buy_item(self, db: Session, user: models.User, req: schemas.BuyRequest):
+        from services.payment_policy import require_cash_payments
+        require_cash_payments()
         item = self.repo.get_item_by_id(db, req.item_id)
         if not item: raise HTTPException(404, "아이템 없음")
         

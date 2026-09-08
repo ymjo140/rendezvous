@@ -236,19 +236,26 @@ def get_missions(db: Session, community_id: str, user_id: int) -> Dict[str, Any]
 # 좁힌다. 멤버 게시물을 전부 끌어오면 크루와 무관한 개인 글이 섞이고, 스키마를 바꾸면
 # 마이그레이션이 따라온다. 이 조건이면 둘 다 피하면서 '우리 기록'이 맞다.
 
-def get_showcase(db: Session, community_id: str, member_ids: list, limit: int = 12) -> dict:
+def get_showcase(db: Session, community_id: str, member_ids: list, limit: int = 12,
+                 *, include_private_lists: bool = False, include_activity: bool = False) -> dict:
+    from domain import models
+    from services.crew_access import public_folder_clause
+
     cid = str(community_id)
 
     lists = [{
         "id": r[0], "name": r[1], "description": r[2],
         "count": int(r[3] or 0), "is_public": bool(r[4]), "cover_image": r[5],
-    } for r in db.execute(text("""
-        SELECT f.id, f.name, f.description, f.item_count, f.is_public, f.cover_image
-        FROM save_folders f
-        WHERE f.community_id = :cid
-        ORDER BY f.item_count DESC NULLS LAST, f.id
-        LIMIT :n
-    """), {"cid": cid, "n": limit}).all()]
+    } for r in (db.query(models.SaveFolder.id, models.SaveFolder.name,
+                        models.SaveFolder.description, models.SaveFolder.item_count,
+                        models.SaveFolder.is_public, models.SaveFolder.cover_image)
+                .filter(models.SaveFolder.community_id == cid)
+                .filter(True if include_private_lists else public_folder_clause())
+                .order_by(models.SaveFolder.item_count.desc().nullslast(), models.SaveFolder.id)
+                .limit(limit).all())]
+
+    if not include_activity:
+        return {"lists": lists, "visits": [], "posts": []}
 
     # 방문기록 — 같은 날 여러 번 찍어도 1회로 센다(모델 주석 참고)
     visits = [{
@@ -274,16 +281,13 @@ def get_showcase(db: Session, community_id: str, member_ids: list, limit: int = 
             "id": r[0], "content": r[1], "image": (r[2] or [None])[0] if r[2] else None,
             "place_name": r[3], "author": r[4], "created_at": str(r[5]),
             "likes": int(r[6] or 0),
-        } for r in db.execute(text("""
-            SELECT po.id, po.content, po.image_urls, pl.name, u.name,
-                   po.created_at, po.likes_count
-            FROM posts po
-            JOIN places pl ON pl.id = po.place_id
-            JOIN users u ON u.id = po.user_id
-            WHERE po.user_id = ANY(:uids) AND po.place_id = ANY(:pids)
-              AND COALESCE(po.is_public, TRUE)
-            ORDER BY po.created_at DESC
-            LIMIT :n
-        """), {"uids": list(member_ids), "pids": place_ids, "n": limit}).all()]
+        } for r in (db.query(models.Post.id, models.Post.content, models.Post.image_urls,
+                            models.Place.name, models.User.name, models.Post.created_at,
+                            models.Post.likes_count)
+                    .join(models.Place, models.Place.id == models.Post.place_id)
+                    .join(models.User, models.User.id == models.Post.user_id)
+                    .filter(models.Post.user_id.in_(member_ids), models.Post.place_id.in_(place_ids),
+                            models.Post.is_public.is_(True))
+                    .order_by(models.Post.created_at.desc()).limit(limit).all())]
 
     return {"lists": lists, "visits": visits, "posts": posts}

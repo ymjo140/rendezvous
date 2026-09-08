@@ -6,6 +6,7 @@ from domain import models
 from services import taste_service
 from repositories.coin_repository import CoinRepository
 from schemas import reservation as schemas
+from services.payment_policy import require_cash_payments
 
 
 class ReservationService:
@@ -27,6 +28,8 @@ class ReservationService:
 
     def create(self, db: Session, user: models.User, req: schemas.ReservationCreate):
         deposit = max(0, int(req.deposit_amount or 0))
+        if deposit > 0 or getattr(req, "offer_rule_id", None):
+            require_cash_payments()
         if deposit > 0 and (user.wallet_balance or 0) < deposit:
             raise HTTPException(status_code=400, detail="캐시 잔액이 부족합니다. 충전 후 이용해주세요.")
 

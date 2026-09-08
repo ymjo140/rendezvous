@@ -16,6 +16,9 @@ export type CashHistory = {
 export type WalletInfo = {
   balance: number
   history: CashHistory[]
+  can_charge?: boolean
+  can_pay?: boolean
+  mode?: "disabled" | "test"
 }
 
 export async function getWallet(): Promise<WalletInfo> {
@@ -33,7 +36,10 @@ export async function chargeCash(
     method: "POST",
     body: JSON.stringify({ amount, payment_method: paymentMethod }),
   })
-  if (!res.ok) throw new Error("충전 실패")
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(typeof data?.detail === "string" ? data.detail : "충전에 실패했어요.")
+  }
   return res.json()
 }
 

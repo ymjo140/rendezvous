@@ -56,13 +56,14 @@ export function CashWalletCard() {
   }, [])
 
   const handleCharge = async (amount: number) => {
+    if (!wallet.can_charge) return
     setCharging(amount)
     try {
       await chargeCash(amount)
       await refresh()
       setChargeOpen(false)
-    } catch {
-      alert("충전에 실패했어요. 잠시 후 다시 시도해주세요.")
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "충전에 실패했어요.")
     } finally {
       setCharging(null)
     }
@@ -104,14 +105,13 @@ export function CashWalletCard() {
                 <Wallet className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-[#F5A623]">충전 캐시</div>
+                <div className="text-[11px] font-bold text-[#F5A623]">{wallet.mode === "test" ? "테스트 캐시" : "보관 중인 캐시"}</div>
                 <div className="text-xl font-bold text-gray-900">
                   {loading ? "—" : won(wallet.balance)}
                 </div>
               </div>
             </div>
-            {/* 스토어 심사용 스위치: Vercel env NEXT_PUBLIC_HIDE_TOPUP=1 이면 모의 충전 숨김(실 PG 전까지) */}
-            {process.env.NEXT_PUBLIC_HIDE_TOPUP === "1" ? (
+            {!wallet.can_charge || process.env.NEXT_PUBLIC_HIDE_TOPUP === "1" ? (
               <span className="text-[10px] text-gray-400 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1.5">
                 충전은 정식 오픈 때 열려요
               </span>
@@ -126,7 +126,7 @@ export function CashWalletCard() {
             )}
           </div>
           <div className="mt-3 flex items-center justify-between">
-            <p className="text-[11px] text-gray-400">예약할 때 캐시로 결제하고, 취소하면 자동 환불돼요.</p>
+            <p className="text-[11px] text-gray-400">캐시 결제 준비 중 · 기존 잔액과 내역은 보관돼요.</p>
             <button
               onClick={() => setHistoryOpen(true)}
               className="text-[11px] font-medium text-gray-500 hover:text-[#F5A623] flex items-center gap-1"
@@ -198,7 +198,7 @@ export function CashWalletCard() {
           <DialogHeader>
             <DialogTitle>캐시 충전</DialogTitle>
             <DialogDescription className="text-xs">
-              충전한 캐시로 예약을 결제할 수 있어요. (현재 잔액 {won(wallet.balance)})
+              테스트용 캐시이며 예약 결제나 실제 혜택에 사용할 수 없어요. (현재 잔액 {won(wallet.balance)})
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-2 py-2">
@@ -208,7 +208,7 @@ export function CashWalletCard() {
                 <Button
                   key={amt}
                   variant="outline"
-                  disabled={charging !== null}
+                  disabled={!wallet.can_charge || charging !== null}
                   onClick={() => handleCharge(amt)}
                   className="h-16 rounded-xl flex flex-col gap-0.5 border-gray-200 hover:border-[#F5A623] hover:text-[#F5A623]"
                 >

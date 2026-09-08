@@ -23,8 +23,9 @@ from core.database import get_db
 from domain import models
 from services import taste_service
 from services import visit_service
-from services import taste_service
 from services import query_interpreter
+from services.crew_access import public_folder_clause, members as crew_members, is_member
+from services.payment_policy import partnership_redemption_enabled
 from api.dependencies import get_current_user
 
 router = APIRouter()
@@ -212,7 +213,7 @@ def home_feed(
     # ── 공개 리스트 후보 (담기 수 상위 위주로 제한해 임베딩 비용 억제) ──
     folders = (
         db.query(models.SaveFolder)
-        .filter(models.SaveFolder.is_public == True, models.SaveFolder.item_count > 0)  # noqa: E712
+        .filter(public_folder_clause(), models.SaveFolder.item_count > 0)  # noqa: E712
         .all()
     )
     if uid:
@@ -343,6 +344,7 @@ def home_feed(
     my_crews, crew_suggestions = [], []
     communities = db.query(models.Community).all()
     crew_list_cnt: dict[str, int] = {}
+    public_list_cnt: dict[str, int] = {}
     if communities:
         crew_list_cnt = dict(
             db.query(models.SaveFolder.community_id, func.count(models.SaveFolder.id))
@@ -350,16 +352,22 @@ def home_feed(
             .group_by(models.SaveFolder.community_id)
             .all()
         )
+        public_list_cnt = dict(
+            db.query(models.SaveFolder.community_id, func.count(models.SaveFolder.id))
+            .filter(models.SaveFolder.community_id.isnot(None), public_folder_clause())
+            .group_by(models.SaveFolder.community_id).all()
+        )
     for c in communities:
-        members = c.member_ids or []
+        members = crew_members(c)
+        member = is_member(c, user)
         entry = {
             "id": c.id, "title": c.title, "icon": c.icon or "👥",
-            "members": len(members), "lists": int(crew_list_cnt.get(c.id, 0)),
+            "members": len(members), "lists": int((crew_list_cnt if member else public_list_cnt).get(c.id, 0)),
             "visibility": c.visibility or "private",
             "crew_type": getattr(c, "crew_type", None) or "friends",
             "org_name": getattr(c, "org_name", None),
         }
-        if uid and uid in members:
+        if member:
             my_crews.append(entry)
         elif (c.visibility or "private") in ("public", "open", "list_only") and entry["lists"] > 0:
             crew_suggestions.append(entry)
@@ -776,7 +784,7 @@ def home_search(
 
     folders = (
         db.query(models.SaveFolder)
-        .filter(models.SaveFolder.is_public == True, models.SaveFolder.item_count > 0)  # noqa: E712
+        .filter(public_folder_clause(), models.SaveFolder.item_count > 0)  # noqa: E712
         .all()
     )
     if uid:
@@ -1734,6 +1742,9 @@ def _crew_deal_at(db: Session, place_id: int, community_id: str,
         },
         "blocked": None,
     }
+    if not partnership_redemption_enabled():
+        out["blocked"] = "unavailable"
+        return out
 
     # 만료 — 스냅샷 기준(딜을 연장해도 이 제휴의 약속 기간은 그대로)
     exp = terms.get("expires_at") or (deal.expires_at.isoformat() if deal and deal.expires_at else None)
@@ -1907,7 +1918,7 @@ def create_checkin(
             "id": dup.id, "already": True, "crew_visits": stats["visits"],
             # 오늘 이미 찍었어도 확인증은 다시 보여준다(계산할 때 다시 열어야 하므로)
             "issued_at": datetime.now().isoformat(),
-            "benefit": prev if (prev and getattr(dup, "partnership_app_id", None)) else None,
+            "benefit": prev if (prev and not prev.get("blocked") and getattr(dup, "partnership_app_id", None)) else None,
             "benefit_blocked": ({"reason": prev["blocked"], "title": prev["title"],
                                  "monthly_uses": prev.get("monthly_uses"),
                                  "max_members": prev.get("max_members"),

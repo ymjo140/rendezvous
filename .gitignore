@@ -10,6 +10,7 @@ out/
 # 환경 변수
 .env
 .env.*
+!.env.example
 
 # 기타 캐시
 npm-debug.log*
@@ -21,6 +22,9 @@ yarn-error.log*
 
 # 로컬 타입체크용(옆 레포 node_modules를 빌려 씀 — 절대경로라 이 PC 전용)
 tsconfig.typecheck.json
+*.tsbuildinfo
+.venv/
+.pytest_cache/
 
 # python venv (백엔드 의존성은 requirements.txt로)
 backend/venv/

@@ -17,6 +17,7 @@ from core.database import get_db
 from domain import models
 from services import taste_service
 from api.dependencies import get_current_user
+from services.crew_access import is_member
 
 router = APIRouter()
 
@@ -166,6 +167,12 @@ def is_system_folder(folder: models.SaveFolder) -> bool:
     return bool(folder.is_default or getattr(folder, "system_kind", None))
 
 
+def _still_owns_folder(db, folder, user):
+    return bool(folder and folder.user_id == user.id and (
+        not folder.community_id or is_member(db.get(models.Community, folder.community_id), user)
+    ))
+
+
 # === 폴더 API ===
 
 @router.get("/api/folders", response_model=List[FolderResponse])
@@ -186,6 +193,7 @@ def get_folders(
         .order_by(desc(models.SaveFolder.is_default), models.SaveFolder.created_at)\
         .all()
 
+    folders = [f for f in folders if _still_owns_folder(db, f, current_user)]
     # item_count는 저장된 카운터가 어긋날 수 있으므로 실제 항목 수로 계산(0으로 뜨던 버그 방지)
     counts = {}
     if folders:
@@ -263,7 +271,7 @@ def update_folder(
         models.SaveFolder.user_id == current_user.id
     ).first()
     
-    if not folder:
+    if not _still_owns_folder(db, folder, current_user):
         raise HTTPException(status_code=404, detail="폴더를 찾을 수 없습니다.")
     
     if is_system_folder(folder):
@@ -311,7 +319,7 @@ def delete_folder(
         models.SaveFolder.user_id == current_user.id
     ).first()
     
-    if not folder:
+    if not _still_owns_folder(db, folder, current_user):
         raise HTTPException(status_code=404, detail="폴더를 찾을 수 없습니다.")
     
     if is_system_folder(folder):
@@ -339,6 +347,7 @@ def my_map_places(
         )\
         .order_by(desc(models.SaveFolder.is_default), models.SaveFolder.created_at)\
         .all()
+    folders = [f for f in folders if _still_owns_folder(db, f, current_user)]
     if not folders:
         return {"folders": []}
     rows = (
@@ -380,7 +389,7 @@ def get_folder_items(
         models.SaveFolder.user_id == current_user.id
     ).first()
     
-    if not folder:
+    if not _still_owns_folder(db, folder, current_user):
         raise HTTPException(status_code=404, detail="폴더를 찾을 수 없습니다.")
     
     items = db.query(models.SavedItem)\
@@ -434,7 +443,7 @@ def save_item(
         models.SaveFolder.user_id == current_user.id
     ).first()
     
-    if not folder:
+    if not _still_owns_folder(db, folder, current_user):
         raise HTTPException(status_code=404, detail="폴더를 찾을 수 없습니다.")
     
     # 유효성 검사
