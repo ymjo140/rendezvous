@@ -1029,7 +1029,7 @@ export function MyPageTab() {
                             <Badge variant="secondary" className="bg-gray-50 text-gray-500 font-normal text-[10px]">분위기 {review.score_vibe}</Badge>
                         </div>
                         <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 p-3 rounded-xl">
-                            "{review.comment}"
+                            “{review.comment}”
                         </p>
                     </div>
                   )) : (
@@ -1588,5 +1588,4 @@ export function MyPageTab() {
     </div>
   )
 }
-
 

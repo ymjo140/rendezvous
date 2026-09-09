@@ -12,27 +12,16 @@ from core.database import get_db
 from domain import models
 from services import taste_service
 from api.dependencies import get_current_user
+from services.crew_access import (
+    VISIBLE, ALLOWED_VIS, members as _members, is_member as _is_member,
+    require_crew, can_view_activity, public_folder_clause,
+)
 
 router = APIRouter()
 
-VISIBLE = ("list_only", "public", "open")   # 탐색 노출되는 수준
-ALLOWED_VIS = ("private", "list_only", "public", "open")
-
-
-def _members(c: models.Community):
-    ids = c.member_ids or []
-    if c.host_id and c.host_id not in ids:
-        ids = [c.host_id] + list(ids)
-    return list(dict.fromkeys(ids))  # 중복 제거, 순서 유지
-
-
-def _is_member(c: models.Community, user: Optional[models.User]) -> bool:
-    return bool(user and (user.id == c.host_id or user.id in (c.member_ids or [])))
-
-
 def _public_folder_ids(db: Session, cid: str):
     return [r[0] for r in db.query(models.SaveFolder.id).filter(
-        models.SaveFolder.community_id == cid, models.SaveFolder.is_public == True).all()]  # noqa: E712
+        models.SaveFolder.community_id == cid, public_folder_clause()).all()]
 
 
 def _likes_for(db: Session, folder_ids):
@@ -90,13 +79,13 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
     if not c:
         raise HTTPException(status_code=404, detail="모임을 찾을 수 없어요.")
     member = _is_member(c, user)
-    # 비공개는 멤버만 열람
-    if c.visibility == "private" and not member:
-        raise HTTPException(status_code=404, detail="비공개 모임이에요.")
+    require_crew(c, user)
+    show_activity = can_view_activity(c, user)
 
-    # 공개 리스트(모임 소유 폴더)
+    # 멤버는 전체 크루 리스트, 외부인은 공개된 리스트만.
     folders = (db.query(models.SaveFolder)
-               .filter(models.SaveFolder.community_id == cid, models.SaveFolder.is_public == True)  # noqa: E712
+               .filter(models.SaveFolder.community_id == cid)
+               .filter(True if member else public_folder_clause())
                .order_by(models.SaveFolder.updated_at.desc()).all())
     # 크루 리스트 전체 장소 → 멤버 방문/재방문 인증 집계용
     fids_all = [f.id for f in folders]
@@ -113,7 +102,7 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
                         models.PlaceVisitFeedback.personal_revisit)
                .filter(models.PlaceVisitFeedback.user_id.in_(mids_all),
                        models.PlaceVisitFeedback.place_id.in_(all_pids))
-               .all()) if (mids_all and all_pids) else []
+               .all()) if (show_activity and mids_all and all_pids) else []
     member_visits = len({(r[0], r[1]) for r in fb_rows})
     member_revisits = len({(r[0], r[1]) for r in fb_rows if r[2]})
     revisit_by_place: dict = {}
@@ -147,7 +136,7 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
 
     # 멤버 목록은 모임공개/오픈일 때만(리스트만 공개면 멤버 숨김)
     members = []
-    show_members = c.visibility in ("public", "open") or member
+    show_members = show_activity
     if show_members:
         mids = _members(c)[:20]
         us = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(mids)).all()} if mids else {}
@@ -290,7 +279,7 @@ def my_groups(user: Optional[models.User] = Depends(get_current_user), db: Sessi
 
 @router.post("/api/groups/{cid}/folders")
 def create_group_folder(cid: str, req: dict, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
-    """모임 소유 맛집 리스트 생성(방장/멤버). 기본 공개."""
+    """모임 소유 맛집 리스트 생성(방장/멤버). 비공개 크루는 비공개로 생성."""
     if user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     c = db.query(models.Community).filter(models.Community.id == cid).first()
@@ -307,12 +296,12 @@ def create_group_folder(cid: str, req: dict, user: Optional[models.User] = Depen
     folder = models.SaveFolder(
         user_id=user.id, community_id=cid, name=name,
         icon=req.get("icon") or "📁", description=req.get("description"),
-        is_public=True, is_default=False, context_tag=_tag,
+        is_public=c.visibility in VISIBLE, is_default=False, context_tag=_tag,
     )
     db.add(folder)
     db.commit()
     db.refresh(folder)
-    return {"id": folder.id, "name": folder.name, "community_id": cid, "is_public": True}
+    return {"id": folder.id, "name": folder.name, "community_id": cid, "is_public": folder.is_public}
 
 
 @router.post("/api/groups/{cid}/save-place")
@@ -328,15 +317,15 @@ def save_place_to_group(cid: str, req: dict, user: Optional[models.User] = Depen
     place_id = req.get("place_id")
     if not place_id:
         raise HTTPException(status_code=400, detail="place_id가 필요해요.")
-    # 모임 공개 폴더(첫번째) or 자동 생성
+    # 첫 크루 폴더 또는 공개 정책에 맞춰 자동 생성.
     folder = (db.query(models.SaveFolder)
-              .filter(models.SaveFolder.community_id == cid, models.SaveFolder.is_public == True)  # noqa: E712
+              .filter(models.SaveFolder.community_id == cid)
               .order_by(models.SaveFolder.id).first())
     if not folder:
         folder = models.SaveFolder(
             user_id=(c.host_id or user.id), community_id=cid,
             name=f"{c.title or '우리 모임'} 맛집 리스트", icon=c.icon or "🍽️",
-            description=f"{c.title or '우리 모임'}이 추천하는 곳", is_public=True, is_default=False,
+            description=f"{c.title or '우리 모임'}이 추천하는 곳", is_public=c.visibility in VISIBLE, is_default=False,
         )
         db.add(folder)
         db.flush()
@@ -366,10 +355,8 @@ def crew_kitchen(cid: str, user: Optional[models.User] = Depends(get_current_use
     c = db.query(models.Community).filter(models.Community.id == cid).first()
     if c is None:
         raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
-    # 비공개 모임의 주방은 멤버만 본다. 공개 모임은 남도 구경할 수 있어야
-    # '다른 크루 리스트 보기' 미션이 돌아간다.
-    if (c.visibility or "private") == "private" and not _is_member(c, user):
-        raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
+    # 주방은 방문·멤버 활동을 포함하므로 list_only 외부인에게도 숨긴다.
+    require_crew(c, user, activity=True)
 
     data = kitchen.get_kitchen(db, cid)
     data["title"] = c.title
@@ -416,6 +403,7 @@ def crew_showcase(cid: str, user: Optional[models.User] = Depends(get_current_us
     c = db.query(models.Community).filter(models.Community.id == cid).first()
     if c is None:
         raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
-    if (c.visibility or "private") == "private" and not _is_member(c, user):
-        raise HTTPException(status_code=404, detail="모임을 찾을 수 없습니다.")
-    return kitchen.get_showcase(db, cid, _members(c))
+    require_crew(c, user)
+    return kitchen.get_showcase(db, cid, _members(c),
+                                include_private_lists=_is_member(c, user),
+                                include_activity=can_view_activity(c, user))

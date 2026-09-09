@@ -73,19 +73,21 @@ backend/src/
 ### 알려진 트레이드오프 (의도된 것)
 
 - **키워드 매칭(TAG_NAME_HINTS)은 콜드스타트 브릿지** — 데이터가 얇은 초기에 저장 태그 대신 리스트/장소 이름으로 맥락을 추정합니다. 유저 데이터가 쌓이면 행동 기반으로 대체 예정.
-- **백엔드는 additive-only로 main 직행** — v1 화면이 새 필드를 무시하므로 안전. 프론트만 브랜치 격리.
+- **개발 브랜치 → PR → CI 검사** — 프론트·백엔드 모두 같은 검증 절차를 사용합니다.
 - **`/api/home/feed`의 임베딩 centroid 계산은 상위 40개 리스트로 제한** — 성능 상한. 스케일 시 캐싱 필요.
 
 ## 실행
 
 ```bash
 # 프론트
-npm install && npm run dev        # localhost:3000
+npm ci && npm run dev             # localhost:3000, Node/npm은 .nvmrc/package.json 기준
 
 # 백엔드
-cd backend
-pip install -r requirements.txt
-uvicorn src.main:app --reload     # SECRET_KEY, DATABASE_URL 등 env 필요
+python -m pip install -r backend/requirements.txt
+python -m uvicorn main:app --app-dir backend/src --env-file .env.local --reload
 ```
 
 환경 변수: `SECRET_KEY` `DATABASE_URL`(Supabase PG) `KAKAO_REST_API_KEY` `GEMINI_API_KEY` 등 — 값은 별도 전달.
+
+환경변수 예시는 [`.env.example`](.env.example), 설치·테스트·공개 범위·결제 상태 및 2주차 연결 계획은
+[`docs/week1-foundation.md`](docs/week1-foundation.md)를 참고하세요.

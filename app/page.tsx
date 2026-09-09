@@ -319,7 +319,7 @@ export default function HomeNextPage() {
         })
         .catch(() => {})
     }
-    const useCoords = (lat: number, lng: number) => {
+    const loadAtCoords = (lat: number, lng: number) => {
       homeCache.coords = { lat, lng }
       saveHomeCache()
       loadMine(lat, lng)
@@ -329,11 +329,11 @@ export default function HomeNextPage() {
       loadMine(homeCache.coords.lat, homeCache.coords.lng)
     } else if (typeof navigator !== "undefined" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => useCoords(pos.coords.latitude, pos.coords.longitude),
-        () => useCoords(37.5446, 127.0559),
+        (pos) => loadAtCoords(pos.coords.latitude, pos.coords.longitude),
+        () => loadAtCoords(37.5446, 127.0559),
         { timeout: 3000, maximumAge: 600000 }
       )
-    } else useCoords(37.5446, 127.0559)
+    } else loadAtCoords(37.5446, 127.0559)
 
     fetchWithAuth("/api/recommend/my-meetings?per_room=12")
       .then((r) => (r.ok ? r.json() : null))

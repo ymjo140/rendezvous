@@ -299,7 +299,7 @@ export function PlacePicksTab() {
                 {activePolls[0].room_title} · 장소 투표 진행 중
               </p>
               <p className="text-[11px] text-amber-700">
-                마음에 드는 곳 상세에서 '투표에 담기'를 눌러보세요 (후보 {activePolls[0].option_count}곳)
+                마음에 드는 곳 상세에서 ‘투표에 담기’를 눌러보세요 (후보 {activePolls[0].option_count}곳)
               </p>
             </div>
           </section>

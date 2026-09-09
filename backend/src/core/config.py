@@ -8,6 +8,11 @@ load_dotenv()
 class Settings:
     PROJECT_NAME: str = "Rendezvous API"
     VERSION: str = "2.0.0"
+    APP_ENV: str = os.getenv("APP_ENV", "production")
+    MOCK_PAYMENTS_ENABLED: bool = os.getenv("MOCK_PAYMENTS_ENABLED", "false").lower() == "true"
+    MOCK_PAYMENT_USER_IDS: frozenset = frozenset(
+        x.strip() for x in os.getenv("MOCK_PAYMENT_USER_IDS", "").split(",") if x.strip()
+    )
 
     # 보안
     SECRET_KEY: str = os.getenv("SECRET_KEY")
@@ -33,7 +38,7 @@ class Settings:
 
     # 신규 가입 보너스 코인. 미정의 시 settings.SIGNUP_BONUS_AMOUNT 접근에서
     # AttributeError → 카카오 신규가입이 "Login Failed"로 실패했음(기존 유저는 정상).
-    SIGNUP_BONUS_AMOUNT: int = int(os.getenv("SIGNUP_BONUS_AMOUNT", "1000"))
+    SIGNUP_BONUS_AMOUNT: int = 0  # Cash rewards resume only after a separate verified ledger exists.
 
     # 국세청 사업자등록 상태조회(공공데이터포털) — 점주 인증 진위확인용
     NTS_API_KEY: str = os.getenv("NTS_API_KEY", "")

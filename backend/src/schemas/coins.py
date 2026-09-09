@@ -26,3 +26,6 @@ class CoinHistoryResponse(BaseModel):
 class WalletResponse(BaseModel):
     balance: int
     history: List[CoinHistoryResponse]
+    can_charge: bool = False
+    can_pay: bool = False
+    mode: str = "disabled"

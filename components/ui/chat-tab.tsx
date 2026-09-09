@@ -704,7 +704,7 @@ export function ChatTab({ openRoomId, openRoomTitle, onRoomOpened }: ChatTabProp
                                         ? rooms.filter((r) => String(r.title || "").toLowerCase().includes(roomQuery.trim().toLowerCase()))
                                         : rooms
                                     if (visibleRooms.length === 0 && roomQuery.trim()) {
-                                        return <div className="p-10 text-center text-gray-400 text-sm">'{roomQuery.trim()}' 채팅방이 없어요.</div>
+                                        return <div className="p-10 text-center text-gray-400 text-sm">‘{roomQuery.trim()}’ 채팅방이 없어요.</div>
                                     }
                                     return null
                                 })()}

@@ -14,6 +14,9 @@ from domain import models
 from services import taste_service
 from api.dependencies import get_current_user
 from services.gamification_service import GamificationService, week_start_utc_naive, week_key
+from services.crew_access import (
+    public_folder_clause, require_folder, can_identify_owner, is_member, VISIBLE,
+)
 
 _game = GamificationService()
 
@@ -53,7 +56,7 @@ def _maybe_auto_verify(db: Session, target: models.User) -> bool:
         return False
     lists = (
         db.query(models.SaveFolder)
-        .filter(models.SaveFolder.user_id == target.id, models.SaveFolder.is_public == True)  # noqa: E712
+        .filter(models.SaveFolder.user_id == target.id, public_folder_clause(identify_owner=True))  # noqa: E712
         .count()
     )
     if lists < VERIFY_LISTS:
@@ -121,7 +124,7 @@ def user_profile(uid: int, user: Optional[models.User] = Depends(get_current_use
     )
     list_count = (
         db.query(models.SaveFolder)
-        .filter(models.SaveFolder.user_id == uid, models.SaveFolder.is_public == True)  # noqa: E712
+        .filter(models.SaveFolder.user_id == uid, public_folder_clause(identify_owner=True))  # noqa: E712
         .count()
     )
     is_following = False
@@ -176,7 +179,7 @@ def user_posts(uid: int, limit: int = 30, db: Session = Depends(get_db)):
 def user_lists(uid: int, db: Session = Depends(get_db)):
     folders = (
         db.query(models.SaveFolder)
-        .filter(models.SaveFolder.user_id == uid, models.SaveFolder.is_public == True)  # noqa: E712
+        .filter(models.SaveFolder.user_id == uid, public_folder_clause(identify_owner=True))  # noqa: E712
         .order_by(models.SaveFolder.updated_at.desc())
         .all()
     )
@@ -212,9 +215,9 @@ def user_lists(uid: int, db: Session = Depends(get_db)):
 @router.get("/api/lists/{folder_id}")
 def public_list_detail(folder_id: int, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
     f = db.query(models.SaveFolder).filter(models.SaveFolder.id == folder_id).first()
-    if not f or not f.is_public:
-        raise HTTPException(status_code=404, detail="공개된 리스트가 아니에요.")
-    owner = db.query(models.User).filter(models.User.id == f.user_id).first()
+    require_folder(db, f, user)
+    owner = db.get(models.User, f.user_id) if can_identify_owner(db, f, user) else None
+    crew = db.get(models.Community, f.community_id) if f.community_id else None
     items = (
         db.query(models.SavedItem)
         .filter(models.SavedItem.folder_id == f.id, models.SavedItem.place_id.isnot(None))
@@ -249,6 +252,7 @@ def public_list_detail(folder_id: int, user: Optional[models.User] = Depends(get
         "icon": f.icon or "📁",
         "description": f.description or "",
         "owner": ({"id": owner.id, "name": owner.name, "avatar": owner.avatar or "🙂"} if owner else None),
+        "crew": ({"id": crew.id, "title": crew.title, "icon": crew.icon} if crew else None),
         "count": len(entries),
         "items": entries,
         "like_count": like_count,
@@ -272,6 +276,8 @@ def toggle_folder_publish(
     )
     if not f:
         raise HTTPException(status_code=404, detail="폴더를 찾을 수 없어요.")
+    if f.community_id and not is_member(db.get(models.Community, f.community_id), user):
+        raise HTTPException(status_code=403, detail="크루 멤버만 변경할 수 있어요.")
     if f.is_default or getattr(f, "system_kind", None):
         raise HTTPException(status_code=400, detail="기본 폴더는 공개할 수 없어요. 새 폴더를 만들어 공개해 보세요.")
     if "is_public" in req:
@@ -299,7 +305,7 @@ def my_following(user: Optional[models.User] = Depends(get_current_user), db: Se
         meta = _curator_meta(u)
         lc = (
             db.query(models.SaveFolder)
-            .filter(models.SaveFolder.user_id == uid, models.SaveFolder.is_public == True)  # noqa: E712
+            .filter(models.SaveFolder.user_id == uid, public_folder_clause(identify_owner=True))  # noqa: E712
             .count()
         )
         out.append(
@@ -320,7 +326,7 @@ def suggested_curators(limit: int = 8, user: Optional[models.User] = Depends(get
     """추천 큐레이터 — 공개 맛집 리스트 보유자, 팔로워·리스트 많은 순."""
     sub = (
         db.query(models.SaveFolder.user_id, func.count(models.SaveFolder.id).label("lists"))
-        .filter(models.SaveFolder.is_public == True)  # noqa: E712
+        .filter(public_folder_clause(identify_owner=True))  # noqa: E712
         .group_by(models.SaveFolder.user_id)
         .subquery()
     )
@@ -385,7 +391,7 @@ def curator_ranking(
     else:
         rows = (
             db.query(models.SaveFolder.user_id)
-            .filter(models.SaveFolder.is_public == True)  # noqa: E712
+            .filter(public_folder_clause(identify_owner=True))  # noqa: E712
             .group_by(models.SaveFolder.user_id)
             .all()
         )
@@ -423,7 +429,7 @@ def curator_ranking(
     )
     lists_total = dict(
         db.query(models.SaveFolder.user_id, func.count(models.SaveFolder.id))
-        .filter(models.SaveFolder.user_id.in_(cand_ids), models.SaveFolder.is_public == True)  # noqa: E712
+        .filter(models.SaveFolder.user_id.in_(cand_ids), public_folder_clause(identify_owner=True))  # noqa: E712
         .group_by(models.SaveFolder.user_id)
         .all()
     )
@@ -489,8 +495,7 @@ def like_list(folder_id: int, user: Optional[models.User] = Depends(get_current_
     if user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     f = db.query(models.SaveFolder).filter(models.SaveFolder.id == folder_id).first()
-    if not f or not f.is_public:
-        raise HTTPException(status_code=404, detail="공개된 리스트가 아니에요.")
+    require_folder(db, f, user)
     ex = db.query(models.ListLike).filter_by(folder_id=folder_id, user_id=user.id).first()
     if not ex:
         db.add(models.ListLike(folder_id=folder_id, user_id=user.id))
@@ -513,8 +518,7 @@ def save_list_to_my_folders(
     if user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     src = db.query(models.SaveFolder).filter(models.SaveFolder.id == folder_id).first()
-    if not src or not src.is_public:
-        raise HTTPException(status_code=404, detail="공개된 리스트가 아니에요.")
+    require_folder(db, src, user)
 
     items = (
         db.query(models.SavedItem)
@@ -545,7 +549,7 @@ def save_list_to_my_folders(
             user_id=user.id, community_id=crew.id, name=name,
             icon=src.icon or "📁",
             description=src.description,
-            is_public=(crew.visibility or "private") != "private",
+            is_public=crew.visibility in VISIBLE,
             is_default=False,
             context_tag=getattr(src, "context_tag", None),
         )
@@ -648,6 +652,7 @@ def unlike_list(folder_id: int, user: Optional[models.User] = Depends(get_curren
 
 @router.get("/api/lists/{folder_id}/comments")
 def get_list_comments(folder_id: int, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_folder(db, db.get(models.SaveFolder, folder_id), user)
     rows = (
         db.query(models.ListComment)
         .filter(models.ListComment.folder_id == folder_id)
@@ -683,8 +688,7 @@ def add_list_comment(folder_id: int, req: dict, user: Optional[models.User] = De
     if not content:
         raise HTTPException(status_code=400, detail="댓글 내용을 입력해주세요.")
     f = db.query(models.SaveFolder).filter(models.SaveFolder.id == folder_id).first()
-    if not f or not f.is_public:
-        raise HTTPException(status_code=404, detail="공개된 리스트가 아니에요.")
+    require_folder(db, f, user)
     c = models.ListComment(folder_id=folder_id, user_id=user.id, content=content[:500])
     db.add(c)
     db.commit()
@@ -719,7 +723,7 @@ def delete_list_comment(comment_id: int, user: Optional[models.User] = Depends(g
 def list_ranking(limit: int = 10, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
     """인기 맛집 리스트 랭킹 — 추천x3 + 댓글x2 + 큐레이터 팔로워 보너스(상한20).
     팔로우·추천·댓글이 쌓일수록 랭크 상승."""
-    folders = db.query(models.SaveFolder).filter(models.SaveFolder.is_public == True).all()  # noqa: E712
+    folders = db.query(models.SaveFolder).filter(public_folder_clause()).all()  # noqa: E712
     if not folders:
         return {"count": 0, "items": []}
     fids = [f.id for f in folders]
@@ -764,7 +768,7 @@ def list_ranking(limit: int = 10, user: Optional[models.User] = Depends(get_curr
 
     items = []
     for i, (score, lk, cm, f) in enumerate(scored):
-        owner = users.get(f.user_id)
+        owner = users.get(f.user_id) if can_identify_owner(db, f, user) else None
         items.append(
             {
                 "rank": i + 1,
