@@ -1,5 +1,7 @@
 "use client"
 
+import { consumeCheckinReturn } from "@/lib/checkin-return"
+
 import React, { useEffect, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
@@ -80,7 +82,7 @@ function KakaoCallbackContent() {
                 // 합류에 실패했으면 조용히 넘기지 말고 크루로 보내 다시 시도하게
                 router.push(`/crew/${stateCrew}?invite=1`)
               } else {
-                router.push("/")
+                router.push(consumeCheckinReturn() || "/")
               }
             })
         } else {

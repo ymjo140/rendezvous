@@ -11,6 +11,7 @@ from core.database import get_db
 from api.dependencies import get_current_user, get_current_merchant
 from domain import models
 from services import visit_service
+from core import visit_time as visit_clock
 
 router = APIRouter()
 
@@ -1490,46 +1491,14 @@ def _crew_snapshot(db: Session, cid: str) -> dict:
     c = db.query(models.Community).filter(models.Community.id == cid).first()
     if not c:
         return {"id": cid, "title": "(삭제된 크루)", "icon": "👥", "members": 0}
-    members = list(dict.fromkeys(([c.host_id] if c.host_id else []) + list(c.member_ids or [])))
-    org_domain = getattr(c, "org_domain", None)
-    verified = 0
-    if org_domain and members:
-        verified = (
-            db.query(models.UserVerification)
-            .filter(
-                models.UserVerification.user_id.in_(members),
-                models.UserVerification.domain == org_domain,
-                models.UserVerification.status == "verified",
-            ).count()
-        )
-    # 함께 방문 — 분담결제·QR 체크인·방문 피드백 통합(가게·날짜 중복 제거)
-    from api.routers.home import _crew_visits
-    visits = _crew_visits(db, cid)
-    # 재방문율 — 멤버들이 남긴 방문 피드백 중 "또 갈래요" 비율 (판단 근거)
-    revisit_rate = None
-    if members:
-        fb_total = (
-            db.query(models.PlaceVisitFeedback)
-            .filter(models.PlaceVisitFeedback.user_id.in_(members))
-            .count()
-        )
-        if fb_total > 0:
-            fb_yes = (
-                db.query(models.PlaceVisitFeedback)
-                .filter(
-                    models.PlaceVisitFeedback.user_id.in_(members),
-                    models.PlaceVisitFeedback.personal_revisit == True,  # noqa: E712
-                ).count()
-            )
-            revisit_rate = round(fb_yes / fb_total * 100)
+    el = visit_service.crew_eligibility(db, c)
+    stats = visit_service.crew_visit_stats(db, cid)
     return {
         "id": c.id, "title": c.title or "이름 없는 크루", "icon": c.icon or "👥",
-        "members": len(members),
-        "crew_type": getattr(c, "crew_type", None) or "friends",
-        "org_name": getattr(c, "org_name", None),
-        "verified_members": int(verified),
-        "visits_total": int(visits),
-        "revisit_rate": revisit_rate,
+        "members": el["members"], "crew_type": c.crew_type or "friends", "org_name": c.org_name,
+        "verified_members": el["verified_members"], "visits_total": stats["visits"],
+        "legacy_visits": stats["legacy_visits"], "eligibility": el,
+        "revisit_rate": round(stats["revisits"] / stats["visits"] * 100) if stats["visits"] else None,
     }
 
 
@@ -1555,9 +1524,7 @@ def list_partnerships(
     ) if deal_ids else []
 
     approved_cids = list({a.community_id for a in apps if a.status == "approved"})
-    # 성과: 승인 크루가 "이 가게에서" 남긴 방문 — 분담결제·QR 체크인·방문 피드백을
-    # 모두 인정한다(크루 화면과 같은 함수). 분담결제만 세면 밥만 먹고 간 모임이
-    # 영원히 0으로 남아, 사장님 눈에는 제휴가 아무 효과 없는 것처럼 보인다.
+    # 승인 크루의 이 매장 검증 방문만 집계한다. 이전 보고는 별도 필드로 보존.
     perf_visits = 0
     perf_amount = 0
     perf_revisits = 0
@@ -1574,17 +1541,7 @@ def list_partnerships(
         for cid in approved_cids:
             c = db.query(models.Community).filter(models.Community.id == cid).first()
             st = visit_service.crew_visit_stats(db, cid, place_id=place.id)
-            mids = list((c.member_ids or [])) if c else []
-            crew_revisits = 0
-            if mids:
-                crew_revisits = (
-                    db.query(models.PlaceVisitFeedback)
-                    .filter(
-                        models.PlaceVisitFeedback.user_id.in_(mids),
-                        models.PlaceVisitFeedback.place_id == place.id,
-                        models.PlaceVisitFeedback.personal_revisit == True,  # noqa: E712
-                    ).count()
-                )
+            crew_revisits = st["revisits"]
             deal_uses = sum(uses_by_app.get(aid, 0) for aid in app_by_cid.get(cid, []))
             perf_visits += st["visits"]
             perf_amount += st["amount"]
@@ -1595,6 +1552,7 @@ def list_partnerships(
                 "title": (c.title if c else "(삭제된 크루)") or "크루",
                 "icon": (c.icon if c else "👥") or "👥",
                 "visits": st["visits"],
+                "legacy_visits": st["legacy_visits"], "legacy_amount": st["legacy_amount"],
                 "amount": st["amount"],
                 "revisits": int(crew_revisits),
                 "deal_uses": int(deal_uses),
@@ -1606,7 +1564,7 @@ def list_partnerships(
         apps_by_deal.setdefault(a.partnership_id, []).append(a)
 
     # 딜마다 이번 달 몇 번 쓰였는지 — 한도가 그냥 저장된 숫자가 아니라 작동 중임을 보여준다
-    _month = datetime.now().strftime("%Y-%m")
+    _month = visit_clock.month_key()
     _month_uses = visit_service.partnership_uses_by_app(db, [a.id for a in apps], _month)
 
     out_deals = []
@@ -1786,24 +1744,13 @@ def crew_candidates(
     """제안을 보낼 크루 후보 — 우리 가게에 온 적 있는 크루가 위로, 그다음 근처 활동 크루."""
     place = _assert_merchant_owns(db, store_id, merchant_uid)
 
-    # 우리 가게 방문(분담결제 완료) 크루 집계
-    visit_rows = (
-        db.query(
-            models.ChatSplitRequest.room_id,
-            func.count(models.ChatSplitRequest.id),
-            func.coalesce(func.sum(models.ChatSplitRequest.total_amount), 0),
-            func.max(models.ChatSplitRequest.date),
-        )
-        .filter(
-            models.ChatSplitRequest.place_id == place.id,
-            models.ChatSplitRequest.status == "completed",
-        )
-        .group_by(models.ChatSplitRequest.room_id)
-        .all()
-    )
-    visits = {r[0]: {"visits": int(r[1]), "amount": int(r[2] or 0), "last": r[3] or ""} for r in visit_rows}
-
-    crews = db.query(models.Community).all()
+    visit_rows = (visit_service.verified_events(db, place_id=place.id)
+                  .filter(models.VisitEvent.community_id.isnot(None))
+                  .with_entities(models.VisitEvent.community_id, func.count(models.VisitEvent.id),
+                                 func.max(models.VisitEvent.visit_date_kst))
+                  .group_by(models.VisitEvent.community_id).all())
+    visits = {r[0]: {"visits": int(r[1]), "amount": 0, "last": r[2].isoformat()} for r in visit_rows}
+    crews = db.query(models.Community).filter(models.Community.visibility.in_(("public", "open"))).all()
     # 이미 관계가 있는 크루는 제외(같은 딜에 중복 제안 방지)
     taken: set = set()
     if partnership_id:

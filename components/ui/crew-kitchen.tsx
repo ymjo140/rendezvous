@@ -25,7 +25,7 @@ type Kitchen = {
   title: string; icon: string | null
   tier: string; tier_desc: string
   next_tier: { name: string; need: number; remain: number } | null
-  unlocked_count: number; total_count: number; total_visits: number
+  unlocked_count: number; total_count: number; total_visits: number; legacy_visits: number
   menus: Menu[]; regulars: Regular[]
   members?: { id: number; name: string; avatar: string; is_host: boolean }[]
 }
@@ -96,6 +96,9 @@ export function CrewKitchen({ groupId, showTitle = true, onLoad }: {
           )}
         </div>
       </div>
+
+      <p className="mt-3 text-xs leading-relaxed text-slate-500">매장에서 멤버 2명 이상이 각자 확인한 공동 방문으로 메뉴가 쌓여요.</p>
+      {k.legacy_visits > 0 && <p className="mt-2 text-xs text-slate-500">이전 방식의 방문 기록 {k.legacy_visits}회는 별도로 보관돼요.</p>}
 
       {/* 해금한 메뉴 */}
       <div className="mt-3 grid grid-cols-3 gap-2">

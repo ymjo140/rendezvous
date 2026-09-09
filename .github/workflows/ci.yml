@@ -46,14 +46,44 @@ jobs:
       - run: python -m compileall -q backend/src
       - run: python -m pytest
 
+  postgres:
+    name: PostgreSQL visit integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: rdv_test_visits
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_POSTGRES_URL: postgresql+psycopg2://postgres:ci-only-password@localhost:5432/rdv_test_visits
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.13"
+          cache: pip
+          cache-dependency-path: backend/requirements-test.txt
+      - run: python -m pip install -r backend/requirements-test.txt
+      - run: python -m pytest backend/tests/test_visits_postgres.py -q
+
   quality:
     name: Quality gate
     if: always()
-    needs: [frontend, backend]
+    needs: [frontend, backend, postgres]
     runs-on: ubuntu-latest
     steps:
-      - name: Require both checks to pass
+      - name: Require all checks to pass
         env:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}
-        run: test "$FRONTEND_RESULT" = success && test "$BACKEND_RESULT" = success
+          POSTGRES_RESULT: ${{ needs.postgres.result }}
+        run: test "$FRONTEND_RESULT" = success && test "$BACKEND_RESULT" = success && test "$POSTGRES_RESULT" = success

@@ -1,5 +1,7 @@
 "use client"
 
+import { consumeCheckinReturn } from "@/lib/checkin-return"
+
 import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -142,7 +144,7 @@ export default function OnboardingPage() {
             })
           } catch { /* noop */ }
         }
-        router.push(dest)
+        router.push(consumeCheckinReturn() || dest)
       } else {
         alert("저장 중 오류가 발생했습니다.")
       }

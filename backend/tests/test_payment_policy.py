@@ -114,12 +114,20 @@ def test_checkin_records_visit_without_issuing_real_benefit(db, client_for, exis
         db.add(models.PlaceCheckin(user_id=1, place_id=1, community_id="crew",
                                    date=datetime.now().strftime("%Y-%m-%d"), partnership_app_id=1))
     db.commit()
-    result = client_for(1).post("/api/checkin", json={"place_id": 1, "community_id": "crew"})
+    from core import visit_time as clock
+    from services.checkin_service import issue_qr
+    proof = issue_qr(db, 1, "merchant-1")["token"]
+    result = client_for(1).post("/api/checkin", json={
+        "place_id": 1, "community_id": "crew", "qr_token": proof,
+        "lat": 37.5, "lng": 127, "accuracy_m": 10, "position_at": clock.utc_now().isoformat(),
+    })
     assert result.status_code == 200, result.text
     data = result.json()
-    assert data["already"] == existing_receipt
+    assert data["already"] is False  # Legacy receipts never authenticate attendance.
     assert data["benefit"] is None
-    assert data["benefit_blocked"]["reason"] == "unavailable"
-    assert db.query(models.PlaceCheckin).count() == 1
-    if not existing_receipt:
-        assert db.query(models.PlaceCheckin).one().partnership_app_id is None
+    assert data["crew_visits"] == 0  # One member is not a joint visit.
+    assert db.query(models.PlaceCheckin).count() == int(existing_receipt)
+    assert db.query(models.PartnershipRedemption).count() == 0
+    assert client_for(1).post(f'/api/visits/{data["id"]}/redeem', json={
+        "partnership_app_id": 1, "idempotency_key": "test-only-key",
+    }).status_code == 503

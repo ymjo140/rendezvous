@@ -20,6 +20,14 @@ def seed_crew(db, visibility):
     ])
     db.add(models.ListComment(folder_id=1, user_id=3, content="좋아요"))
     db.commit()
+    from services.checkin_service import record_attendance
+    from core.visit_time import UTC
+    from datetime import datetime
+    at = datetime(2026, 9, 1, 3, tzinfo=UTC)
+    for uid in (1, 2):
+        record_attendance(db, db.get(models.User, uid), db.get(models.Place, 1), crew.id,
+                          at, at, "merchant_approval", "seed")
+    db.commit()
     return crew
 
 

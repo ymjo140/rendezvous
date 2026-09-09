@@ -1,25 +1,13 @@
 # -*- coding: utf-8 -*-
-"""크루 주방 — 같이 간 기록이 우리 가게로 쌓인다.
-
-왜 만드나
-  지금 제품은 '정하고 나면 끝'이다. 투표하고 예약하면 다시 열 이유가 없다.
-  캐치테이블이 못 따라오는 지점이 여기다 — 그쪽은 개인 축이라 공동 소유물을
-  만들 수 없다. 혼자서는 못 하는 것만이 크루 전용이 된다.
-
-왜 상태 테이블이 없나
-  등급도 해금도 단골도 전부 place_checkins에서 계산된다. 테이블을 따로 두면
-  동기화 버그가 생기고, 무엇보다 **지난 방문이 소급 적용되지 않는다**.
-  계산형이면 오늘 만들어도 어제 간 곳이 이미 해금돼 있다.
-  재료·치장처럼 소비되는 것이 생기면 그때 상태를 둔다.
-
-두 축을 나눈 이유
-  해금(다양성)만 있으면 새 가게만 가게 된다. 그러면 제휴 가게에 할 말이 없다 —
-  "손님은 데려오는데 다시는 안 옵니다"가 되니까. 그래서 단골(재방문) 축을 따로 둔다.
-  "이 가게를 단골로 걸어둔 크루가 N팀"이 제휴 영업의 근거가 된다.
+"""크루 주방·방문 미션은 검증된 공동 방문에서 계산한다.
+과거 신고 기록은 보존하되 해금·단골·제휴 자격으로 승격하지 않는다.
 """
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import text
+from sqlalchemy import text, func
+from core import visit_time as clock
+from domain import models
+from services import visit_service
 from sqlalchemy.orm import Session
 
 from core import menu_taxonomy as mt
@@ -36,7 +24,7 @@ TIERS = [
     (25, "미슐랭",     "25가지를 모두 정복했어요"),
 ]
 
-REGULAR_MIN_VISITS = 3      # 같은 가게 이만큼 가면 '우리 크루의 단골집'
+REGULAR_MIN_VISITS = visit_service.REGULAR_MIN_VISITS
 
 
 def _tier_of(unlocked: int):
@@ -52,19 +40,17 @@ def _tier_of(unlocked: int):
     return name, desc, nxt
 
 
+def _place_visits(db, cid):
+    return (db.query(models.Place, func.count(models.VisitEvent.id),
+                     func.min(models.VisitEvent.visit_date_kst), func.max(models.VisitEvent.visit_date_kst))
+            .join(models.VisitEvent, models.VisitEvent.place_id == models.Place.id)
+            .filter(models.VisitEvent.community_id == str(cid), models.VisitEvent.status == "verified")
+            .group_by(models.Place.id).all())
+
+
 def get_kitchen(db: Session, community_id: str) -> Dict[str, Any]:
-    """크루 주방 상태. place_checkins만 읽어서 전부 계산한다."""
-    rows = db.execute(text("""
-        SELECT c.place_id,
-               COUNT(DISTINCT c.date) AS visits,
-               MIN(c.date) AS first_date,
-               MAX(c.date) AS last_date,
-               p.name, COALESCE(p.uptae, ''), p.main_category
-        FROM place_checkins c
-        JOIN places p ON p.id = c.place_id
-        WHERE c.community_id = :cid
-        GROUP BY c.place_id, p.name, p.uptae, p.main_category
-    """), {"cid": str(community_id)}).all()
+    rows = [(p.id, n, first.isoformat(), last.isoformat(), p.name, p.uptae or "", p.main_category)
+            for p, n, first, last in _place_visits(db, community_id)]
 
     # 메뉴별로 '처음 해금한 가게'를 남긴다 — 카드에 "OO에서 해금" 하고 보여주려고
     unlocked: Dict[str, Dict[str, Any]] = {}
@@ -109,22 +95,20 @@ def get_kitchen(db: Session, community_id: str) -> Dict[str, Any]:
         "unlocked_count": len(unlocked),
         "total_count": len(mt.MENU_CARDS),
         "total_visits": total_visits,
+        "legacy_visits": visit_service.legacy_visit_stats(db, community_id)["visits"],
         "menus": menus,
         "regulars": regulars,
     }
 
 
 def regular_crew_count(db: Session, place_id: int) -> int:
-    """이 가게를 단골로 걸어둔 크루 수. 제휴 영업에 그대로 쓰는 숫자다."""
-    return int(db.execute(text("""
-        SELECT COUNT(*) FROM (
-            SELECT community_id
-            FROM place_checkins
-            WHERE place_id = :pid AND community_id IS NOT NULL
-            GROUP BY community_id
-            HAVING COUNT(DISTINCT date) >= :n
-        ) t
-    """), {"pid": place_id, "n": REGULAR_MIN_VISITS}).scalar() or 0)
+    # Public activity only; private/list-only crews are not advertised.
+    return (db.query(models.VisitEvent.community_id)
+            .join(models.Community, models.Community.id == models.VisitEvent.community_id)
+            .filter(models.VisitEvent.place_id == place_id, models.VisitEvent.status == "verified",
+                    models.Community.visibility.in_(("public", "open")))
+            .group_by(models.VisitEvent.community_id)
+            .having(func.count(models.VisitEvent.id) >= REGULAR_MIN_VISITS).count())
 
 
 # ── 미션 ──────────────────────────────────────────────────────
@@ -138,23 +122,16 @@ def regular_crew_count(db: Session, place_id: int) -> int:
 # 주간 미션에 '단골집 방문'을 넣은 게 핵심이다. 해금(다양성)만 밀면 새 가게만 가게
 # 되는데, 그러면 제휴 가게에 할 말이 없다. 재방문이 있어야 영업 근거가 생긴다.
 
-def _week_start_utc_naive():
-    from services.gamification_service import week_start_utc_naive
-    return week_start_utc_naive()
-
-
 def get_missions(db: Session, community_id: str, user_id: int) -> Dict[str, Any]:
     """계단 3개 + 주간 3개. 전부 기존 기록에서 계산한다(별도 진행도 저장 없음)."""
     cid = str(community_id)
-    wk = _week_start_utc_naive()
+    wk = clock.week_start()
 
     saved = int(db.execute(text(
         "SELECT COUNT(*) FROM saved_items WHERE user_id = :uid"
     ), {"uid": user_id}).scalar() or 0)
 
-    visits = int(db.execute(text(
-        "SELECT COUNT(DISTINCT date) FROM place_checkins WHERE community_id = :cid"
-    ), {"cid": cid}).scalar() or 0)
+    visits = visit_service.crew_visits(db, cid)
 
     borrowed = int(db.execute(text(
         "SELECT COUNT(*) FROM list_saves WHERE user_id = :uid"
@@ -178,30 +155,24 @@ def get_missions(db: Session, community_id: str, user_id: int) -> Dict[str, Any]
 
     # 이번 주에 새로 해금한 메뉴가 있나 — 이번 주 방문한 가게의 메뉴가
     # '이번 주 이전에는 없던' 것이어야 한다
-    new_rows = db.execute(text("""
-        SELECT p.name, COALESCE(p.uptae,''), p.main_category
-        FROM place_checkins c JOIN places p ON p.id = c.place_id
-        WHERE c.community_id = :cid AND c.created_at >= :wk
-    """), {"cid": cid, "wk": wk}).all()
-    prev_rows = db.execute(text("""
-        SELECT p.name, COALESCE(p.uptae,''), p.main_category
-        FROM place_checkins c JOIN places p ON p.id = c.place_id
-        WHERE c.community_id = :cid AND c.created_at < :wk
-    """), {"cid": cid, "wk": wk}).all()
+    menu_rows = (db.query(models.Place.name, models.Place.uptae, models.Place.main_category)
+                 .join(models.VisitEvent, models.VisitEvent.place_id == models.Place.id)
+                 .filter(models.VisitEvent.community_id == cid, models.VisitEvent.status == "verified"))
+    new_rows = menu_rows.filter(models.VisitEvent.occurred_at >= wk).all()
+    prev_rows = menu_rows.filter(models.VisitEvent.occurred_at < wk).all()
     prev_keys = {mt.menu_key(n or "", u, m) for n, u, m in prev_rows}
     new_keys = {mt.menu_key(n or "", u, m) for n, u, m in new_rows} - prev_keys
 
     week_borrow = int(db.execute(text(
         "SELECT COUNT(*) FROM list_saves WHERE user_id = :uid AND created_at >= :wk"
-    ), {"uid": user_id, "wk": wk}).scalar() or 0)
+    ), {"uid": user_id, "wk": wk.replace(tzinfo=None)}).scalar() or 0)
 
     regular_ids = [r["place_id"] for r in kitchen["regulars"]]
     week_regular = 0
     if regular_ids:
-        week_regular = int(db.execute(text("""
-            SELECT COUNT(DISTINCT place_id) FROM place_checkins
-            WHERE community_id = :cid AND created_at >= :wk AND place_id = ANY(:ids)
-        """), {"cid": cid, "wk": wk, "ids": regular_ids}).scalar() or 0)
+        week_regular = (visit_service.verified_events(db, cid)
+                        .filter(models.VisitEvent.occurred_at >= wk, models.VisitEvent.place_id.in_(regular_ids))
+                        .with_entities(models.VisitEvent.place_id).distinct().count())
 
     weekly = [
         {"key": "new_menu", "title": "새로운 메뉴 1종 해금",
@@ -257,22 +228,12 @@ def get_showcase(db: Session, community_id: str, member_ids: list, limit: int = 
     if not include_activity:
         return {"lists": lists, "visits": [], "posts": []}
 
-    # 방문기록 — 같은 날 여러 번 찍어도 1회로 센다(모델 주석 참고)
     visits = [{
-        "place_id": r[0], "name": r[1], "address": r[2],
-        "visits": int(r[3]), "last_date": r[4],
-        "menu": mt.menu_title(mt.menu_key(r[1] or "", r[5] or "", r[6])),
-        "is_regular": int(r[3]) >= REGULAR_MIN_VISITS,
-    } for r in db.execute(text("""
-        SELECT c.place_id, p.name, p.address,
-               COUNT(DISTINCT c.date) AS visits, MAX(c.date) AS last_date,
-               COALESCE(p.uptae,''), p.main_category
-        FROM place_checkins c JOIN places p ON p.id = c.place_id
-        WHERE c.community_id = :cid
-        GROUP BY c.place_id, p.name, p.address, p.uptae, p.main_category
-        ORDER BY MAX(c.date) DESC
-        LIMIT :n
-    """), {"cid": cid, "n": limit}).all()]
+        "place_id": p.id, "name": p.name, "address": p.address,
+        "visits": int(n), "last_date": last.isoformat(),
+        "menu": mt.menu_title(mt.menu_key(p.name or "", p.uptae or "", p.main_category)),
+        "is_regular": n >= REGULAR_MIN_VISITS,
+    } for p, n, first, last in sorted(_place_visits(db, cid), key=lambda r: r[3], reverse=True)[:limit]]
 
     posts = []
     if member_ids and visits:

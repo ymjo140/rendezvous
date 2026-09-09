@@ -85,6 +85,8 @@ app.include_router(community.router, tags=["community"])
 # ?벝 SNS 寃뚯떆臾??쇱슦??(Instagram ?ㅽ???
 app.include_router(posts.router, tags=["posts"])
 app.include_router(social.router, tags=["social"])  # 큐레이터 팔로우/프로필/공개 리스트
+from api.routers import visits
+app.include_router(visits.router, tags=["visits"])
 app.include_router(home.router, tags=["home"])  # 새 홈(발견 피드) — 크루·리스트 중심
 app.include_router(groups.router, tags=["groups"])  # 맛집 모임(공개 모임 랭킹/상세/팔로우)
 app.include_router(offers.router, tags=["offers"])
