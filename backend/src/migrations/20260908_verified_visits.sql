@@ -101,7 +101,7 @@ DECLARE client_role TEXT;
 BEGIN
   FOREACH client_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role) THEN
-      EXECUTE format('REVOKE ALL ON TABLE visit_events, visit_participants, visit_approval_requests, partnership_redemptions FROM %I', client_role);
+      EXECUTE 'REVOKE ALL ON TABLE visit_events, visit_participants, visit_approval_requests, partnership_redemptions FROM ' || quote_ident(client_role);
     END IF;
   END LOOP;
 END $$;
