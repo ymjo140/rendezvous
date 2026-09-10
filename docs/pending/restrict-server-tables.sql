@@ -1,3 +1,5 @@
+-- PROPOSAL ONLY. Production application was rejected by automatic approval review.
+-- Requires user approval after review of existing client access.
 -- API-owned tables audited against both rendezvous and rendezvous-merchant.
 -- Merchant browser tables (places, menus, offers catalog, reservations, etc.) retain their policies.
 -- No row changes. The table owner / server role retains access.
