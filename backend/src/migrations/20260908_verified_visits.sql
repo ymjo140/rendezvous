@@ -94,3 +94,14 @@ CREATE INDEX IF NOT EXISTS ix_partnership_redemptions_app_id ON partnership_rede
 CREATE INDEX IF NOT EXISTS ix_redemption_app_month ON partnership_redemptions (app_id, usage_month);
 ALTER TABLE partnership_redemptions ENABLE ROW LEVEL SECURITY;
 
+-- API-only tables: keep server access, remove Supabase's legacy client grants.
+-- Role checks also allow this migration to run on plain PostgreSQL in CI.
+DO $$
+DECLARE client_role TEXT;
+BEGIN
+  FOREACH client_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role) THEN
+      EXECUTE format('REVOKE ALL ON TABLE visit_events, visit_participants, visit_approval_requests, partnership_redemptions FROM %I', client_role);
+    END IF;
+  END LOOP;
+END $$;
