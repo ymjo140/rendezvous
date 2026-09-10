@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
-from services import taste_service
+from services import taste_service, visit_service
+from collections import Counter
 from api.dependencies import get_current_user
 from services.crew_access import (
     VISIBLE, ALLOWED_VIS, members as _members, is_member as _is_member,
@@ -95,20 +96,11 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
     pids_by_folder: dict = {}
     for fid, pid in all_items:
         pids_by_folder.setdefault(fid, []).append(pid)
-    all_pids = list({pid for _, pid in all_items})
-    mids_all = _members(c)
-    # 크루 멤버가 크루 리스트 장소에 남긴 방문 피드백 (방문 인증 배지의 근거)
-    fb_rows = (db.query(models.PlaceVisitFeedback.place_id, models.PlaceVisitFeedback.user_id,
-                        models.PlaceVisitFeedback.personal_revisit)
-               .filter(models.PlaceVisitFeedback.user_id.in_(mids_all),
-                       models.PlaceVisitFeedback.place_id.in_(all_pids))
-               .all()) if (show_activity and mids_all and all_pids) else []
-    member_visits = len({(r[0], r[1]) for r in fb_rows})
-    member_revisits = len({(r[0], r[1]) for r in fb_rows if r[2]})
-    revisit_by_place: dict = {}
-    for pid, uid_, rev in fb_rows:
-        if rev:
-            revisit_by_place.setdefault(pid, set()).add(uid_)
+    eligibility = visit_service.crew_eligibility(db, c)
+    stats = visit_service.crew_visit_stats(db, cid) if show_activity else {}
+    member_visits = stats.get("visits", 0)
+    member_revisits = stats.get("revisits", 0)
+    per_place = Counter(r.place_id for r in visit_service.verified_events(db, cid).all()) if show_activity else {}
 
     lists = []
     for f in folders:
@@ -119,7 +111,7 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
         names = {p.id: p.name for p in db.query(models.Place).filter(models.Place.id.in_(pids)).all()} if pids else {}
         lk = db.query(models.ListLike).filter(models.ListLike.folder_id == f.id).count()
         cm = db.query(models.ListComment).filter(models.ListComment.folder_id == f.id).count()
-        f_revisit = sum(len(revisit_by_place.get(p, ())) for p in pids_by_folder.get(f.id, []))
+        f_revisit = sum(max(per_place.get(p, 0) - 1, 0) for p in set(pids_by_folder.get(f.id, [])))
         lists.append({
             "id": f.id, "name": f.name, "icon": f.icon or "📁", "description": f.description or "",
             "item_count": f.item_count or 0, "like_count": lk, "comment_count": cm,
@@ -148,18 +140,7 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
 
     # 인증 크루: 같은 도메인 인증을 가진 멤버 수 (가게에 주는 신뢰 신호)
     _ctype = getattr(c, "crew_type", None) or "friends"
-    _org_domain = getattr(c, "org_domain", None)
-    verified_members = 0
-    if _org_domain and mids_all:
-        verified_members = (
-            db.query(models.UserVerification)
-            .filter(
-                models.UserVerification.user_id.in_(mids_all),
-                models.UserVerification.domain == _org_domain,
-                models.UserVerification.status == "verified",
-            )
-            .count()
-        )
+    verified_members = eligibility["verified_members"] if show_activity else 0
 
     return {
         "id": c.id,
@@ -180,16 +161,16 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
         "can_join_chat": c.visibility == "open",     # 오픈채팅만 자유 참여
         "members": members,                          # list_only면 빈 배열
         "lists": lists,
-        # 방문 인증 배지 — 멤버가 크루 리스트 장소에 실제 남긴 방문/재방문 신호
+        # 방문 인증 배지 — 공통 서비스의 검증된 공동 방문
         "member_visits": int(member_visits),
         "member_revisits": int(member_revisits),
         "visit_verified": member_visits >= 3,
         # 제휴 자격 — 회비 같은 신고제 대신 검증 가능한 두 트랙만 인정:
         #   org  = 소속 인증 크루(대학/회사 도메인)   activity = 활동 실적(멤버 3+ & 함께 방문 3회+)
-        **(lambda _mc=len(_members(c)): {
-            "partnership_eligible": bool(_org_domain) or (member_visits >= 3 and _mc >= 3),
-            "partnership_track": ("org" if _org_domain else ("activity" if (member_visits >= 3 and _mc >= 3) else None)),
-        })(),
+        "legacy_visits": stats.get("legacy_visits", 0),
+        "partnership_eligible": eligibility["eligible"] if show_activity else False,
+        "partnership_track": eligibility["track"] if show_activity else None,
+        "eligibility": eligibility if member else None,
     }
 
 

@@ -18,7 +18,7 @@ type Deal = {
 }
 type Summary = {
   crew: { id: string; title: string; icon: string; crew_type: string }
-  eligibility: { eligible: boolean; track: string | null; members: number; visits: number }
+  eligibility: { eligible: boolean; track: string | null; members: number; visits: number; members_ok: boolean; visits_ok: boolean; members_required: number; visits_required: number; next_action: string }
   invites: Deal[]; active: Deal[]; pending: Deal[]; available: Deal[]; past: Deal[]
 }
 
@@ -160,18 +160,18 @@ export default function CrewPartnershipsPage() {
           <p className="text-[12.5px] font-semibold text-amber-900">제휴 자격까지 조금 남았어요</p>
           <div className="mt-2 space-y-1.5">
             <div className="flex items-center gap-2 text-[12px]">
-              <span className={el.members >= 3 ? "text-emerald-600" : "text-slate-300"}>●</span>
-              <span className="text-slate-600">멤버 3명 이상</span>
-              <span className="ml-auto font-semibold text-slate-700">{el.members}/3</span>
+              <span className={el.members_ok ? "text-emerald-600" : "text-slate-300"}>●</span>
+              <span className="text-slate-600">멤버 {el.members_required}명 이상</span>
+              <span className="ml-auto font-semibold text-slate-700">{el.members}/{el.members_required}</span>
             </div>
             <div className="flex items-center gap-2 text-[12px]">
-              <span className={el.visits >= 3 ? "text-emerald-600" : "text-slate-300"}>●</span>
-              <span className="text-slate-600">함께 방문 3회 이상</span>
-              <span className="ml-auto font-semibold text-slate-700">{el.visits}/3</span>
+              <span className={el.visits_ok ? "text-emerald-600" : "text-slate-300"}>●</span>
+              <span className="text-slate-600">함께 방문 {el.visits_required}회 이상</span>
+              <span className="ml-auto font-semibold text-slate-700">{el.visits}/{el.visits_required}</span>
             </div>
           </div>
           <p className="mt-2 text-[11px] leading-relaxed text-amber-700">
-            학교·회사 이메일로 소속을 인증하면 방문 횟수 없이도 바로 자격이 생겨요.
+            현재 멤버가 크루와 같은 학교·회사 소속을 인증해도 자격이 생겨요. 인증은 1년간 유효해요.
           </p>
         </div>
       )}

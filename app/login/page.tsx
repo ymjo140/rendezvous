@@ -2,6 +2,7 @@
 
 import React, { useEffect } from "react"
 import Link from "next/link"
+import { rememberCheckinReturn } from "@/lib/checkin-return"
 import { MessageCircle } from "lucide-react"
 
 export default function LoginPage() {
@@ -9,6 +10,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (typeof window === "undefined") return
     const params = new URLSearchParams(window.location.search)
+    rememberCheckinReturn(params.get("next"))
     const ref = params.get("ref")
     if (ref && /^\d+$/.test(ref)) {
       window.localStorage.setItem("invite_ref", ref)

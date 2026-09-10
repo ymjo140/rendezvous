@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKey, Boolean, JSON, ARRAY, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKey, Boolean, JSON, ARRAY, UniqueConstraint, CheckConstraint, Index
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector  # pgvector 768-dim 임베딩 컬럼용
 from datetime import datetime
@@ -970,10 +970,9 @@ class CrewPartnershipApp(Base):
 
 
 class PlaceCheckin(Base):
-    """가게 QR 체크인 — 방문의 1차 증거. 크루를 고르면 '함께 방문'으로 집계된다.
-
-    분담결제 없이 그냥 밥만 먹고 온 모임도 활동 실적을 쌓을 수 있게 하는 통로.
-    같은 크루가 같은 가게에서 같은 날 여러 번 찍어도 방문 1회로 센다(집계 시 dedupe)."""
+    """Legacy self-reported check-ins, retained for history only.
+    New attendance and benefit use are stored separately below.
+    """
     __tablename__ = "place_checkins"
     id = Column(Integer, primary_key=True, index=True)
     place_id = Column(Integer, nullable=False, index=True)
@@ -987,3 +986,76 @@ class PlaceCheckin(Base):
     # 어떤 자리였나 — 임포트 때 300개를 묻는 대신 실제로 간 순간에 한 곳만 받는다
     context_tag = Column(String(16), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class VisitEvent(Base):
+    """One place/day event; crew attendance is independently verified per user."""
+    __tablename__ = "visit_events"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    place_id = Column(Integer, ForeignKey("places.id"), nullable=False, index=True)
+    community_id = Column(String, ForeignKey("communities.id"), nullable=True, index=True)
+    personal_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    scope_key = Column(String(160), nullable=False)
+    visit_date_kst = Column(Date, nullable=False)
+    occurred_at = Column(DateTime(timezone=True), nullable=False)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(16), nullable=False, default="pending")
+    __table_args__ = (
+        UniqueConstraint("scope_key", "place_id", "visit_date_kst", name="uq_visit_scope_place_day"),
+        CheckConstraint("(community_id IS NOT NULL AND personal_user_id IS NULL AND scope_key = 'crew:' || community_id) OR (community_id IS NULL AND personal_user_id IS NOT NULL AND scope_key = 'user:' || CAST(personal_user_id AS VARCHAR))", name="ck_visit_scope"),
+        CheckConstraint("(status = 'pending' AND verified_at IS NULL) OR (status = 'verified' AND verified_at IS NOT NULL)", name="ck_visit_status"),
+        Index("ix_visit_crew_status_day", "community_id", "status", "visit_date_kst"),
+    )
+
+
+class VisitParticipant(Base):
+    __tablename__ = "visit_participants"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    visit_id = Column(String, ForeignKey("visit_events.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    evidence_type = Column(String(32), nullable=False)
+    evidence_ref = Column(String(100), nullable=False)
+    occurred_at = Column(DateTime(timezone=True), nullable=False)
+    verified_at = Column(DateTime(timezone=True), nullable=False)
+    reported_party_size = Column(Integer, nullable=False, default=1)
+    context_tag = Column(String(16), nullable=True)
+    distance_m = Column(Float, nullable=True)
+    __table_args__ = (
+        UniqueConstraint("visit_id", "user_id", name="uq_visit_participant"),
+        CheckConstraint("evidence_type IN ('signed_qr', 'merchant_approval')", name="ck_visit_evidence"),
+    )
+
+
+class VisitApprovalRequest(Base):
+    __tablename__ = "visit_approval_requests"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    place_id = Column(Integer, ForeignKey("places.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    community_id = Column(String, ForeignKey("communities.id"), nullable=True)
+    scope_key = Column(String(160), nullable=False)
+    visit_date_kst = Column(Date, nullable=False)
+    reported_party_size = Column(Integer, nullable=False)
+    context_tag = Column(String(16), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(String(100), nullable=True)
+    visit_id = Column(String, ForeignKey("visit_events.id"), nullable=True)
+    __table_args__ = (UniqueConstraint("scope_key", "place_id", "user_id", "visit_date_kst", name="uq_visit_approval_day"),)
+
+
+class PartnershipRedemption(Base):
+    __tablename__ = "partnership_redemptions"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    app_id = Column(Integer, ForeignKey("crew_partnership_apps.id"), nullable=False, index=True)
+    visit_id = Column(String, ForeignKey("visit_events.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=False)
+    usage_month = Column(String(7), nullable=False)
+    terms_snapshot = Column(JSON, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("app_id", "visit_id", name="uq_redemption_visit"),
+        UniqueConstraint("app_id", "idempotency_key", name="uq_redemption_key"),
+        Index("ix_redemption_app_month", "app_id", "usage_month"),
+    )
