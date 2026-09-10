@@ -4,7 +4,7 @@
 """
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import text, func
+from sqlalchemy import func
 from core import visit_time as clock
 from domain import models
 from services import visit_service
@@ -127,25 +127,27 @@ def get_missions(db: Session, community_id: str, user_id: int) -> Dict[str, Any]
     cid = str(community_id)
     wk = clock.week_start()
 
-    saved = int(db.execute(text(
-        "SELECT COUNT(*) FROM saved_items WHERE user_id = :uid"
-    ), {"uid": user_id}).scalar() or 0)
+    saved = (db.query(models.SavedItem).join(models.SaveFolder)
+             .filter(models.SaveFolder.community_id == cid, models.SavedItem.user_id == user_id,
+                     models.SavedItem.item_type == "place", models.SavedItem.place_id.isnot(None),
+                     models.SavedItem.source == "manual").count())
 
     visits = visit_service.crew_visits(db, cid)
 
-    borrowed = int(db.execute(text(
-        "SELECT COUNT(*) FROM list_saves WHERE user_id = :uid"
-    ), {"uid": user_id}).scalar() or 0)
+    copies = db.query(models.ListCopyEvent).filter(
+        models.ListCopyEvent.user_id == user_id, models.ListCopyEvent.destination_community_id == cid,
+        models.ListCopyEvent.creditable.is_(True))
+    borrowed = copies.count()
 
     steps = [
-        {"key": "save", "title": "마음에 드는 곳 저장하기",
-         "desc": "지도나 탐색에서 가고 싶은 곳을 담아보세요",
+        {"key": "save", "title": "이 크루에 가고 싶은 곳 저장하기",
+         "desc": "내가 직접 고른 장소를 이 크루의 리스트에 저장해요",
          "done": saved > 0, "progress": min(saved, 1), "goal": 1},
         {"key": "visit", "title": "크루와 함께 방문하고 체크인",
-         "desc": "다녀오면 그 메뉴가 우리 가게에 해금돼요",
+         "desc": "멤버 2명 이상이 같은 날 2시간 이내에 각자 방문 인증하면 해금돼요",
          "done": visits > 0, "progress": min(visits, 1), "goal": 1},
-        {"key": "borrow", "title": "다른 크루의 리스트에서 한 곳 담기",
-         "desc": "담으면 리스트를 만든 크루도 보상을 받아요",
+        {"key": "borrow", "title": "다른 크루의 공개 리스트 담기",
+         "desc": "내가 속하지 않은 크루의 리스트를 이 크루로 담아요. 포인트 보상은 없어요.",
          "done": borrowed > 0, "progress": min(borrowed, 1), "goal": 1},
     ]
 
@@ -163,9 +165,7 @@ def get_missions(db: Session, community_id: str, user_id: int) -> Dict[str, Any]
     prev_keys = {mt.menu_key(n or "", u, m) for n, u, m in prev_rows}
     new_keys = {mt.menu_key(n or "", u, m) for n, u, m in new_rows} - prev_keys
 
-    week_borrow = int(db.execute(text(
-        "SELECT COUNT(*) FROM list_saves WHERE user_id = :uid AND created_at >= :wk"
-    ), {"uid": user_id, "wk": wk.replace(tzinfo=None)}).scalar() or 0)
+    week_borrow = copies.filter(models.ListCopyEvent.created_at >= wk).count()
 
     regular_ids = [r["place_id"] for r in kitchen["regulars"]]
     week_regular = 0
@@ -178,8 +178,8 @@ def get_missions(db: Session, community_id: str, user_id: int) -> Dict[str, Any]
         {"key": "new_menu", "title": "새로운 메뉴 1종 해금",
          "desc": "안 가본 종류의 가게에 다녀오세요",
          "done": len(new_keys) > 0, "progress": min(len(new_keys), 1), "goal": 1},
-        {"key": "borrow", "title": "다른 크루 리스트에서 1곳 담기",
-         "desc": "남의 리스트를 구경하고 마음에 드는 곳을 담아보세요",
+        {"key": "borrow", "title": "다른 크루의 새 리스트 담기",
+         "desc": "다른 크루의 공개 리스트를 이 크루로 처음 담으면 완료돼요",
          "done": week_borrow > 0, "progress": min(week_borrow, 1), "goal": 1},
         {"key": "regular", "title": "단골집 다시 방문",
          "desc": f"{REGULAR_MIN_VISITS}번 이상 간 곳이 단골집이 돼요",
@@ -189,7 +189,15 @@ def get_missions(db: Session, community_id: str, user_id: int) -> Dict[str, Any]
          "locked_reason": "아직 단골집이 없어요" if not regular_ids else None},
     ]
 
+    from urllib.parse import quote
+    for mission in steps + weekly:
+        mission["scope"] = "personal_in_crew" if mission["key"] in ("save", "borrow") else "crew"
+        mission["action"] = {"href": f"/crew/{quote(cid, safe='')}/missions?action={mission['key']}",
+                             "label": {"save": "장소 고르기", "borrow": "리스트 둘러보기"}.get(mission["key"], "방문할 곳 고르기")}
+        mission["completion"] = "기록에 반영됐어요" if mission["done"] else None
     return {
+        "community_id": cid,
+        "week_start": wk.isoformat(),
         "steps": steps,
         "steps_done": sum(1 for s in steps if s["done"]),
         "weekly": weekly,

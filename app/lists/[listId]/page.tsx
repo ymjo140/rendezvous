@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ChevronLeft, MapPin, ChevronRight, Loader2, Quote, Heart, MessageCircle, Send, Trash2, FolderPlus, Plus, X } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
+import { crewActivityChanged } from "@/lib/use-crew-resource"
 
 type Entry = {
   place_id: number
@@ -145,6 +146,7 @@ export default function CuratorListPage() {
       const j = await res.json()
       if (res.status === 401) { alert("로그인이 필요해요."); return }
       if (!res.ok) { alert(j?.detail || "담기에 실패했어요."); return }
+      crewActivityChanged()
       setSaveOpen(false)
       setMyFolders(null) // 다음에 열 때 새 폴더 반영되게 갱신
       if (typeof j.save_count === "number") setSaveCount(j.save_count)
@@ -168,9 +170,10 @@ export default function CuratorListPage() {
       const j = await res.json()
       if (res.status === 401) { alert("로그인이 필요해요."); return }
       if (!res.ok) { alert(j?.detail || "담기에 실패했어요."); return }
+      crewActivityChanged()
       setSaveOpen(false)
       if (typeof j.save_count === "number") setSaveCount(j.save_count)
-      setSavedTo(`'${j.folder_name}'에 ${j.added}곳을 담았어요 — 크루 프로필에 공개 리스트로 올라가요`)
+      setSavedTo(`'${j.folder_name}'에 ${j.added}곳을 담았어요 · 크루의 공개 설정에 따라 표시돼요`)
       setTimeout(() => setSavedTo(null), 3500)
     } catch {
       alert("담기에 실패했어요. 잠시 후 다시 시도해 주세요.")

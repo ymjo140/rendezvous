@@ -3,7 +3,8 @@
 import React from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, MapPin, Star, Lock, ChevronRight } from "lucide-react"
-import { fetchWithAuth } from "@/lib/api-client"
+import { useCrewResource } from "@/lib/use-crew-resource"
+import { CrewLoadError } from "@/components/ui/crew-load-error"
 
 /** 크루의 얼굴 — 리스트 · 방문기록 · 게시물.
  *
@@ -29,20 +30,8 @@ const TABS = [
 export function CrewShowcase({ groupId, menus }: { groupId: string; menus?: Menu[] }) {
   const router = useRouter()
   const [tab, setTab] = React.useState<(typeof TABS)[number]["key"]>("visits")
-  const [d, setD] = React.useState<{ lists: List[]; visits: Visit[]; posts: Post[] } | null>(null)
-  const [loading, setLoading] = React.useState(true)
+  const { data: d, loading, error, reload } = useCrewResource<{ lists: List[]; visits: Visit[]; posts: Post[] }>(`/api/groups/${encodeURIComponent(groupId)}/showcase`)
   const [dexOpen, setDexOpen] = React.useState(false)
-
-  React.useEffect(() => {
-    let alive = true
-    setLoading(true)
-    fetchWithAuth(`/api/groups/${groupId}/showcase`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((x) => { if (alive && x) setD(x) })
-      .catch(() => { /* 못 불러와도 마을은 보여야 한다 */ })
-      .finally(() => { if (alive) setLoading(false) })
-    return () => { alive = false }
-  }, [groupId])
 
   if (loading) {
     return (
@@ -51,6 +40,7 @@ export function CrewShowcase({ groupId, menus }: { groupId: string; menus?: Menu
       </div>
     )
   }
+  if (error) return <CrewLoadError message={error} retry={reload} />
   if (!d) return null
 
   const count = { visits: d.visits.length, lists: d.lists.length, posts: d.posts.length }

@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api.dependencies import get_current_user, get_current_merchant
-from api.routers import coins, groups, home, reservations, saves, social, splits, visits, merchant
+from api.routers import coins, groups, home, reservations, saves, social, splits, visits, merchant, feedback
 from core.database import Base, get_db
 from domain import models
 
@@ -34,7 +34,7 @@ def db():
              "Reservation", "CrewPartnership", "CrewPartnershipApp", "ChatRoom",
              "ChatRoomMember", "ChatSplitRequest", "ChatSplitShare", "UserPreferenceVector",
              "UserEmbedding", "PlaceEmbedding", "VisitEvent", "VisitParticipant",
-             "VisitApprovalRequest", "PartnershipRedemption"]
+             "VisitApprovalRequest", "PartnershipRedemption", "ListCopyEvent", "VerifiedVisitFeedback", "Review"]
     Base.metadata.create_all(engine, tables=[getattr(models, n).__table__ for n in names])
     with sessionmaker(bind=engine, expire_on_commit=False)() as session:
         session.add_all([models.User(id=i, email=f"test{i}@example.invalid", name=f"User {i}",
@@ -51,7 +51,7 @@ def client_for(db, monkeypatch):
     # authorization or payment behavior tested here.
     monkeypatch.setattr("services.taste_service.mark_dirty", lambda *args: None)
     app = FastAPI()
-    for module in (coins, groups, home, reservations, saves, social, splits, visits, merchant):
+    for module in (coins, groups, home, reservations, saves, social, splits, visits, merchant, feedback):
         app.include_router(module.router, prefix="/api/merchant" if module is merchant else "")
 
     def provide_db():

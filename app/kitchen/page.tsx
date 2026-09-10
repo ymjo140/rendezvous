@@ -20,7 +20,8 @@
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, ChevronDown, Users } from "lucide-react"
-import { fetchWithAuth } from "@/lib/api-client"
+import { useCrewResource } from "@/lib/use-crew-resource"
+import { CrewLoadError } from "@/components/ui/crew-load-error"
 import { CrewShowcase } from "@/components/ui/crew-showcase"
 import { CrewMissions } from "@/components/ui/crew-missions"
 import { CrewVillage, NeighborStrip, type Member, type NeighborCrew } from "@/components/ui/crew-village"
@@ -32,61 +33,25 @@ const LAST_CREW_KEY = "kitchen_last_crew"
 
 export default function KitchenTabPage() {
   const router = useRouter()
-  const [crews, setCrews] = useState<Crew[]>([])
-  const [neighbors, setNeighbors] = useState<NeighborCrew[]>([])
+  const feed = useCrewResource<{ my_crews: Crew[]; crew_suggestions: NeighborCrew[] }>("/api/home/feed")
+  const crews = feed.data?.my_crews || []
+  const neighbors = feed.data?.crew_suggestions || []
   const [sel, setSel] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
-  const [loading, setLoading] = useState(true)
-
-  // 마을 그림에 쓸 값 — /kitchen에서 받아 아래 쇼케이스(도감)까지 같이 쓴다
-  const [tier, setTier] = useState("골목식당")
-  const [members, setMembers] = useState<Member[]>([])
-  const [unlocked, setUnlocked] = useState(0)
-  const [total, setTotal] = useState(25)
-  const [menus, setMenus] = useState<any[]>([])
-
+  const loading = feed.loading
   useEffect(() => {
-    let alive = true
-    fetchWithAuth("/api/home/feed")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!alive) return
-        const mine: Crew[] = d?.my_crews || []
-        setCrews(mine)
-        setNeighbors(d?.crew_suggestions || [])
-        let last: string | null = null
-        try { last = localStorage.getItem(LAST_CREW_KEY) } catch { /* noop */ }
-        const found = mine.find((c) => c.id === last)
-        setSel(found ? found.id : mine[0]?.id ?? null)
-      })
-      .catch(() => { /* 로그인 전이면 아래 안내가 뜬다 */ })
-      .finally(() => { if (alive) setLoading(false) })
-    return () => { alive = false }
-  }, [])
+    if (!feed.data) return
+    let last: string | null = null
+    try { last = localStorage.getItem(LAST_CREW_KEY) } catch { /* optional preference */ }
+    const mine = feed.data.my_crews || []
+    setSel(old => mine.some(c => c.id === old) ? old : mine.find(c => c.id === last)?.id ?? mine[0]?.id ?? null)
+  }, [feed.data])
 
   const pick = (id: string) => {
     setSel(id)
     setPicking(false)
     try { localStorage.setItem(LAST_CREW_KEY, id) } catch { /* noop */ }
   }
-
-  // 마을 그림에 쓸 등급·멤버·해금 수. 도감(menus)도 같이 받아 아래로 넘긴다.
-  useEffect(() => {
-    if (!sel) return
-    let alive = true
-    fetchWithAuth(`/api/groups/${sel}/kitchen`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((k) => {
-        if (!alive || !k) return
-        setTier(k.tier)
-        setMembers(k.members || [])
-        setUnlocked(k.unlocked_count)
-        setTotal(k.total_count)
-        setMenus(k.menus || [])
-      })
-      .catch(() => { /* 마을이 기본 등급으로 뜬다 */ })
-    return () => { alive = false }
-  }, [sel])
 
   const current = crews.find((c) => c.id === sel)
 
@@ -128,7 +93,7 @@ export default function KitchenTabPage() {
         <div className="flex items-center justify-center gap-2 py-24 text-sm text-gray-400">
           <Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중
         </div>
-      ) : !sel ? (
+      ) : feed.error ? <CrewLoadError message={feed.error} retry={feed.reload} /> : !sel ? (
         // 크루가 없으면 이 화면이 성립하지 않는다. 여기서 만들게 안내한다.
         <div className="flex flex-col items-center gap-3 px-8 py-24 text-center">
           <Users className="h-10 w-10 text-gray-300" />
@@ -146,27 +111,30 @@ export default function KitchenTabPage() {
         </div>
       ) : (
         <div className="px-4 pt-3">
-          {/* 마을 + 그 위에 뜬 퀘스트 버튼 */}
-          <div className="relative">
-            <CrewVillage
-              title={current?.title || "우리 크루"}
-              icon={current?.icon || null}
-              tier={tier}
-              members={members}
-              unlocked={unlocked}
-              total={total}
-              onEnter={() => router.push(`/groups/${sel}`)}
-            />
-            <CrewMissions groupId={sel} />
-          </div>
-
-          <NeighborStrip crews={neighbors} onVisit={(id) => router.push(`/groups/${id}`)} />
-
-          <CrewShowcase groupId={sel} menus={menus} />
+          {current && <KitchenContent key={current.id} crew={current} neighbors={neighbors} />}
         </div>
       )}
 
       <TabBar />
     </div>
   )
+}
+
+
+type Kitchen = { tier: string; members: Member[]; unlocked_count: number; total_count: number; menus: { key: string; title: string; unlocked: boolean; place_name: string | null; image: string }[] }
+function KitchenContent({ crew, neighbors }: { crew: Crew; neighbors: NeighborCrew[] }) {
+  const router = useRouter()
+  const { data, loading, error, reload } = useCrewResource<Kitchen>(`/api/groups/${encodeURIComponent(crew.id)}/kitchen`)
+  if (loading) return <p role="status" className="py-12 text-center text-sm text-gray-500">크루 기록을 불러오는 중…</p>
+  if (error) return <CrewLoadError message={error} retry={reload} />
+  if (!data) return null
+  return <>
+    <div className="relative">
+      <CrewVillage title={crew.title} icon={crew.icon} tier={data.tier} members={data.members}
+        unlocked={data.unlocked_count} total={data.total_count} onEnter={() => router.push(`/crew/${encodeURIComponent(crew.id)}`)} />
+      <CrewMissions groupId={crew.id} />
+    </div>
+    <NeighborStrip crews={neighbors} onVisit={id => router.push(`/crew/${encodeURIComponent(id)}`)} />
+    <CrewShowcase groupId={crew.id} menus={data.menus} />
+  </>
 }

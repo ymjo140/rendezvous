@@ -39,12 +39,16 @@ def pg(monkeypatch):
     engine = create_engine(url, connect_args={"options": f"-csearch_path={schema}"}, pool_size=8)
     names = ["User", "Community", "Place", "UserVerification", "PlaceVisitFeedback", "PlaceCheckin",
              "Reservation", "CrewPartnership", "CrewPartnershipApp", "ChatRoom", "ChatRoomMember",
-             "ChatSplitRequest", "ChatSplitShare"]
+             "ChatSplitRequest", "ChatSplitShare", "SaveFolder", "SavedItem", "Post", "ListSave", "Review"]
     try:
         Base.metadata.create_all(engine, tables=[getattr(m, n).__table__ for n in names])
         with engine.begin() as conn:
+            conn.exec_driver_sql("CREATE TABLE user_embeddings (id SERIAL PRIMARY KEY, user_id INTEGER UNIQUE REFERENCES users(id), action_count INTEGER, computed_at TIMESTAMPTZ, updated_at TIMESTAMP)")
             conn.exec_driver_sql(SQL.read_text())
             conn.exec_driver_sql(SQL.read_text())  # Deployment retry must be harmless.
+            week3 = Path(__file__).resolve().parents[2] / "supabase/migrations/20260910124519_missions_feedback.sql"
+            conn.exec_driver_sql(week3.read_text())
+            conn.exec_driver_sql(week3.read_text())
         factory = sessionmaker(bind=engine, expire_on_commit=False)
         with factory() as db:
             db.add_all([m.User(id=i, email=f"test{i}@example.invalid", name=f"User {i}") for i in (1, 2, 3)])
@@ -69,6 +73,73 @@ def concurrent(items, fn):
         return fn(item)
     with ThreadPoolExecutor(max_workers=len(items)) as pool:
         return list(pool.map(worker, items, timeout=30))
+
+
+def test_concurrent_feedback_and_review_are_single_records(pg):
+    from services import feedback_service
+    from schemas.feedback import FeedbackRequest, ReviewRequest
+    engine, factory, now = pg
+    with factory() as db:
+        event, _ = checkin.record_attendance(db, db.get(m.User, 1), db.get(m.Place, 1), "crew",
+                    clock.utc_now() - timedelta(hours=4), clock.utc_now() - timedelta(hours=4), "merchant_approval", "test")
+        db.commit()
+        vid = event.id
+    def answer(_):
+        with factory() as db:
+            return feedback_service.submit(db, db.get(m.User, 1), FeedbackRequest(visit_id=vid, place_id=1, personal_revisit=True))
+    results = concurrent(range(4), answer)
+    assert sum(r["status"] == "ok" for r in results) == 1
+    def review(_):
+        with factory() as db:
+            return feedback_service.review(db, db.get(m.User, 1), ReviewRequest(visit_id=vid, place_id=1, rating=4))
+    results = concurrent(range(4), review)
+    assert len({r["id"] for r in results}) == 1
+    with factory() as db:
+        assert db.query(m.VerifiedVisitFeedback).count() == db.query(m.Review).count() == 1
+
+
+def test_concurrent_crew_copy_reuses_destination(pg):
+    from api.routers.social import save_list_to_my_folders
+    engine, factory, now = pg
+    with factory() as db:
+        db.add(m.Community(id="source", title="Source", host_id=3, member_ids=[], visibility="public"))
+        db.flush()
+        folder = m.SaveFolder(community_id="source", user_id=3, name="Source", is_public=True)
+        db.add(folder); db.flush()
+        fid = folder.id
+        db.add(m.SavedItem(folder_id=fid, user_id=3, item_type="place", place_id=1, source="manual"))
+        db.commit()
+    def copy(_):
+        with factory() as db:
+            return save_list_to_my_folders(fid, {"community_id":"crew"}, db.get(m.User,1), db)
+    results = concurrent(range(4), copy)
+    assert sum(r["added"] for r in results) == 1
+    assert len({r["folder_id"] for r in results}) == 1
+    with factory() as db:
+        assert db.query(m.ListCopyEvent).count() == 1
+        assert db.query(m.ListCopyEvent).one().creditable
+        db.delete(db.get(m.SaveFolder, results[0]["folder_id"]))
+        db.commit()
+    # Deleting the copied folder permits restoration, not fresh mission credit.
+    restored = concurrent(range(4), copy)
+    assert sum(r["added"] for r in restored) == 1
+    assert len({r["folder_id"] for r in restored}) == 1
+    with factory() as db:
+        assert db.query(m.ListCopyEvent).filter_by(creditable=True).count() == 1
+
+
+def test_week3_constraints_and_rls(pg):
+    engine, factory, now = pg
+    with engine.connect() as conn:
+        protected = dict(conn.execute(text("SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = current_schema()::regnamespace")).all())
+        assert protected["list_copy_events"] and protected["verified_visit_feedback"]
+    with factory() as db:
+        db.add(m.ListCopyEvent(user_id=1, added_count=0, creditable=False, created_at=clock.utc_now()))
+        with pytest.raises(IntegrityError): db.commit()
+        db.rollback()
+        db.add(m.ListCopyEvent(user_id=1, added_count=1, creditable=True, source_community_id="crew", destination_community_id="crew", created_at=clock.utc_now()))
+        with pytest.raises(IntegrityError): db.commit()
+        db.rollback()
 
 
 @pytest.mark.parametrize("uids,cid,participants,status", [

@@ -5,9 +5,12 @@
 
 import React, { useEffect, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { ChevronLeft, ChevronRight, RotateCw, Users, Plus, BadgeCheck, Bookmark, Share2, Loader2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Users, Plus, BadgeCheck, Share2, Loader2 } from "lucide-react"
 import { VerifySheet, CREW_TYPE_META } from "../../verify-sheet"
 import { fetchWithAuth } from "@/lib/api-client"
+import { useCrewResource, crewActivityChanged } from "@/lib/use-crew-resource"
+import { CrewShowcase } from "@/components/ui/crew-showcase"
+import { CrewLoadError } from "@/components/ui/crew-load-error"
 
 type CrewList = {
   id: number; name: string; icon: string; description: string
@@ -26,30 +29,29 @@ type Crew = {
   member_visits: number; member_revisits: number; visit_verified: boolean
 }
 
-const TAG_LABEL: Record<string, string> = {
-  date: "💕 데이트", work: "🥂 회식", drink: "🍶 술 한잔", cafe: "☕ 카페",
-  solo: "🍚 혼밥", friends: "🍻 친구", family: "🍲 가족", special: "🎂 기념일",
-}
-
 const VIS_LABEL: Record<string, string> = {
   private: "🔒 우리끼리", list_only: "📋 리스트만 공개", public: "🌟 크루 공개", open: "💬 오픈 크루",
 }
 
 export default function CrewProfilePage() {
+  const { cid } = useParams<{ cid: string }>()
+  return <CrewProfileContent key={cid} />
+}
+
+function CrewProfileContent() {
   const router = useRouter()
   const params = useParams<{ cid: string }>()
   const sp = useSearchParams()
   const justCreated = sp.get("created") === "1"
   const justJoined = sp.get("joined") === "1"
   const isInvite = sp.get("invite") === "1"
-  const [crew, setCrew] = useState<Crew | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { data: crew, loading, error, reload } = useCrewResource<Crew>(`/api/groups/${encodeURIComponent(params.cid)}`)
   const [joinBusy, setJoinBusy] = useState(false)
   const [shareMsg, setShareMsg] = useState<string | null>(null)
   const [verifyNeed, setVerifyNeed] = useState<null | { kind: "university" | "company"; org: string }>(null)
   const [joinErr, setJoinErr] = useState<string | null>(null)
   const autoTried = React.useRef(false)
-  const [deals, setDeals] = useState<any[] | null>(null)
+  const deals = useCrewResource<{ items: { my_status?: string }[] }>(crew?.is_member ? `/api/crew-deals?community_id=${encodeURIComponent(params.cid)}` : null)
 
   const doJoin = async () => {
     if (!params?.cid || joinBusy) return
@@ -100,33 +102,19 @@ export default function CrewProfilePage() {
     setTimeout(() => setShareMsg(null), 6000)
   }
 
-  useEffect(() => {
-    if (!params?.cid) return
-    // 제휴 딜(멤버에게만 표시) — 크루 자격·신청 상태 포함
-    fetchWithAuth(`/api/crew-deals?community_id=${params.cid}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setDeals(d?.items || []))
-      .catch(() => setDeals([]))
-    fetchWithAuth(`/api/groups/${params.cid}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setCrew(d))
-      .catch(() => setCrew(null))
-      .finally(() => setLoading(false))
-  }, [params?.cid])
-
   const follow = async () => {
     if (!crew) return
     try {
       const res = await fetchWithAuth(`/api/groups/${crew.id}/follow`, { method: crew.is_following ? "DELETE" : "POST" })
-      if (res.ok) setCrew({ ...crew, is_following: !crew.is_following, follower_count: crew.follower_count + (crew.is_following ? -1 : 1) })
+      if (res.ok) crewActivityChanged()
     } catch { /* ignore */ }
   }
 
   // 제휴 한 줄 요약 — 받은 제안 > 제휴 중 > 신청 가능 순으로 급한 것 먼저
-  const dealList = deals || []
-  const openDeals = dealList.filter((d: any) => !d.my_status).length
-  const activeDeals = dealList.filter((d: any) => d.my_status === "approved").length
-  const dealSummary = activeDeals > 0
+  const dealList = deals.data?.items || []
+  const openDeals = dealList.filter((d) => !d.my_status).length
+  const activeDeals = dealList.filter((d) => d.my_status === "approved").length
+  const dealSummary = deals.error ? "제휴 정보를 불러오지 못했어요. 눌러서 다시 확인해주세요." : deals.loading ? "제휴 정보를 확인하는 중…" : activeDeals > 0
     ? `제휴 중 ${activeDeals}곳${openDeals > 0 ? ` · 신청 가능 ${openDeals}곳` : ""}`
     : openDeals > 0
       ? `신청할 수 있는 제휴 ${openDeals}곳`
@@ -144,7 +132,7 @@ export default function CrewProfilePage() {
 
       {loading ? (
         <div className="py-20 text-center text-sm text-slate-400">불러오는 중...</div>
-      ) : !crew ? (
+      ) : error && !isInvite ? <div className="px-4"><CrewLoadError message={error} retry={reload} /></div> : !crew ? (
         isInvite ? (
           <div className="px-4 py-16 text-center">
             <div className="text-4xl">💌</div>
@@ -259,11 +247,11 @@ export default function CrewProfilePage() {
             <div className={`mt-3 rounded-2xl px-3.5 py-3 ${crew.visit_verified ? "bg-emerald-50" : "bg-slate-50"}`}>
               {crew.visit_verified ? (
                 <p className="text-[12.5px] font-medium text-emerald-700">
-                  ✅ 방문 인증 크루 — 멤버들이 리스트 장소에 <b>실제 방문 {crew.member_visits}회</b>, 재방문 의사 {crew.member_revisits}회를 남겼어요.
+                  ✅ 방문 인증 크루 — 멤버들이 리스트 장소에 <b>실제 방문 {crew.member_visits}회</b>, 공동 재방문 {crew.member_revisits}회를 확인했어요.
                 </p>
               ) : (
                 <p className="text-[12.5px] text-slate-500">
-                  아직 방문 인증 전이에요. 멤버가 리스트 장소를 방문하고 기록을 남기면 ✅ 인증 배지가 붙어요.
+                  아직 방문 인증 전이에요. 멤버 2명 이상이 같은 날 2시간 이내에 각자 현장 방문을 인증하면 기록돼요.
                 </p>
               )}
             </div>
@@ -303,56 +291,9 @@ export default function CrewProfilePage() {
             </div>
           )}
 
-          {/* 리스트 */}
           <div className="mt-5 px-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-[15px] font-semibold text-slate-900">크루의 맛집 리스트</h2>
-              {crew.is_member && (
-                <button className="flex items-center gap-1 text-[12px] font-medium text-[#F5A623]">
-                  <Plus className="h-3.5 w-3.5" />리스트 추가
-                </button>
-              )}
-            </div>
-            {crew.lists.length === 0 ? (
-              <div className="rounded-2xl border-2 border-dashed border-slate-200 py-10 text-center">
-                <p className="text-[13px] text-slate-400">아직 리스트가 없어요.</p>
-                {crew.is_member && <p className="mt-1 text-[11px] text-slate-300">첫 맛집 리스트를 만들어보세요!</p>}
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {crew.lists.map((l) => (
-                  <article
-                    key={l.id}
-                    onClick={() => router.push(`/lists/${l.id}`)}
-                    className="cursor-pointer rounded-2xl border border-slate-100 p-3.5"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-xl">{l.icon}</div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[14px] font-semibold text-slate-900">{l.name}</div>
-                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
-                          <span>{l.item_count}곳</span>
-                          {l.context_tag && TAG_LABEL[l.context_tag] && (
-                            <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] text-[#F5A623]">{TAG_LABEL[l.context_tag]}</span>
-                          )}
-                          {l.revisit > 0 && (
-                            <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                              <RotateCw className="h-2.5 w-2.5" />재방문 {l.revisit}명
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <Bookmark className="h-4 w-4 shrink-0 text-slate-300" />
-                    </div>
-                    {l.preview.length > 0 && (
-                      <p className="mt-2 truncate text-[11.5px] text-slate-400">
-                        {l.preview.map((p) => p.name).join(" · ")}
-                      </p>
-                    )}
-                  </article>
-                ))}
-              </div>
-            )}
+            {crew.is_member && <button onClick={() => router.push(`/crew/${encodeURIComponent(crew.id)}/missions?action=save`)} className="flex items-center gap-1 rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800"><Plus className="h-4 w-4" />크루에 장소 추가</button>}
+            <CrewShowcase key={crew.id} groupId={crew.id} />
           </div>
 
           {/* 멤버 */}

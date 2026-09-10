@@ -5,13 +5,13 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from core.database import get_db
 from domain import models
-from services import taste_service
+from services import taste_service, mission_service
 from api.dependencies import get_current_user
 from services.gamification_service import GamificationService, week_start_utc_naive, week_key
 from services.crew_access import (
@@ -517,6 +517,8 @@ def save_list_to_my_folders(
     저장은 saved_items로 쌓여 급상승 '저장' 집계에 자연 합산된다."""
     if user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    if db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(20260909, :uid)"), {"uid": user.id})
     src = db.query(models.SaveFolder).filter(models.SaveFolder.id == folder_id).first()
     require_folder(db, src, user)
 
@@ -532,7 +534,7 @@ def save_list_to_my_folders(
     # 🧑‍🤝‍🧑 크루에 담기: community_id가 오면 그 크루의 "새 리스트"로 복사 (멤버만)
     community_id = req.get("community_id")
     if community_id:
-        crew = db.query(models.Community).filter(models.Community.id == str(community_id)).first()
+        crew = db.query(models.Community).filter(models.Community.id == str(community_id)).with_for_update().first()
         if not crew:
             raise HTTPException(status_code=404, detail="크루를 찾을 수 없어요.")
         members = crew.member_ids or []
@@ -545,17 +547,22 @@ def save_list_to_my_folders(
         ).first():
             name = f"{base} ({n})"
             n += 1
-        target = models.SaveFolder(
-            user_id=user.id, community_id=crew.id, name=name,
-            icon=src.icon or "📁",
-            description=src.description,
-            is_public=crew.visibility in VISIBLE,
-            is_default=False,
-            context_tag=getattr(src, "context_tag", None),
-        )
-        db.add(target)
-        db.flush()
-        have = set()
+        previous = (db.query(models.ListCopyEvent)
+                    .join(models.SaveFolder, models.SaveFolder.id == models.ListCopyEvent.destination_folder_id)
+                    .filter(models.ListCopyEvent.source_folder_id == src.id,
+                            models.ListCopyEvent.destination_community_id == crew.id,
+                            models.ListCopyEvent.user_id == user.id,
+                            models.SaveFolder.community_id == crew.id)
+                    .order_by(models.ListCopyEvent.created_at.desc()).first())
+        target = db.get(models.SaveFolder, previous.destination_folder_id) if previous and previous.destination_folder_id else None
+        if target is None:
+            target = models.SaveFolder(
+                user_id=user.id, community_id=crew.id, name=name, icon=src.icon or "📁",
+                description=src.description, is_public=crew.visibility in VISIBLE,
+                is_default=False, context_tag=getattr(src, "context_tag", None))
+            db.add(target)
+            db.flush()
+        have = {r[0] for r in db.query(models.SavedItem.place_id).filter_by(folder_id=target.id).all()}
         added = 0
         for it in items:
             if it.place_id in have:
@@ -565,7 +572,8 @@ def save_list_to_my_folders(
             db.add(models.SavedItem(folder_id=target.id, user_id=user.id, item_type="place",
                                     place_id=it.place_id, memo=it.memo, source="copy"))
             added += 1
-        target.item_count = added
+        target.item_count = len(have)
+        mission_service.record_copy(db, user, src, target, added)
         taste_service.mark_dirty(db, user.id)
         # 담은 사람 수 집계(1인 1회) — 개인 담기와 동일
         exists_save = db.query(models.ListSave).filter_by(folder_id=src.id, user_id=user.id).first()
@@ -575,8 +583,8 @@ def save_list_to_my_folders(
         save_count = db.query(models.ListSave).filter(models.ListSave.folder_id == src.id).count()
         return {
             "folder_id": target.id,
-            "folder_name": f"{crew.title} · {name}",
-            "added": added, "skipped": 0,
+            "folder_name": f"{crew.title} · {target.name}",
+            "added": added, "skipped": len(items) - added,
             "save_count": save_count,
             "community_id": crew.id,
         }
@@ -588,7 +596,7 @@ def save_list_to_my_folders(
         target = db.query(models.SaveFolder).filter(
             models.SaveFolder.id == int(target_id), models.SaveFolder.user_id == user.id
         ).first()
-        if not target:
+        if not target or (target.community_id and not is_member(db.get(models.Community, target.community_id), user)):
             raise HTTPException(status_code=404, detail="폴더를 찾을 수 없어요.")
         if getattr(target, "system_kind", None) == "post_default":
             raise HTTPException(status_code=400, detail="게시물 폴더에는 장소를 담을 수 없어요.")
@@ -623,6 +631,7 @@ def save_list_to_my_folders(
         ))
         added += 1
     target.item_count = len(have)
+    mission_service.record_copy(db, user, src, target, added)
     taste_service.mark_dirty(db, user.id)
     # 담은 사람 수 집계 — 같은 사람이 여러 번 담아도 1명
     if not db.query(models.ListSave).filter_by(folder_id=src.id, user_id=user.id).first():

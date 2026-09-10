@@ -172,7 +172,8 @@ def _decay(created, half_life_days: int) -> float:
     """반감기 감쇠. 취향은 변하는데 3개월 전 저장과 어제 방문이 같은 무게면 안 된다."""
     if created is None:
         return 0.6
-    age = (datetime.now() - created).total_seconds() / 86400.0
+    from core import visit_time as clock
+    age = (clock.utc_now() - clock.as_utc(created)).total_seconds() / 86400.0
     if age < 0:
         age = 0.0
     return float(2.0 ** (-age / half_life_days))
@@ -200,12 +201,23 @@ def collect_signals(db: Session, uid: int) -> tuple[list, set]:
             w, h = W_REVISIT_VISITED if visited else W_REVISIT
             add(f.place_id, w * _decay(f.created_at, h))
 
-    try:
-        for c in db.query(models.PlaceCheckin).filter(models.PlaceCheckin.user_id == uid).all():
+    # Each attendee is personally proven even while a joint event awaits a second member.
+    # One signal per place/day, so personal + multiple crews cannot multiply attendance.
+    seen_days = set()
+    for v, participant in (db.query(models.VisitEvent, models.VisitParticipant).join(models.VisitParticipant)
+                            .filter(models.VisitParticipant.user_id == uid).all()):
+        key = (v.place_id, v.visit_date_kst)
+        if key not in seen_days:
             w, h = W_CHECKIN
-            add(c.place_id, w * _decay(c.created_at, h))
-    except Exception:
-        pass
+            add(v.place_id, w * _decay(participant.occurred_at, h))
+            seen_days.add(key)
+    for f, v in (db.query(models.VerifiedVisitFeedback, models.VisitEvent).join(models.VisitEvent)
+                  .filter(models.VerifiedVisitFeedback.user_id == uid).all()):
+        if f.personal_revisit is False:
+            excluded.add(v.place_id)
+        else:
+            w, h = W_REVISIT_VISITED
+            add(v.place_id, w * _decay(f.created_at, h))
 
     try:
         for r in db.query(models.Review).filter(models.Review.user_id == uid).all():
@@ -514,14 +526,11 @@ def mark_dirty(db: Session, uid: Optional[int]) -> None:
     """
     if not uid:
         return
-    try:
-        db.execute(text("""
-            INSERT INTO user_embeddings (user_id, computed_at, action_count)
-            VALUES (:uid, NULL, 0)
-            ON CONFLICT (user_id) DO UPDATE SET computed_at = NULL, updated_at = now()
-        """), {"uid": uid})
-    except Exception as exc:
-        print(f"[taste] mark_dirty 실패 uid={uid}: {exc}")
+    db.execute(text("""
+        INSERT INTO user_embeddings (user_id, computed_at, action_count)
+        VALUES (:uid, NULL, 0)
+        ON CONFLICT (user_id) DO UPDATE SET computed_at = NULL, updated_at = CURRENT_TIMESTAMP
+    """), {"uid": uid})
 
 
 # ── 채점 ──────────────────────────────────────────────────────

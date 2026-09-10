@@ -14,7 +14,8 @@
     "typecheck": "next typegen && tsc --noEmit --incremental false",
     "check": "npm run lint && npm run typecheck",
     "test:backend": "python -m pytest backend/tests",
-    "start": "next start"
+    "start": "next start",
+    "test:routes": "node --test tests/crew-routes.test.mts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

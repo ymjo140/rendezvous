@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
-from services import taste_service
+from services import feedback_service
+from schemas.feedback import FeedbackRequest, ReviewRequest
 from api.dependencies import get_current_user
 
 router = APIRouter()
@@ -26,187 +27,33 @@ def _cos(a, b) -> float:
     return float(np.dot(a, b) / (na * nb))
 
 
-FEEDBACK_DELAY_H = 3      # 밥 먹고 나올 때쯤 — 기억이 선명하면서 식사를 방해하지 않는 간격
-
-
 @router.get("/api/feedback/pending")
 def pending_feedback(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """체크인 3시간 뒤, 아직 응답하지 않은 방문들.
-
-    예약이 아니라 체크인을 기준으로 삼는다 — 예약만 하고 안 온 사람에게
-    "어땠어요?"를 물으면 데이터도 오염되고 사용자도 당황한다.
-    """
     if user is None:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    cutoff = datetime.now() - timedelta(hours=FEEDBACK_DELAY_H)
-    try:
-        checkins = (
-            db.query(models.PlaceCheckin)
-            .filter(models.PlaceCheckin.user_id == user.id,
-                    models.PlaceCheckin.created_at <= cutoff)
-            .order_by(models.PlaceCheckin.created_at.desc())
-            .limit(20)
-            .all()
-        )
-    except Exception:
-        checkins = []
-    if not checkins:
-        return {"count": 0, "items": []}
-
-    done = {
-        row[0]
-        for row in db.query(models.PlaceVisitFeedback.checkin_id)
-        .filter(models.PlaceVisitFeedback.user_id == user.id).all()
-        if row[0]
-    }
-    pending = [c for c in checkins if c.id not in done]
-    if not pending:
-        return {"count": 0, "items": []}
-
-    names = {
-        p.id: p.name
-        for p in db.query(models.Place).filter(
-            models.Place.id.in_([c.place_id for c in pending])).all()
-    }
-    crews = {
-        c.id: c
-        for c in db.query(models.Community).filter(
-            models.Community.id.in_([x.community_id for x in pending if x.community_id])).all()
-    } if any(x.community_id for x in pending) else {}
-
-    items = []
-    for c in pending:
-        crew = crews.get(c.community_id) if c.community_id else None
-        items.append({
-            "checkin_id": c.id,
-            "place_id": c.place_id,
-            "place_name": names.get(c.place_id, "방문한 가게"),
-            "date": c.date,
-            "room_id": c.community_id,
-            "crew_title": crew.title if crew else None,
-            "crew_icon": (crew.icon or "👥") if crew else None,
-        })
-    return {"count": len(items), "items": items}
+        raise HTTPException(401, "로그인이 필요합니다.")
+    return feedback_service.pending(db, user)
 
 
 @router.post("/api/feedback")
-def submit_feedback(req: dict, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """재방문 설문 저장.
-    body: {reservation_id?, place_id, room_id?, personal_revisit(bool), group_revisit(bool|null)}"""
+def submit_feedback(req: FeedbackRequest, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user is None:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    place_id = req.get("place_id")
-    if place_id is None:
-        raise HTTPException(status_code=400, detail="place_id가 필요합니다.")
-
-    reservation_id = req.get("reservation_id")
-    checkin_id = req.get("checkin_id")
-    if checkin_id:
-        exists = (
-            db.query(models.PlaceVisitFeedback)
-            .filter(
-                models.PlaceVisitFeedback.user_id == user.id,
-                models.PlaceVisitFeedback.checkin_id == int(checkin_id),
-            ).first()
-        )
-        if exists:
-            return {"status": "already", "message": "이미 응답했어요."}
-    elif reservation_id:
-        exists = (
-            db.query(models.PlaceVisitFeedback)
-            .filter(
-                models.PlaceVisitFeedback.user_id == user.id,
-                models.PlaceVisitFeedback.reservation_id == reservation_id,
-            )
-            .first()
-        )
-        if exists:
-            return {"status": "already", "message": "이미 응답했어요."}
-
-    fb = models.PlaceVisitFeedback(
-        user_id=user.id,
-        place_id=int(place_id),
-        reservation_id=reservation_id,
-        checkin_id=int(checkin_id) if checkin_id else None,
-        room_id=req.get("room_id"),
-        personal_revisit=req.get("personal_revisit"),
-        group_revisit=req.get("group_revisit"),
-        dislike_reason=(req.get("dislike_reason") or None),
-    )
-    db.add(fb)
-    taste_service.mark_dirty(db, user.id)
-    db.commit()
-    return {"status": "ok"}
+        raise HTTPException(401, "로그인이 필요합니다.")
+    return feedback_service.submit(db, user, req)
 
 
 @router.post("/api/feedback/review")
-def submit_review(req: dict, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """2단계 — 별점·한 줄 후기(선택).
-
-    2축 응답이 관문이고 이건 더 남길 의사가 있는 사람만 거친다. 저장은 기존
-    reviews 테이블에 — 사장님 콘솔의 '손님 콘텐츠 > 후기'로 그대로 흘러간다.
-    body: {place_id, checkin_id?, rating(1~5), comment?, tags?}
-    """
+def submit_review(req: ReviewRequest, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user is None:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    place_id = req.get("place_id")
-    if place_id is None:
-        raise HTTPException(status_code=400, detail="place_id가 필요합니다.")
-    try:
-        rating = float(req.get("rating") or 0)
-    except (TypeError, ValueError):
-        rating = 0.0
-    if not (1 <= rating <= 5):
-        raise HTTPException(status_code=400, detail="별점은 1~5 사이여야 해요.")
-
-    checkin_id = req.get("checkin_id")
-    if checkin_id:
-        dup = (db.query(models.Review)
-               .filter(models.Review.user_id == user.id,
-                       models.Review.checkin_id == int(checkin_id)).first())
-        if dup:
-            return {"status": "already"}
-
-    place = db.query(models.Place).filter(models.Place.id == int(place_id)).first()
-
-    # 사진은 선택이다 — 필수로 걸면 후기 자체를 안 쓴다.
-    # 다만 한 장이라도 오면 그게 가장 값진 데이터다: 그 가게 사진이 지금 12만 곳 전부 비어 있다.
-    images = [s for s in (req.get("image_urls") or []) if isinstance(s, str) and s][:3]
-
-    rv = models.Review(
-        user_id=user.id,
-        place_id=int(place_id),
-        place_name=(place.name if place else req.get("place_name") or ""),
-        checkin_id=int(checkin_id) if checkin_id else None,
-        rating=rating,
-        comment=(req.get("comment") or None),
-        tags=list(req.get("tags") or []),
-        image_urls=images,
-    )
-    db.add(rv)
-
-    # 가게에 대표 사진이 없고, 다녀온 사람이 좋게 본 곳이면 그 사진을 가게 얼굴로 올린다.
-    # 별점이 낮은 방문의 사진을 대표로 걸면 가게에 불리하다 — 4점 이상만.
-    promoted = False
-    if images and place is not None and not (place.hero_image or "").strip() and rating >= 4:
-        place.hero_image = images[0]
-        promoted = True
-
-    taste_service.mark_dirty(db, user.id)
-    db.commit()
-    return {"status": "ok", "id": rv.id, "hero_promoted": promoted}
+        raise HTTPException(401, "로그인이 필요합니다.")
+    return feedback_service.review(db, user, req)
 
 
 @router.get("/api/feedback/place/{place_id}")
 def place_revisit_stats(place_id: int, db: Session = Depends(get_db)):
     """장소 재방문 의향 집계(배지용). '단골' 배지는 최소 3명 이상일 때만."""
-    rows = (
-        db.query(models.PlaceVisitFeedback)
-        .filter(models.PlaceVisitFeedback.place_id == place_id)
-        .all()
-    )
-    personal_yes = sum(1 for r in rows if r.personal_revisit is True)
-    group_yes = sum(1 for r in rows if r.group_revisit is True)
+    rows, visible = feedback_service.latest_answers(db, place_id)
+    personal_yes = sum(r[1] is True for r in rows)
+    group_yes = sum(r[2] is True and r[3] in visible for r in rows)
     return {
         "total": len(rows),
         "personal_revisit_yes": personal_yes,
@@ -226,14 +73,10 @@ def place_badges(
     · 개인축: 나와 취향 비슷한(lookalike) 재방문자 수(개인화). 로그인·임베딩 있을 때.
       개인화가 3명 미만이면 전체 재방문 '예' 수로 폴백.
     · 모임축: 모임 장소로 '또 추천'한 팀 수(group_revisit=yes)."""
-    rows = (
-        db.query(models.PlaceVisitFeedback)
-        .filter(models.PlaceVisitFeedback.place_id == place_id)
-        .all()
-    )
+    rows, visible = feedback_service.latest_answers(db, place_id)
     my_id = user.id if user else None
-    personal_uids = [r.user_id for r in rows if r.personal_revisit is True and r.user_id != my_id]
-    group_yes = sum(1 for r in rows if r.group_revisit is True)
+    personal_uids = [r[0] for r in rows if r[1] is True and r[0] != my_id]
+    group_yes = sum(r[2] is True and r[3] in visible for r in rows)
 
     result = {"personal": None, "group": None}
 
@@ -266,7 +109,7 @@ def place_badges(
     if personalized is not None and personalized >= REGULARS_MIN:
         result["personal"] = {
             "count": personalized, "personalized": True,
-            "text": f"나와 취향 비슷한 {personalized}명이 또 왔어요",
+            "text": f"나와 취향 비슷한 {personalized}명이 또 오고 싶어해요",
         }
     elif total_personal >= REGULARS_MIN:
         result["personal"] = {
@@ -276,7 +119,7 @@ def place_badges(
 
     # --- 모임축 ---
     if group_yes >= REGULARS_MIN:
-        result["group"] = {"count": group_yes, "text": f"모임 장소로 {group_yes}팀이 추천했어요"}
+        result["group"] = {"count": group_yes, "text": f"모임 장소로 {group_yes}명이 추천했어요"}
 
     return result
 

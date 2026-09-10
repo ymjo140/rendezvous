@@ -2,7 +2,9 @@
 
 import React from "react"
 import { Check, Lock, Loader2, X, ClipboardList } from "lucide-react"
-import { fetchWithAuth } from "@/lib/api-client"
+import Link from "next/link"
+import { useCrewResource } from "@/lib/use-crew-resource"
+import { CrewLoadError } from "@/components/ui/crew-load-error"
 
 /** 퀘스트 — 마을 위에 떠 있는 버튼, 누르면 모달.
  *
@@ -16,6 +18,7 @@ import { fetchWithAuth } from "@/lib/api-client"
 type Mission = {
   key: string; title: string; desc: string
   done: boolean; progress: number; goal: number
+  action?: { href: string; label: string }; completion?: string | null; scope?: string
   locked?: boolean; locked_reason?: string | null
 }
 type Missions = {
@@ -43,29 +46,21 @@ function Row({ m }: { m: Mission }) {
         </div>
         <div className="mt-0.5 text-[11.5px] leading-relaxed text-gray-500">
           {dim ? m.locked_reason : m.desc}
+          <span className="block">{m.scope === "personal_in_crew" ? "이 크루에서 내 활동" : "크루 공동 활동"} · {m.progress}/{m.goal}</span>
+          {m.done && <span className="block text-emerald-700">{m.completion}</span>}
         </div>
+        {!dim && !m.done && m.action && <Link href={m.action.href} className="mt-2 inline-block rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-900">{m.action.label}</Link>}
       </div>
     </div>
   )
 }
 
 export function CrewMissions({ groupId }: { groupId: string }) {
-  const [m, setM] = React.useState<Missions | null>(null)
-  const [loading, setLoading] = React.useState(true)
+  const { data: m, loading, error, reload } = useCrewResource<Missions>(`/api/groups/${encodeURIComponent(groupId)}/missions`)
   const [open, setOpen] = React.useState(false)
-
-  React.useEffect(() => {
-    let alive = true
-    setLoading(true)
-    fetchWithAuth(`/api/groups/${groupId}/missions`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (alive && d) setM(d) })
-      .catch(() => { /* 퀘스트가 안 떠도 마을은 보여야 한다 */ })
-      .finally(() => { if (alive) setLoading(false) })
-    return () => { alive = false }
-  }, [groupId])
-
-  if (loading || !m) return null
+  if (loading) return <span role="status" className="absolute left-3 top-3 rounded-xl bg-white p-2 text-xs"><Loader2 className="inline h-3 w-3 animate-spin" /> 퀘스트 확인 중</span>
+  if (error) return <div className="absolute left-2 top-0 z-10 max-w-[90%]"><CrewLoadError message={error} retry={reload} /></div>
+  if (!m) return null
 
   const showSteps = m.steps_done < m.steps.length
   // 남은 개수를 배지로 — 뱃지가 0이면 굳이 눌러볼 이유가 없다
@@ -90,12 +85,13 @@ export function CrewMissions({ groupId }: { groupId: string }) {
       {open && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setOpen(false)}>
           <div
+            role="dialog" aria-modal="true" aria-label="크루 퀘스트"
             className="max-h-[78vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-4 pb-8"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-[17px] font-extrabold text-slate-900">퀘스트</h2>
-              <button onClick={() => setOpen(false)} className="rounded-full p-1 hover:bg-gray-100">
+              <button aria-label="퀘스트 닫기" onClick={() => setOpen(false)} className="rounded-full p-1 hover:bg-gray-100">
                 <X className="h-5 w-5 text-gray-400" />
               </button>
             </div>
