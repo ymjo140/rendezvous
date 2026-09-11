@@ -110,6 +110,8 @@ function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
 // 방문 후 설문 — 체크인 3시간 뒤 노출. 2축(개인 취향·모임 적합)이 관문이고,
 // 답한 사람에게만 별점·한 줄을 더 청한다.
 function RevisitSurvey() {
+    const [pendingError, setPendingError] = useState<string | null>(null);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [items, setItems] = useState<any[]>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [answers, setAnswers] = useState<Record<string, { personal?: boolean; group?: boolean }>>({});
@@ -129,11 +131,14 @@ function RevisitSurvey() {
     useEffect(() => {
         const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
         if (!token) return;
+        let active = true;
+        setPendingError(null);
         fetchWithAuth("/api/feedback/pending")
-            .then((r) => (r.ok ? r.json() : { items: [] }))
-            .then((d) => setItems(d.items || []))
-            .catch(() => {});
-    }, []);
+            .then((r) => { if (!r.ok) throw new Error("방문 질문을 불러오지 못했어요."); return r.json(); })
+            .then((d) => { if (active) setItems(d.items || []); })
+            .catch(() => { if (active) setPendingError("방문 질문을 불러오지 못했어요. 다시 시도해주세요."); });
+        return () => { active = false; };
+    }, [loadAttempt]);
 
     const setAns = (rid: string, axis: "personal" | "group", val: boolean) =>
         setAnswers((p) => ({ ...p, [rid]: { ...p[rid], [axis]: val } }));
@@ -145,7 +150,7 @@ function RevisitSurvey() {
                 : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
         }`;
 
-    const keyOf = (item: any) => String(item.checkin_id ?? item.reservation_id);
+    const keyOf = (item: any) => String(item.visit_id ?? item.checkin_id ?? item.reservation_id);
 
     const submit = async (item: any) => {
         const k = keyOf(item);
@@ -156,6 +161,7 @@ function RevisitSurvey() {
             const res = await fetchWithAuth("/api/feedback", {
                 method: "POST",
                 body: JSON.stringify({
+                    visit_id: item.visit_id ?? null,
                     checkin_id: item.checkin_id ?? null,
                     reservation_id: item.reservation_id ?? null,
                     place_id: item.place_id,
@@ -169,6 +175,7 @@ function RevisitSurvey() {
                 setItems((prev) => prev.filter((x) => keyOf(x) !== k));
                 // 여기서 끊지 않고 한 번 더 청한다 — 답한 사람은 더 남길 의향이 있다
                 setRated(item);
+                setPhoto(null);
                 setStars(0);
                 setComment("");
             } else alert("저장에 실패했어요.");
@@ -183,10 +190,11 @@ function RevisitSurvey() {
         if (!rated || stars === 0) return;
         setRatingBusy(true);
         try {
-            await fetchWithAuth("/api/feedback/review", {
+            const response = await fetchWithAuth("/api/feedback/review", {
                 method: "POST",
                 body: JSON.stringify({
                     place_id: rated.place_id,
+                    visit_id: rated.visit_id ?? null,
                     checkin_id: rated.checkin_id ?? null,
                     rating: stars,
                     comment: comment.trim() || null,
@@ -195,18 +203,23 @@ function RevisitSurvey() {
                     image_urls: photo ? [photo] : [],
                 }),
             });
-        } catch {
-            /* 선택 단계라 실패해도 흐름을 막지 않는다 */
+            if (!response.ok) {
+                const body = await response.json().catch(() => null);
+                throw new Error(typeof body?.detail === "string" ? body.detail : "후기를 저장하지 못했어요.");
+            }
+            setRated(null);
+        } catch (e) {
+            alert(e instanceof Error ? e.message : "저장하지 못했어요. 다시 시도해주세요.");
         } finally {
             setRatingBusy(false);
-            setRated(null);
         }
     };
 
-    if (items.length === 0 && !rated) return null;
+    if (items.length === 0 && !rated && !pendingError) return null;
 
     return (
         <div className="px-5 mb-4 space-y-3">
+            {pendingError && <div role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{pendingError}<button onClick={() => setLoadAttempt(v => v + 1)} className="ml-2 font-bold underline">다시 시도</button></div>}
             {rated && (
                 <div className="rounded-2xl border border-amber-200 bg-white p-4">
                     <div className="text-sm font-bold text-gray-800">고마워요! ⭐ 별점도 남겨주실래요?</div>

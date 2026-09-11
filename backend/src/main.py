@@ -29,6 +29,8 @@ app = fastapi.FastAPI()
 # 🚧 레이트 리밋 — 로그인/가입/충전 분당 10회, 전체 API 분당 300회(IP 기준)
 from core.rate_limit import RateLimitMiddleware
 app.add_middleware(RateLimitMiddleware)
+from core.request_metrics import RequestMetricsMiddleware
+app.add_middleware(RequestMetricsMiddleware)
 
 # --- CORS ?ㅼ젙 ---
 # 배포 도메인이 바뀌어도 안 깨지게: vercel/onrender/cloudflare 하위도메인 전부 허용 + 로컬

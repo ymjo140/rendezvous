@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Check, MapPin, Users, Clock } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
+import { crewActivityChanged } from "@/lib/use-crew-resource"
 
 type Crew = { id: string; title: string; icon: string; members: number; visits: number; checked_today: boolean }
 type Context = {
@@ -41,7 +42,9 @@ function getPosition() {
 function CheckinInner() {
   const { placeId } = useParams<{ placeId: string }>()
   const router = useRouter()
-  const rid = useSearchParams().get("rid")
+  const search = useSearchParams()
+  const rid = search.get("rid")
+  const requestedCrew = search.get("cid")
   const [ctx, setCtx] = useState<Context | null>(null)
   const [qr, setQr] = useState("")
   const [picked, setPicked] = useState<string | null>(null)
@@ -67,12 +70,14 @@ function CheckinInner() {
       .then(data => {
         if (!active) return
         setCtx(data)
-        setPicked(data.reservation ? data.reservation.community_id : (data.crews.length === 1 ? data.crews[0].id : null))
+        setPicked(data.reservation ? data.reservation.community_id : (data.crews.some(c => c.id === requestedCrew) ? requestedCrew : data.crews.length === 1 ? data.crews[0].id : null))
       })
       .catch(e => { if (active) { setCtx(null); setError(e.message) } })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [placeId, rid])
+  }, [placeId, rid, requestedCrew])
+
+  useEffect(() => { if (visit) crewActivityChanged() }, [visit])
 
   const pendingVisitId = visit?.status === "pending" ? visit.id : null
   useEffect(() => {
@@ -132,6 +137,10 @@ function CheckinInner() {
     finally { setBusy(false) }
   }
 
+  const returnParams = new URLSearchParams()
+  if (rid) returnParams.set("rid", rid)
+  if (picked || requestedCrew) returnParams.set("cid", picked || requestedCrew || "")
+  const returnPath = `/checkin/${placeId}${returnParams.size ? `?${returnParams}` : ""}`
   const crew = ctx?.crews.find(c => c.id === picked)
   return (
     <main className="mx-auto min-h-screen max-w-md bg-white px-5 pb-12 pt-10">
@@ -164,7 +173,7 @@ function CheckinInner() {
           <p className="mt-3 text-sm leading-relaxed text-slate-600">직원에게 앱의 이름을 알려주세요. 매장에서 승인하면 방문이 확인돼요. 요청은 15분 동안 유효해요.</p>
         </section> : !ctx.logged_in ? <section className="mt-7 text-center">
           <p className="text-sm text-slate-600">로그인한 뒤 매장에서 방문을 확인해주세요.</p>
-          <button onClick={() => router.push(`/login?next=${encodeURIComponent(`/checkin/${placeId}${rid ? `?rid=${encodeURIComponent(rid)}` : ""}`)}`)} className="mt-4 w-full rounded-2xl bg-[#F5A623] py-3.5 font-bold text-white">로그인하고 체크인</button>
+          <button onClick={() => router.push(`/login?next=${encodeURIComponent(returnPath)}`)} className="mt-4 w-full rounded-2xl bg-[#F5A623] py-3.5 font-bold text-white">로그인하고 체크인</button>
         </section> : <section className="mt-7">
           {ctx.reservation && <p className="mb-5 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">{ctx.reservation.time} 예약 · 매장 QR 또는 직원 승인이 필요해요.</p>}
           <h2 className="font-bold">누구와 함께 왔나요?</h2>

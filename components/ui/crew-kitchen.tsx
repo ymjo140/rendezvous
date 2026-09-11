@@ -2,7 +2,8 @@
 
 import React from "react"
 import { Lock, Loader2, Star } from "lucide-react"
-import { fetchWithAuth } from "@/lib/api-client"
+import { useCrewResource } from "@/lib/use-crew-resource"
+import { CrewLoadError } from "@/components/ui/crew-load-error"
 
 /** 우리 크루 — 크루가 같이 간 기록이 쌓이는 곳.
  *
@@ -37,19 +38,9 @@ export function CrewKitchen({ groupId, showTitle = true, onLoad }: {
   /** 마을 그림을 탭 페이지가 그리므로 등급·멤버를 위로 올려준다 */
   onLoad?: (k: any) => void
 }) {
-  const [k, setK] = React.useState<Kitchen | null>(null)
-  const [loading, setLoading] = React.useState(true)
+  const { data: k, loading, error, reload } = useCrewResource<Kitchen>(`/api/groups/${encodeURIComponent(groupId)}/kitchen`)
   const [showAll, setShowAll] = React.useState(false)
-
-  React.useEffect(() => {
-    let alive = true
-    fetchWithAuth(`/api/groups/${groupId}/kitchen`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (alive && d) { setK(d); onLoad?.(d) } })
-      .catch(() => { /* 주방이 안 떠도 모임 화면은 보여야 한다 */ })
-      .finally(() => { if (alive) setLoading(false) })
-    return () => { alive = false }
-  }, [groupId])
+  React.useEffect(() => { if (k) onLoad?.(k) }, [k, onLoad])
 
   if (loading) {
     return (
@@ -58,6 +49,7 @@ export function CrewKitchen({ groupId, showTitle = true, onLoad }: {
       </div>
     )
   }
+  if (error) return <CrewLoadError message={error} retry={reload} />
   if (!k) return null
 
   const pct = Math.round((k.unlocked_count / Math.max(1, k.total_count)) * 100)

@@ -844,6 +844,7 @@ class UserEmbedding(Base):
     recent_embedding = Column(Vector(768), nullable=True)  # Recent interest vector
     
     # Learning info
+    computed_at = Column(DateTime(timezone=True), nullable=True)
     action_count = Column(Integer, default=0)
     last_action_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -1059,3 +1060,39 @@ class PartnershipRedemption(Base):
         UniqueConstraint("app_id", "idempotency_key", name="uq_redemption_key"),
         Index("ix_redemption_app_month", "app_id", "usage_month"),
     )
+
+
+class ListCopyEvent(Base):
+    """Server-owned provenance, separate from the social save counter."""
+    __tablename__ = "list_copy_events"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    source_folder_id = Column(Integer, ForeignKey("save_folders.id", ondelete="SET NULL"))
+    source_community_id = Column(String, nullable=True)  # historical snapshot
+    destination_folder_id = Column(Integer, ForeignKey("save_folders.id", ondelete="SET NULL"))
+    destination_community_id = Column(String, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    added_count = Column(Integer, nullable=False)
+    creditable = Column(Boolean, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("source_folder_id", "destination_folder_id", "user_id", name="uq_list_copy_destination"),
+        CheckConstraint("added_count > 0", name="ck_list_copy_added"),
+        CheckConstraint("NOT creditable OR (source_community_id IS NOT NULL AND destination_community_id IS NOT NULL AND source_community_id <> destination_community_id)", name="ck_list_copy_scope"),
+        Index("ix_list_copy_target", "destination_folder_id"),
+        Index("ix_list_copy_user", "user_id"),
+        Index("ix_list_copy_mission", "destination_community_id", "user_id", "created_at"),
+    )
+
+
+class VerifiedVisitFeedback(Base):
+    __tablename__ = "verified_visit_feedback"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    visit_id = Column(String, ForeignKey("visit_events.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    personal_revisit = Column(Boolean, nullable=False)
+    group_revisit = Column(Boolean, nullable=True)
+    dislike_reason = Column(String(32), nullable=True)
+    review_id = Column(Integer, ForeignKey("reviews.id"), nullable=True, unique=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (UniqueConstraint("visit_id", "user_id", name="uq_verified_feedback_user"),
+                      Index("ix_verified_feedback_user_created", "user_id", "created_at"))

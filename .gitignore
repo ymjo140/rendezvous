@@ -30,3 +30,6 @@ tsconfig.typecheck.json
 backend/venv/
 __pycache__/
 *.pyc
+
+# Supabase CLI local cache
+supabase/.temp/

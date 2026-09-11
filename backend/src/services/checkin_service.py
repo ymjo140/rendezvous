@@ -140,6 +140,9 @@ def record_attendance(db, user, place, cid, occurred_at, verified_at, evidence_t
         event.verified_at = verified_at
     event.occurred_at = min(clock.as_utc(event.occurred_at), occurred_at)
     db.flush()
+    if added:
+        from services.taste_service import mark_dirty
+        mark_dirty(db, user.id)
     return event, not added
 
 

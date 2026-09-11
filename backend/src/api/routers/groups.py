@@ -290,7 +290,7 @@ def save_place_to_group(cid: str, req: dict, user: Optional[models.User] = Depen
     """채팅에서 공유한 장소를 모임의 맛집 리스트에 저장(멤버). 모임 폴더 없으면 자동 생성."""
     if user is None:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    c = db.query(models.Community).filter(models.Community.id == cid).first()
+    c = db.query(models.Community).filter(models.Community.id == cid).with_for_update().first()
     if not c:
         raise HTTPException(status_code=404, detail="모임을 찾을 수 없어요.")
     if not _is_member(c, user):
@@ -298,6 +298,12 @@ def save_place_to_group(cid: str, req: dict, user: Optional[models.User] = Depen
     place_id = req.get("place_id")
     if not place_id:
         raise HTTPException(status_code=400, detail="place_id가 필요해요.")
+    try:
+        place_id = int(place_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="올바른 장소를 선택해주세요.")
+    if not db.get(models.Place, place_id):
+        raise HTTPException(status_code=404, detail="장소를 찾을 수 없어요.")
     # 첫 크루 폴더 또는 공개 정책에 맞춰 자동 생성.
     folder = (db.query(models.SaveFolder)
               .filter(models.SaveFolder.community_id == cid)
@@ -388,3 +394,19 @@ def crew_showcase(cid: str, user: Optional[models.User] = Depends(get_current_us
     return kitchen.get_showcase(db, cid, _members(c),
                                 include_private_lists=_is_member(c, user),
                                 include_activity=can_view_activity(c, user))
+
+
+@router.get("/api/groups/{cid}/mission-options")
+def mission_options(cid: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from services import mission_service
+    if user is None:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    crew = db.get(models.Community, cid)
+    if not _is_member(crew, user):
+        raise HTTPException(status_code=404, detail="크루를 찾을 수 없어요.")
+    places = (db.query(models.Place).join(models.SavedItem, models.SavedItem.place_id == models.Place.id)
+              .join(models.SaveFolder).filter(models.SaveFolder.community_id == cid)
+              .distinct().order_by(models.Place.id).limit(100).all())
+    return {"community_id": cid, "title": crew.title,
+            "lists": mission_service.borrow_options(db, user, cid),
+            "places": [{"id": p.id, "name": p.name, "address": p.address} for p in places]}
