@@ -25,7 +25,7 @@ python backend/scripts/migrate_week3.py --apply
 python backend/scripts/migrate_week3.py --check
 ```
 
-DB → API → 프론트 순서로 배포한다. 이 개발 PR의 운영 마이그레이션/병합은 아직 수행하지 않았다.
+DB → API → 프론트 순서로 배포한다. 2026-09-11 운영 마이그레이션을 적용하고 새 테이블의 RLS·클라이언트 접근 차단을 확인했다. 같은 날 사용자 명시적 승인 후 PR #5를 main에 병합했다(`e86d21fd137914457dbc55b35a9f44b3186de652`). 이 커밋의 rendezvous·wemeet-project Vercel 배포 성공을 확인했다. Render 실행 상태는 별도 확인 대상이다.
 프론트 프리뷰를 확인할 때는 같은 버전의 스테이징 API를 연결해야 한다.
 이전 API로 롤백하더라도 새 출처/후기 테이블은 유지한다.
 

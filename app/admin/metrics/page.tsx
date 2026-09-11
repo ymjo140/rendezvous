@@ -2,6 +2,7 @@
 
 // 운영 지표 대시보드 — 관리자(user 5) 전용. /admin/metrics
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ChevronLeft, Loader2, RefreshCw } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
@@ -62,6 +63,7 @@ export default function AdminMetricsPage() {
           <ChevronLeft className="w-5 h-5 text-gray-700" />
         </button>
         <span className="font-bold text-gray-900">📊 운영 지표</span>
+        <Link href="/admin/beta" className="text-xs font-semibold text-[#B46A08]">크루 베타 지표</Link>
         <button onClick={load} className="ml-auto p-1.5 rounded-full hover:bg-gray-100" title="새로고침">
           <RefreshCw className={`w-4 h-4 text-gray-500 ${loading ? "animate-spin" : ""}`} />
         </button>

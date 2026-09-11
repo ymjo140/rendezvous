@@ -75,6 +75,24 @@ def concurrent(items, fn):
         return list(pool.map(worker, items, timeout=30))
 
 
+def test_beta_metrics_and_readiness_use_real_postgres(pg):
+    from services.beta_metrics_service import get_beta_metrics
+    from services.health_service import probe_database
+    engine, factory, now = pg
+    with factory() as db:
+        for at in (clock.utc_now() - timedelta(days=35), clock.utc_now() - timedelta(days=10)):
+            for uid in (1, 2):
+                checkin.record_attendance(db, db.get(m.User, uid), db.get(m.Place, 1), "crew",
+                                          at, at, "merchant_approval", "test")
+        db.commit()
+        probe_database(db)
+        result = get_beta_metrics(db)
+        assert result["retention"]["second_visit_28d"]["rate"] == 1
+        assert result["retention"]["same_place_28d"]["eligible"] == 1
+        assert result["summary"]["verified_visits"] == 1
+        assert result["summary"]["repeat_crews"] == 0
+
+
 def test_concurrent_feedback_and_review_are_single_records(pg):
     from services import feedback_service
     from schemas.feedback import FeedbackRequest, ReviewRequest

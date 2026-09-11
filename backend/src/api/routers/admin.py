@@ -2,8 +2,9 @@
 Apple 1.2 / Google UGC 정책(신고에 대한 24시간 내 실질 조치) 대응.
 관리자 판별: env ADMIN_USER_IDS(콤마구분 user.id, 기본 '5'=창업자)."""
 import os
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -33,6 +34,23 @@ def require_admin(user: models.User = Depends(get_current_user)) -> models.User:
 @router.get("/api/admin/me")
 def admin_me(admin: models.User = Depends(require_admin)):
     return {"is_admin": True, "id": admin.id, "name": admin.name}
+
+
+@router.get("/api/admin/beta-metrics")
+def beta_metrics(
+    response: Response,
+    admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    from services.beta_metrics_service import get_beta_metrics
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return get_beta_metrics(db)
+    except SQLAlchemyError:
+        db.rollback()
+        # Missing migrations and failed queries are not zero usage.
+        raise HTTPException(503, "베타 지표를 계산하지 못했어요. 잠시 후 다시 시도해주세요.",
+                            headers={"Cache-Control": "no-store"}) from None
 
 
 @router.get("/api/admin/metrics")
