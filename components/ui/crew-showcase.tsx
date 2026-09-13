@@ -35,9 +35,6 @@ export function CrewShowcase({ groupId, menus, initialTab }: { groupId: string; 
   const { data: d, loading, error, reload } = useCrewResource<{ lists: List[]; visits: Visit[]; posts: Post[] }>(`/api/groups/${encodeURIComponent(groupId)}/showcase`)
   const [dexOpen, setDexOpen] = React.useState(false)
 
-  React.useEffect(() => {
-    if (initialTab) setTab(initialTab)
-  }, [initialTab])
 
   if (loading) {
     return (
