@@ -115,7 +115,7 @@ def test_query_count_stays_constant_when_more_crews_are_added(db):
         assert get_beta_metrics(db, NOW)["retention"]["second_visit_28d"]["eligible"] == 25
     finally:
         event.remove(db.bind, "before_cursor_execute", capture)
-    assert len(statements) == 6
+    assert len(statements) == 7
 
 
 @pytest.fixture

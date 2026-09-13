@@ -16,7 +16,7 @@ def probe_database(db):
     if db.bind.dialect.name == "postgresql":
         db.execute(text("SET LOCAL statement_timeout = '3000ms'"))
     db.execute(text("SELECT 1"))
-    for model in (m.VisitEvent, m.VisitParticipant, m.VisitApprovalRequest,
+    for model in (m.ActionLog, m.VisitEvent, m.VisitParticipant, m.VisitApprovalRequest,
                   m.PartnershipRedemption, m.ListCopyEvent, m.VerifiedVisitFeedback):
         db.execute(select(model).limit(0))
     db.execute(select(m.UserEmbedding.computed_at).limit(0))

@@ -37,7 +37,7 @@ def pg(monkeypatch):
     with admin.begin() as conn:
         conn.execute(text(f"CREATE SCHEMA {schema}"))
     engine = create_engine(url, connect_args={"options": f"-csearch_path={schema}"}, pool_size=8)
-    names = ["User", "Community", "Place", "UserVerification", "PlaceVisitFeedback", "PlaceCheckin",
+    names = ["User", "Community", "Place", "UserVerification", "ActionLog", "PlaceVisitFeedback", "PlaceCheckin",
              "Reservation", "CrewPartnership", "CrewPartnershipApp", "ChatRoom", "ChatRoomMember",
              "ChatSplitRequest", "ChatSplitShare", "SaveFolder", "SavedItem", "Post", "ListSave", "Review"]
     try:

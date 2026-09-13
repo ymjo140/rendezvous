@@ -30,7 +30,7 @@ def db():
     # Exclude the recommendation array/vector tables, which need PostgreSQL.
     names = ["User", "Community", "Place", "SaveFolder", "SavedItem", "Post",
              "ListLike", "ListSave", "ListComment", "CommunityFollow", "UserFollow",
-             "UserVerification", "PlaceVisitFeedback", "PlaceCheckin", "CoinHistory",
+             "UserVerification", "ActionLog", "PlaceVisitFeedback", "PlaceCheckin", "CoinHistory",
              "Reservation", "CrewPartnership", "CrewPartnershipApp", "ChatRoom",
              "ChatRoomMember", "ChatSplitRequest", "ChatSplitShare", "UserPreferenceVector",
              "UserEmbedding", "PlaceEmbedding", "VisitEvent", "VisitParticipant",

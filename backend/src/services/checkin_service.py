@@ -10,6 +10,7 @@ from core.config import settings
 from core import visit_time as clock
 from domain import models as m
 from services.crew_access import is_member
+from services import beta_event_service
 
 QR_TTL_SECONDS = 180
 APPROVAL_TTL_MINUTES = 15
@@ -140,10 +141,21 @@ def record_attendance(db, user, place, cid, occurred_at, verified_at, evidence_t
     rows = db.query(m.VisitParticipant).filter_by(visit_id=event.id).all()
     times = sorted(clock.as_utc(p.occurred_at) for p in rows)
     joint = any(b - a <= JOIN_WINDOW for a, b in zip(times, times[1:]))
+    was_verified = event.status == "verified"
     if event.status != "verified" and (not cid or joint):
         event.status = "verified"
         event.verified_at = verified_at
     event.occurred_at = min(clock.as_utc(event.occurred_at), occurred_at)
+    if not was_verified and event.status == "verified":
+        beta_event_service.record_event(
+            db,
+            user.id,
+            "visit_verified",
+            entity_type="visit",
+            entity_id=event.id,
+            metadata={"surface": "checkin", "source": evidence_type},
+            request_id=f"visit_verified:{event.id}",
+        )
     db.flush()
     if added:
         from services.taste_service import mark_dirty

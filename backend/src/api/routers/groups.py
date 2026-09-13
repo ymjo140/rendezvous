@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
-from services import taste_service, visit_service
+from services import taste_service, visit_service, beta_event_service
 from collections import Counter
 from api.dependencies import get_current_user
 from services.crew_access import (
@@ -325,6 +325,15 @@ def save_place_to_group(cid: str, req: dict, user: Optional[models.User] = Depen
     cnt = db.query(models.SavedItem).filter(models.SavedItem.folder_id == folder.id).count()
     folder.item_count = cnt
     taste_service.mark_dirty(db, user.id)
+    if not exists:
+        beta_event_service.record_event(
+            db,
+            user.id,
+            "list_place_saved",
+            entity_type="place",
+            entity_id=str(place_id),
+            metadata={"surface": "crew_mission", "source": "manual"},
+        )
     db.commit()
     return {"folder_id": folder.id, "folder_name": folder.name, "item_count": cnt, "saved": exists is None}
 

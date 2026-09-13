@@ -11,7 +11,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from core.database import get_db
 from domain import models
-from services import taste_service, mission_service
+from services import taste_service, mission_service, beta_event_service
 from api.dependencies import get_current_user
 from services.gamification_service import GamificationService, week_start_utc_naive, week_key
 from services.crew_access import (
@@ -575,6 +575,15 @@ def save_list_to_my_folders(
         target.item_count = len(have)
         mission_service.record_copy(db, user, src, target, added)
         taste_service.mark_dirty(db, user.id)
+        if added:
+            beta_event_service.record_event(
+                db,
+                user.id,
+                "list_place_saved",
+                entity_type="list",
+                entity_id=str(src.id),
+                metadata={"surface": "list_copy", "source": "crew_copy", "added_count": added},
+            )
         # 담은 사람 수 집계(1인 1회) — 개인 담기와 동일
         exists_save = db.query(models.ListSave).filter_by(folder_id=src.id, user_id=user.id).first()
         if not exists_save:
@@ -633,6 +642,15 @@ def save_list_to_my_folders(
     target.item_count = len(have)
     mission_service.record_copy(db, user, src, target, added)
     taste_service.mark_dirty(db, user.id)
+    if added:
+        beta_event_service.record_event(
+            db,
+            user.id,
+            "list_place_saved",
+            entity_type="list",
+            entity_id=str(src.id),
+            metadata={"surface": "list_copy", "source": "personal_copy", "added_count": added},
+        )
     # 담은 사람 수 집계 — 같은 사람이 여러 번 담아도 1명
     if not db.query(models.ListSave).filter_by(folder_id=src.id, user_id=user.id).first():
         db.add(models.ListSave(folder_id=src.id, user_id=user.id))

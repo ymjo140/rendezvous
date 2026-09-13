@@ -7,6 +7,7 @@ from sqlalchemy import case, func
 from core import visit_time as clock
 from domain import models as m
 from services.visit_service import verified_events
+from services.beta_event_service import count_events
 
 
 def _rate(converted, eligible):
@@ -97,6 +98,7 @@ def get_beta_metrics(db, now=None):
     feedback = db.query(func.count(m.VerifiedVisitFeedback.id)).join(
         visits, visits.c.id == m.VerifiedVisitFeedback.visit_id,
     ).filter(m.VerifiedVisitFeedback.created_at >= start, m.VerifiedVisitFeedback.created_at <= now).scalar()
+    behavior_events = count_events(db, start, now)
 
     return {
         "definition_version": "crew-beta-v1", "as_of": now.isoformat(), "timezone": "Asia/Seoul",
@@ -112,6 +114,11 @@ def get_beta_metrics(db, now=None):
              "first_visit_crews": first_visits[day.isoformat()]}
             for day in (first_day + timedelta(days=i) for i in range(28))
         ],
+        "behavior_events": {
+            "source": "action_logs",
+            "window_days": 28,
+            "counts": behavior_events,
+        },
         "coverage": {
             "source": "visit_events:verified", "cohort_scope": "all_observed_crews", "cohort_rows_limit": 12,
             "unavailable": [
