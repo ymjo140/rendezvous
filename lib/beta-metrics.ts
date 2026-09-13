@@ -21,6 +21,11 @@ export type BetaMetrics = {
   retention: { second_visit_28d: RetentionMetric; same_place_28d: RetentionMetric }
   cohorts: { week_start: string; crews: number; eligible: number; converted: number; pending: number; rate: number | null }[]
   series: { date: string; visits: number; crews: number; first_visit_crews: number }[]
+  behavior_events: {
+    source: string
+    window_days: number
+    counts: Record<string, number>
+  }
   coverage: { unavailable: { key: string; reason: string }[] }
 }
 

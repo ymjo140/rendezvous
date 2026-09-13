@@ -121,6 +121,24 @@ export default function BetaMetricsPage() {
               <p className="mt-3 flex justify-between"><span>다른 크루 리스트 담기</span><strong>{data.summary.credited_list_copies}건</strong></p>
               <p className="mt-2 flex justify-between"><span>공동 방문 참가자 후기 응답</span><strong>{data.summary.verified_feedback_responses}건</strong></p>
             </section>
+            <section className="rounded-2xl border border-gray-100 bg-white p-4">
+              <h2 className="text-sm font-bold">베타 행동 이벤트</h2>
+              <p className="mt-1 text-xs text-gray-500">최근 {data.behavior_events.window_days}일 · 서버 사실과 인증 사용자 행동의 횟수</p>
+              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                {[
+                  ["마을 조회", "village_viewed"],
+                  ["미션 시작", "mission_action_started"],
+                  ["장소 저장", "list_place_saved"],
+                  ["방문 인증", "visit_verified"],
+                  ["크루 합류", "crew_member_joined"],
+                  ["투표 확정", "decision_confirmed"],
+                ].map(([label, key]) => (
+                  <p key={key} className="flex justify-between border-b border-gray-50 pb-1.5">
+                    <span>{label}</span><strong>{(data.behavior_events.counts[key] || 0).toLocaleString()}</strong>
+                  </p>
+                ))}
+              </div>
+            </section>
             <section className="rounded-2xl border border-dashed border-gray-300 p-4">
               <h2 className="text-sm font-bold">아직 측정하지 않는 지표</h2>
               <ul className="mt-2 space-y-2 text-xs leading-5 text-gray-600">{data.coverage.unavailable.map(item => <li key={item.key}>{item.reason}</li>)}</ul>

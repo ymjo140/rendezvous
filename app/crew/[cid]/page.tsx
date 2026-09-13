@@ -8,6 +8,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, ChevronRight, Users, Plus, BadgeCheck, Share2, Loader2 } from "lucide-react"
 import { VerifySheet, CREW_TYPE_META } from "../../verify-sheet"
 import { fetchWithAuth } from "@/lib/api-client"
+import { logBetaEvent } from "@/lib/analytics-client"
 import { useCrewResource, crewActivityChanged } from "@/lib/use-crew-resource"
 import { CrewShowcase } from "@/components/ui/crew-showcase"
 import { CrewLoadError } from "@/components/ui/crew-load-error"
@@ -51,7 +52,20 @@ function CrewProfileContent() {
   const [verifyNeed, setVerifyNeed] = useState<null | { kind: "university" | "company"; org: string }>(null)
   const [joinErr, setJoinErr] = useState<string | null>(null)
   const autoTried = React.useRef(false)
+  const viewedCrew = React.useRef<string | null>(null)
   const deals = useCrewResource<{ items: { my_status?: string }[] }>(crew?.is_member ? `/api/crew-deals?community_id=${encodeURIComponent(params.cid)}` : null)
+  const crewId = crew?.id
+
+  useEffect(() => {
+    if (!crewId || viewedCrew.current === crewId) return
+    viewedCrew.current = crewId
+    void logBetaEvent({
+      event_name: "village_viewed",
+      entity_type: "crew",
+      entity_id: crewId,
+      metadata: { surface: "crew_profile" },
+    })
+  }, [crewId])
 
   const doJoin = async () => {
     if (!params?.cid || joinBusy) return

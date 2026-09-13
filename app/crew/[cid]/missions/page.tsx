@@ -4,6 +4,7 @@ import { Suspense, useState } from "react"
 import Link from "next/link"
 import { useParams, useSearchParams } from "next/navigation"
 import { fetchWithAuth } from "@/lib/api-client"
+import { logBetaEvent } from "@/lib/analytics-client"
 import { crewActivityChanged, readApi, useCrewResource } from "@/lib/use-crew-resource"
 import { CrewLoadError } from "@/components/ui/crew-load-error"
 import { CrewMissions } from "@/components/ui/crew-missions"
@@ -30,6 +31,15 @@ function Actions({ cid, mode }: { cid: string; mode: string }) {
   const act = async (id: number) => {
     if (busy) return
     setBusy(true); setActionError(null); setMessage(null)
+    void logBetaEvent({
+      event_name: "mission_action_started",
+      entity_type: borrow ? "list" : "place",
+      entity_id: String(id),
+      metadata: {
+        surface: "crew_mission",
+        action: borrow ? "borrow" : save ? "save" : "other",
+      },
+    })
     try {
       const result = await fetchWithAuth(borrow ? `/api/lists/${id}/save` : `/api/groups/${encodeURIComponent(cid)}/save-place`, {
         method: "POST", body: JSON.stringify(borrow ? { community_id: cid } : { place_id: id }),
