@@ -58,3 +58,22 @@ export const CREW_AVATARS: Record<CrewAvatarId, CrewAvatarDefinition> = {
     src: "/crew/avatars/crew-avatar-brown-bob.png",
   },
 }
+
+const AVATAR_ORDER: CrewAvatarId[] = [
+  "black-short",
+  "yellow-perm",
+  "brown-short",
+  "black-long",
+  "yellow-short",
+  "brown-bob",
+]
+
+export function isCrewAvatarId(value: string | null | undefined): value is CrewAvatarId {
+  return Boolean(value && Object.prototype.hasOwnProperty.call(CREW_AVATARS, value))
+}
+
+export function avatarIdForMember(memberId: number, requested?: string | null): CrewAvatarId {
+  if (isCrewAvatarId(requested)) return requested
+  const index = Math.abs(memberId) % AVATAR_ORDER.length
+  return AVATAR_ORDER[index]
+}
