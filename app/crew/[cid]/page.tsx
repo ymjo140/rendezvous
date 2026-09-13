@@ -11,6 +11,9 @@ import { fetchWithAuth } from "@/lib/api-client"
 import { logBetaEvent } from "@/lib/analytics-client"
 import { useCrewResource, crewActivityChanged } from "@/lib/use-crew-resource"
 import { CrewShowcase } from "@/components/ui/crew-showcase"
+import { CrewLounge } from "@/components/ui/crew-lounge"
+import { CrewAvatar } from "@/components/ui/crew-avatar"
+import { isCrewAvatarId } from "@/lib/crew-avatars"
 import { CrewLoadError } from "@/components/ui/crew-load-error"
 
 type CrewList = {
@@ -25,7 +28,7 @@ type Crew = {
   partnership_eligible?: boolean; partnership_track?: "org" | "activity" | null
   member_count: number; follower_count: number; like_count: number; list_count: number
   is_following: boolean; is_member: boolean; is_host: boolean
-  members: { id: number; name: string; avatar: string; is_host: boolean }[]
+  members: { id: number; name: string; avatar: string; avatar_id?: string | null; is_host: boolean }[]
   lists: CrewList[]
   member_visits: number; member_revisits: number; visit_verified: boolean
 }
@@ -146,7 +149,7 @@ function CrewProfileContent() {
 
       {loading ? (
         <div className="py-20 text-center text-sm text-slate-400">불러오는 중...</div>
-      ) : error && !isInvite ? <div className="px-4"><CrewLoadError message={error} retry={reload} /></div> : !crew ? (
+      ) : error && !crew && !isInvite ? <div className="px-4"><CrewLoadError message={error} retry={reload} /></div> : !crew ? (
         isInvite ? (
           <div className="px-4 py-16 text-center">
             <div className="text-4xl">💌</div>
@@ -319,7 +322,13 @@ function CrewProfileContent() {
               <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
                 {crew.members.map((m) => (
                   <div key={m.id} className="flex w-[70px] shrink-0 flex-col items-center gap-1">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-50 text-xl">{m.avatar}</span>
+                    <CrewAvatar
+                      memberId={m.id}
+                      avatarId={m.avatar_id ?? (isCrewAvatarId(m.avatar) ? m.avatar : null)}
+                      name={m.name}
+                      size="sm"
+                      mode="portrait"
+                    />
                     <span className="w-full truncate text-center text-[10px] text-slate-500">
                       {m.name}{m.is_host && " 👑"}
                     </span>

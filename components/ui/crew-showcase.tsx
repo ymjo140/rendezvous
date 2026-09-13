@@ -40,7 +40,7 @@ export function CrewShowcase({ groupId, menus }: { groupId: string; menus?: Menu
       </div>
     )
   }
-  if (error) return <CrewLoadError message={error} retry={reload} />
+  if (error && !d) return <CrewLoadError message={error} retry={reload} />
   if (!d) return null
 
   const count = { visits: d.visits.length, lists: d.lists.length, posts: d.posts.length }
