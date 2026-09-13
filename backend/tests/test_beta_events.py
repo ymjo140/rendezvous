@@ -55,7 +55,9 @@ def test_event_endpoint_allowlist_and_idempotency(db, analytics_client):
 
 def test_event_endpoint_rejects_unknown_events_and_metadata(db, analytics_client):
     unknown = analytics_client(1).post("/api/analytics/events", json={"event_name": "raw_body"})
+    server_fact = analytics_client(1).post("/api/analytics/events", json={"event_name": "visit_verified"})
     assert unknown.status_code == 422
+    assert server_fact.status_code == 422
     unsafe = analytics_client(1).post("/api/analytics/events", json={
         "event_name": "village_viewed",
         "metadata": {"raw": "secret"},

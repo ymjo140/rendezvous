@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import require_user
 from core.database import get_db
-from services.beta_event_service import record_event
+from services.beta_event_service import CLIENT_BETA_EVENT_NAMES, record_event
 
 
 router = APIRouter()
@@ -19,8 +19,8 @@ class BetaEventRequest(BaseModel):
 
     event_name: str = Field(min_length=1, max_length=64)
     entity_type: str | None = Field(default=None, max_length=32)
-    entity_id: str | None = Field(default=None, max_length=128)
-    request_id: str | None = Field(default=None, max_length=128)
+    entity_id: str | None = Field(default=None, max_length=64)
+    request_id: str | None = Field(default=None, max_length=64)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -32,6 +32,9 @@ def collect_beta_event(
     db: Session = Depends(get_db),
 ):
     response.headers["Cache-Control"] = "no-store"
+    if req.event_name not in CLIENT_BETA_EVENT_NAMES:
+        raise HTTPException(422, "클라이언트에서 기록할 수 없는 베타 이벤트입니다.",
+                            headers={"Cache-Control": "no-store"})
     try:
         _, duplicate = record_event(
             db,

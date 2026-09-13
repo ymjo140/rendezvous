@@ -37,7 +37,7 @@
 }
 ```
 
-`event_name`은 계약 목록만 허용한다. `request_id`가 같은 재전송은 중복으로 쌓지 않는다. API는 제품 흐름을 막지 않도록 프런트에서 실패를 삼키지만, 서버·관리자 경로의 기록 실패는 상태 코드로 드러낸다.
+`event_name`은 클라이언트 행동 이벤트인 `village_viewed`, `mission_action_started`만 허용한다. `visit_verified`와 `list_place_saved` 같은 서버 사실은 백엔드 내부 호출만 가능하다. `request_id`가 같은 재전송은 PostgreSQL advisory lock으로 직렬화해 중복으로 쌓지 않는다. API는 제품 흐름을 막지 않도록 프런트에서 실패를 삼키지만, 서버·관리자 경로의 기록 실패는 상태 코드로 드러낸다.
 
 ## 관찰 운영
 
@@ -53,4 +53,4 @@
 - 7일간 첫 사용자의 이벤트 누락·401/5xx·화면 이탈 이유 관찰
 - 충분한 관찰 수가 생긴 뒤 상위 3개 이탈 원인 수정 PR을 별도로 생성
 
-DB migration은 없다. 기존 Supabase `action_logs` 테이블을 서버에서만 사용하므로 Supabase Data API에 새 공개 권한을 추가하지 않는다.
+DB migration은 없다. 기존 Supabase `action_logs` 테이블을 서버에서만 사용하므로 Supabase Data API에 새 공개 권한을 추가하지 않는다. `entity_id`·`request_id`는 기존 VARCHAR(64)에 맞추고, metadata 문자열은 사전 정의된 값만 허용한다.

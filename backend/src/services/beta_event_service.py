@@ -1,10 +1,9 @@
 """Allowlisted beta observation events backed by the existing action_logs table."""
 from datetime import datetime, timezone
-import math
 import re
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from domain import models as m
 
@@ -22,6 +21,7 @@ BETA_EVENT_NAMES = (
     "partnership_benefit_confirmed",
 )
 BETA_EVENT_NAME_SET = frozenset(BETA_EVENT_NAMES)
+CLIENT_BETA_EVENT_NAMES = frozenset({"village_viewed", "mission_action_started"})
 
 # Only compact, predefined dimensions are accepted. No body, token, URL, email,
 # or free-form user text belongs in beta observation metadata.
@@ -37,7 +37,17 @@ BETA_METADATA_KEYS = frozenset({
     "added_count",
     "mode",
 })
-_ID_PATTERN = re.compile(r"^[A-Za-z0-9:_-]{1,128}$")
+BETA_METADATA_STRING_VALUES = {
+    "surface": frozenset({"checkin", "list_copy", "crew_mission", "crew_profile"}),
+    "source": frozenset({"merchant_approval", "signed_qr", "crew_copy", "personal_copy", "manual"}),
+    "action": frozenset({"view", "borrow", "save", "other"}),
+    "result": frozenset({"success", "error", "pending", "verified"}),
+    "experiment_group": frozenset({"control", "variant_a", "variant_b"}),
+    "place_category": frozenset({"restaurant", "cafe", "bar", "unknown"}),
+    "mode": frozenset({"save", "borrow", "other"}),
+}
+BETA_METADATA_INTEGER_KEYS = frozenset({"position", "crew_size", "added_count"})
+_ID_PATTERN = re.compile(r"^[A-Za-z0-9:_-]{1,64}$")
 
 
 def _utc_naive(value: datetime | None = None) -> datetime:
@@ -47,7 +57,7 @@ def _utc_naive(value: datetime | None = None) -> datetime:
     return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def _safe_identifier(value: str | None, label: str, max_length: int = 128) -> str | None:
+def _safe_identifier(value: str | None, label: str, max_length: int = 64) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str) or len(value) > max_length or not _ID_PATTERN.fullmatch(value):
@@ -69,18 +79,14 @@ def sanitize_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
             raise ValueError(f"허용하지 않는 metadata key입니다: {key}")
         if value is None:
             continue
-        if isinstance(value, bool):
+        if key in BETA_METADATA_INTEGER_KEYS:
+            if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 100000:
+                raise ValueError("metadata 숫자 값이 허용 범위를 벗어났습니다.")
             clean[key] = value
-        elif isinstance(value, int) and not isinstance(value, bool):
-            clean[key] = value
-        elif isinstance(value, float) and math.isfinite(value):
-            clean[key] = value
-        elif isinstance(value, str) and 0 < len(value) <= 64 and "\n" not in value and "\r" not in value:
-            if "://" in value or "@" in value:
-                raise ValueError("metadata에 URL·이메일을 저장할 수 없습니다.")
+        elif isinstance(value, str) and value in BETA_METADATA_STRING_VALUES.get(key, ()):
             clean[key] = value
         else:
-            raise ValueError("metadata 값은 짧은 문자열·숫자·불리언만 허용합니다.")
+            raise ValueError("metadata 값이 허용된 관찰 차원에 맞지 않습니다.")
     return clean
 
 
@@ -104,6 +110,14 @@ def record_event(
     entity_id = _safe_identifier(entity_id, "entity_id")
     request_id = _safe_identifier(request_id, "request_id")
     clean = sanitize_metadata(metadata)
+
+    if request_id and db.bind.dialect.name == "postgresql":
+        # Existing action_logs has no unique constraint. Serialize the lookup and
+        # insert for this idempotency tuple without a schema migration.
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": f"{user_id or 0}:{event_name}:{request_id}"},
+        )
 
     if request_id:
         existing = db.query(m.ActionLog).filter(
