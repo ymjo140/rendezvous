@@ -149,7 +149,7 @@ function CrewProfileContent() {
 
       {loading ? (
         <div className="py-20 text-center text-sm text-slate-400">불러오는 중...</div>
-      ) : error && !isInvite ? <div className="px-4"><CrewLoadError message={error} retry={reload} /></div> : !crew ? (
+      ) : error && !crew && !isInvite ? <div className="px-4"><CrewLoadError message={error} retry={reload} /></div> : !crew ? (
         isInvite ? (
           <div className="px-4 py-16 text-center">
             <div className="text-4xl">💌</div>
