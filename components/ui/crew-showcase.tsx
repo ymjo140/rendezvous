@@ -27,11 +27,17 @@ const TABS = [
   { key: "posts", label: "게시물" },
 ] as const
 
-export function CrewShowcase({ groupId, menus }: { groupId: string; menus?: Menu[] }) {
+export type ShowcaseTab = (typeof TABS)[number]["key"]
+
+export function CrewShowcase({ groupId, menus, initialTab }: { groupId: string; menus?: Menu[]; initialTab?: ShowcaseTab }) {
   const router = useRouter()
-  const [tab, setTab] = React.useState<(typeof TABS)[number]["key"]>("visits")
+  const [tab, setTab] = React.useState<ShowcaseTab>(initialTab || "visits")
   const { data: d, loading, error, reload } = useCrewResource<{ lists: List[]; visits: Visit[]; posts: Post[] }>(`/api/groups/${encodeURIComponent(groupId)}/showcase`)
   const [dexOpen, setDexOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    if (initialTab) setTab(initialTab)
+  }, [initialTab])
 
   if (loading) {
     return (
@@ -47,7 +53,7 @@ export function CrewShowcase({ groupId, menus }: { groupId: string; menus?: Menu
   const unlockedCount = (menus || []).filter((m) => m.unlocked).length
 
   return (
-    <section className="mt-4">
+    <section id="crew-showcase" className="mt-4 scroll-mt-20">
       <div className="flex gap-1.5">
         {TABS.map((t) => (
           <button
