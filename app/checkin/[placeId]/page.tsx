@@ -170,7 +170,9 @@ function CheckinInner() {
         </section> : requestId ? <section className="mt-8 text-center" aria-live="polite">
           <Clock className="mx-auto h-9 w-9 text-amber-600" />
           <h2 className="mt-3 text-lg font-bold">직원 확인을 기다리고 있어요</h2>
-          <p className="mt-3 text-sm leading-relaxed text-slate-600">직원에게 앱의 이름을 알려주세요. 매장에서 승인하면 방문이 확인돼요. 요청은 15분 동안 유효해요.</p>
+          <p className="mt-3 text-sm leading-relaxed text-slate-600">직원에게 앱의 이름과 아래 요청 번호를 보여주세요. 매장에서 승인하면 방문이 확인돼요. 요청은 15분 동안 유효해요.</p>
+          <p className="mt-5 text-xs text-slate-500">현장 확인용 요청 번호</p>
+          <p className="mt-2 font-mono text-2xl font-bold tracking-widest text-amber-900">{requestId.replaceAll("-", "").slice(0, 8).toUpperCase()}</p>
         </section> : !ctx.logged_in ? <section className="mt-7 text-center">
           <p className="text-sm text-slate-600">로그인한 뒤 매장에서 방문을 확인해주세요.</p>
           <button onClick={() => router.push(`/login?next=${encodeURIComponent(returnPath)}`)} className="mt-4 w-full rounded-2xl bg-[#F5A623] py-3.5 font-bold text-white">로그인하고 체크인</button>

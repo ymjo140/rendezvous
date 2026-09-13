@@ -63,7 +63,7 @@ python backend/scripts/summarize_api_logs.py /path/to/render-log-export.jsonl
 | 브라우저 시각 검증 | 가상 데이터 프리뷰 서버 준비 후 로컬 URL 접근이 브라우저 보안 정책에 거절되어 미완료 |
 | 실제 Render 실행 확인 | 2026-09-11 공개 루트 조회가 20초 시간 초과. 배포 성공이나 장애로 단정하지 않음 |
 | 실계정·실기기 E2E | 로그인·초대·두 명 체크인·3시간 후 후기·크루 전환·QR/위치 권한 실패를 iOS Safari/Android Chrome/PWA에서 확인 필요 |
-| 점주 화면 / 사용자 관찰 | 별도 점주 콘솔 QR·승인 화면 연결, 첫 5명 관찰과 파일럿 모집 필요 |
+| 점주 화면 / 사용자 관찰 | QR·현장 승인 연동은 [후속 개발](merchant-visit-desk.md)에서 진행. 실계정 확인·첫 5명 관찰과 파일럿 모집 필요 |
 | 기존 DB 접근 권한 | `docs/pending/restrict-server-tables.sql`은 이전 거절 이후 계속 미적용. 이 변경에 포함하지 않음 |
 
 새 테이블은 서버 전용으로 RLS 정책 없이 클라이언트 접근을 막는 구조다. Supabase의 `RLS Enabled No Policy` 안내와 기존 테이블의 RLS 미설정 경고는 별개다. 새 스키마 적용이 기존 보안 미해결 사항까지 해결했다는 뜻은 아니다.

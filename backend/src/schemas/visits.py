@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 ContextTag = Literal["date", "work", "friends", "solo", "cafe", "drink", "family", "special"]
 
@@ -34,3 +34,8 @@ class RedeemRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     partnership_app_id: int = Field(gt=0)
     idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class ApproveVisitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_created_at: AwareDatetime

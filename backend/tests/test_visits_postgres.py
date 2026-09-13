@@ -93,6 +93,21 @@ def test_beta_metrics_and_readiness_use_real_postgres(pg):
         assert result["summary"]["repeat_crews"] == 0
 
 
+def test_merchant_queue_contract_uses_real_postgres(pg):
+    import json
+    from api.routers.visits import pending_requests
+    from schemas.visits import VisitInput
+    engine, factory, now = pg
+    with factory() as db:
+        created = checkin.request_approval(db, db.get(m.User, 1), VisitInput(place_id=1, community_id="crew"))
+        response = pending_requests(1, "merchant-1", db)
+        row = json.loads(response.body)["items"][0]
+        assert row["verification_code"] == created["verification_code"]
+        assert row["expires_at"] == created["expires_at"]
+        checkin.approve_visit(db, created["request_id"], "merchant-1")
+        assert json.loads(pending_requests(1, "merchant-1", db).body)["items"] == []
+
+
 def test_concurrent_feedback_and_review_are_single_records(pg):
     from services import feedback_service
     from schemas.feedback import FeedbackRequest, ReviewRequest
