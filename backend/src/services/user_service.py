@@ -318,7 +318,7 @@ class UserService:
         avg_rating = (req.score_taste + req.score_service + req.score_price + req.score_vibe) / 4.0
         image_urls = self._normalize_image_urls(req.image_urls)
         db_review = models.Review(
-            user_id=user.id, place_name=req.place_name, rating=avg_rating,
+            user_id=user.id, place_name=req.place_name, place_id=req.place_id, rating=avg_rating,
             score_taste=req.score_taste, score_service=req.score_service, score_price=req.score_price, score_vibe=req.score_vibe,
             comment=req.comment, tags=req.tags, reason=req.reason, image_urls=image_urls
         )
