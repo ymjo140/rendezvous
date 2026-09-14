@@ -10,7 +10,7 @@ import { VerifySheet, CREW_TYPE_META } from "../../verify-sheet"
 import { fetchWithAuth } from "@/lib/api-client"
 import { logBetaEvent } from "@/lib/analytics-client"
 import { useCrewResource, crewActivityChanged } from "@/lib/use-crew-resource"
-import { CrewShowcase } from "@/components/ui/crew-showcase"
+import { CrewShowcase, type ShowcaseTab } from "@/components/ui/crew-showcase"
 import { CrewLounge } from "@/components/ui/crew-lounge"
 import { CrewAvatar } from "@/components/ui/crew-avatar"
 import { isCrewAvatarId } from "@/lib/crew-avatars"
@@ -54,6 +54,7 @@ function CrewProfileContent() {
   const [shareMsg, setShareMsg] = useState<string | null>(null)
   const [verifyNeed, setVerifyNeed] = useState<null | { kind: "university" | "company"; org: string }>(null)
   const [joinErr, setJoinErr] = useState<string | null>(null)
+  const [showcaseTab, setShowcaseTab] = useState<ShowcaseTab>("visits")
   const autoTried = React.useRef(false)
   const viewedCrew = React.useRef<string | null>(null)
   const deals = useCrewResource<{ items: { my_status?: string }[] }>(crew?.is_member ? `/api/crew-deals?community_id=${encodeURIComponent(params.cid)}` : null)
@@ -136,6 +137,15 @@ function CrewProfileContent() {
     : openDeals > 0
       ? `신청할 수 있는 제휴 ${openDeals}곳`
       : "아직 제휴가 없어요 — 주변 제휴를 둘러보세요"
+
+  const openShowcase = (tab: ShowcaseTab) => {
+    setShowcaseTab(tab)
+    window.setTimeout(() => {
+      document.getElementById("crew-showcase")?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 0)
+  }
+
+  const openRanking = () => router.push("/crews#crew-ranking")
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-16">
@@ -310,7 +320,16 @@ function CrewProfileContent() {
 
           <div className="mt-5 px-4">
             {crew.is_member && <button onClick={() => router.push(`/crew/${encodeURIComponent(crew.id)}/missions?action=save`)} className="flex items-center gap-1 rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800"><Plus className="h-4 w-4" />크루에 장소 추가</button>}
-            <CrewShowcase key={crew.id} groupId={crew.id} />
+            <CrewLounge
+              title={crew.title}
+              members={crew.members}
+              visitVerified={crew.visit_verified}
+              memberVisits={crew.member_visits}
+              memberRevisits={crew.member_revisits}
+              onOpenShowcase={openShowcase}
+              onOpenRanking={openRanking}
+            />
+            <CrewShowcase groupId={crew.id} activeTab={showcaseTab} onTabChange={setShowcaseTab} />
           </div>
 
           {/* 멤버 */}

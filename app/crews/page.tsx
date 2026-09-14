@@ -9,6 +9,7 @@ import { Users, Plus, ChevronRight, Sparkles, MessageCircle, Share2, Handshake, 
 import { Copy, Check, X } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "../tab-bar"
+import { CrewRanking } from "@/components/ui/crew-ranking"
 
 type CrewVisit = { place: string; date: string; amount: number; party: number }
 type CrewPartnership = { invites: number; active: number; pending: number; unread: boolean }
@@ -220,6 +221,10 @@ export default function CrewsTabPage() {
           </div>
         </div>
       )}
+
+      <div id="crew-ranking" className="px-4 pt-6">
+        <CrewRanking />
+      </div>
 
       {invite && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setInvite(null)}>

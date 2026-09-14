@@ -2,6 +2,7 @@
 
 import { Award, BookOpen, MapPin, Star } from "lucide-react"
 import { CrewAvatar } from "@/components/ui/crew-avatar"
+import type { ShowcaseTab } from "@/components/ui/crew-showcase"
 
 type LoungeMember = {
   id: number
@@ -17,6 +18,8 @@ type CrewLoungeProps = {
   visitVerified: boolean
   memberVisits: number
   memberRevisits: number
+  onOpenShowcase?: (tab: ShowcaseTab) => void
+  onOpenRanking?: () => void
 }
 
 export function CrewLounge({
@@ -25,6 +28,8 @@ export function CrewLounge({
   visitVerified,
   memberVisits,
   memberRevisits,
+  onOpenShowcase,
+  onOpenRanking,
 }: CrewLoungeProps) {
   const seated = members.slice(0, 5)
 
@@ -74,22 +79,22 @@ export function CrewLounge({
       </div>
 
       <div className="grid grid-cols-4 gap-1.5 px-3 py-3">
-        <div className="flex flex-col items-center gap-1 rounded-xl bg-white/80 py-2 text-[10px] font-semibold text-[#806b57]">
+        <button type="button" onClick={() => onOpenShowcase?.("visits")} className="flex flex-col items-center gap-1 rounded-xl bg-white/80 py-2 text-[10px] font-semibold text-[#806b57] transition-colors hover:bg-white">
           <MapPin className="h-4 w-4 text-[#d59a3a]" />
           방문 기록
-        </div>
-        <div className="flex flex-col items-center gap-1 rounded-xl bg-white/80 py-2 text-[10px] font-semibold text-[#806b57]">
+        </button>
+        <button type="button" onClick={() => onOpenShowcase?.("posts")} className="flex flex-col items-center gap-1 rounded-xl bg-white/80 py-2 text-[10px] font-semibold text-[#806b57] transition-colors hover:bg-white">
           <BookOpen className="h-4 w-4 text-[#d59a3a]" />
           리뷰 보관함
-        </div>
-        <div className="flex flex-col items-center gap-1 rounded-xl bg-white/80 py-2 text-[10px] font-semibold text-[#806b57]">
+        </button>
+        <button type="button" onClick={() => onOpenShowcase?.("lists")} className="flex flex-col items-center gap-1 rounded-xl bg-white/80 py-2 text-[10px] font-semibold text-[#806b57] transition-colors hover:bg-white">
           <Star className="h-4 w-4 text-[#d59a3a]" />
           추천 장소
-        </div>
-        <div className="flex flex-col items-center gap-1 rounded-xl bg-white/80 py-2 text-[10px] font-semibold text-[#806b57]">
+        </button>
+        <button type="button" onClick={() => onOpenRanking?.()} className="flex flex-col items-center gap-1 rounded-xl bg-white/80 py-2 text-[10px] font-semibold text-[#806b57] transition-colors hover:bg-white">
           <Award className="h-4 w-4 text-[#d59a3a]" />
           크루 랭킹
-        </div>
+        </button>
       </div>
     </section>
   )
