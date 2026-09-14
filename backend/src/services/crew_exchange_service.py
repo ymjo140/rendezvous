@@ -84,7 +84,7 @@ def _outgoing_query(db: Session, community_id: str):
     destination_folder = aliased(models.SaveFolder)
     destination_crew = aliased(models.Community)
     query = (
-        db.query(models.ListCopyEvent, destination_folder, destination_crew)
+        db.query(models.ListCopyEvent, source_folder, destination_crew)
         .join(source_folder, source_folder.id == models.ListCopyEvent.source_folder_id)
         .join(destination_folder, destination_folder.id == models.ListCopyEvent.destination_folder_id)
         .join(destination_crew, destination_crew.id == models.ListCopyEvent.destination_community_id)

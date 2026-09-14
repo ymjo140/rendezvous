@@ -87,7 +87,7 @@ def test_exchange_shows_public_crew_flow_without_user_identity(db, client_for, s
     assert data["incoming"][0]["crew_title"] == "B 크루"
     assert data["incoming"][0]["list_name"] == "B 추천"
     assert data["outgoing"][0]["crew_title"] == "B 크루"
-    assert data["outgoing"][0]["list_name"] == "B가 담아온 A 리스트"
+    assert data["outgoing"][0]["list_name"] == "A 추천"
     assert "user_id" not in data["incoming"][0]
     assert "private" not in str(data)
 
