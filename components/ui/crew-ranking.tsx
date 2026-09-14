@@ -92,7 +92,7 @@ export function CrewRanking() {
                   <span>·</span>
                   <span>팔로워 {item.follower_count}</span>
                 </span>
-                <span className={`absolute left-[5.5rem] top-[2.85rem] text-[10px] ${
+                <span className={`mt-0.5 block text-[10px] ${
                   item.trust_status === "observed" ? "text-emerald-600" : "text-slate-400"
                 }`}>
                   {item.trust_status === "observed"
