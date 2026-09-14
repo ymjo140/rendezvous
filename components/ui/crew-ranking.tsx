@@ -15,6 +15,10 @@ type RankingItem = {
   like_count: number
   list_count: number
   score: number
+  activity_score: number
+  verified_visit_count: number
+  verified_revisit_count: number
+  trust_status: "observed" | "collecting"
   visibility: string
 }
 
@@ -87,6 +91,13 @@ export function CrewRanking() {
                   <span>{item.list_count}개 리스트</span>
                   <span>·</span>
                   <span>팔로워 {item.follower_count}</span>
+                </span>
+                <span className={`absolute left-[5.5rem] top-[2.85rem] text-[10px] ${
+                  item.trust_status === "observed" ? "text-emerald-600" : "text-slate-400"
+                }`}>
+                  {item.trust_status === "observed"
+                    ? `방문 인증 ${item.verified_visit_count}회`
+                    : "방문 데이터 쌓이는 중"}
                 </span>
               </span>
               <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />

@@ -24,6 +24,83 @@ def verified_events(db, community_id=None, place_id=None):
     return q
 
 
+
+def crew_visit_archive(db, community_id: str, limit: int = 12) -> tuple[list[dict], dict]:
+    """Return the canonical verified-visit archive and its transparent summary.
+
+    Pending attendance, reservations, legacy check-ins and self-reported party
+    size never enter this archive. The archive is intentionally event-level so
+    the UI can show the actual visit history without manufacturing activity in
+    a sparse-data launch.
+    """
+    try:
+        limit = max(1, min(int(limit), 50))
+    except (TypeError, ValueError):
+        limit = 12
+
+    rows = (db.query(m.VisitEvent, m.Place)
+            .join(m.Place, m.Place.id == m.VisitEvent.place_id)
+            .filter(m.VisitEvent.community_id == str(community_id),
+                    m.VisitEvent.status == "verified")
+            .order_by(m.VisitEvent.occurred_at.asc(), m.VisitEvent.id.asc())
+            .all())
+    if not rows:
+        return [], {
+            "observed": False,
+            "visits": 0,
+            "unique_places": 0,
+            "revisits": 0,
+            "regular_places": 0,
+            "last_visit": "",
+            "source_counts": {},
+        }
+
+    event_ids = [event.id for event, _ in rows]
+    participants = (db.query(m.VisitParticipant)
+                    .filter(m.VisitParticipant.visit_id.in_(event_ids))
+                    .all())
+    participant_counts = Counter()
+    source_types = {}
+    source_counts = Counter()
+    for participant in participants:
+        participant_counts[participant.visit_id] += 1
+        source_types.setdefault(participant.visit_id, set()).add(participant.evidence_type)
+        source_counts[participant.evidence_type] += 1
+
+    place_counts = Counter(event.place_id for event, _ in rows)
+    visit_numbers = {}
+    seen_by_place = Counter()
+    for event, _ in rows:
+        seen_by_place[event.place_id] += 1
+        visit_numbers[event.id] = seen_by_place[event.place_id]
+
+    archive_rows = list(reversed(rows[-limit:]))
+    archive = []
+    for event, place in archive_rows:
+        sources = sorted(source_types.get(event.id, set()))
+        archive.append({
+            "id": event.id,
+            "place_id": event.place_id,
+            "place_name": place.name,
+            "visit_date_kst": event.visit_date_kst.isoformat(),
+            "occurred_at": clock.as_utc(event.occurred_at).isoformat(),
+            "participant_count": int(participant_counts[event.id]),
+            "source_label": sources[0] if len(sources) == 1 else ("mixed" if sources else "unknown"),
+            "visit_number": int(visit_numbers[event.id]),
+            "revisit": visit_numbers[event.id] > 1,
+        })
+
+    summary = {
+        "observed": True,
+        "visits": len(rows),
+        "unique_places": len(place_counts),
+        "revisits": sum(max(count - 1, 0) for count in place_counts.values()),
+        "regular_places": sum(count >= REGULAR_MIN_VISITS for count in place_counts.values()),
+        "last_visit": max(event.visit_date_kst.isoformat() for event, _ in rows),
+        "source_counts": dict(source_counts),
+    }
+    return archive, summary
+
 def legacy_visit_stats(db, community_id, place_id=None):
     """Old reports remain separate; never promote them to verified attendance."""
     keys = set()

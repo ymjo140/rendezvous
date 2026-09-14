@@ -53,11 +53,12 @@ def group_ranking(limit: int = 12, user: Optional[models.User] = Depends(get_cur
         likes, _ = _likes_for(db, fids)
         followers = _followers(db, c.id)
         score = followers * 3 + likes * 2 + len(fids)
-        scored.append((score, followers, likes, len(fids), c))
+        visit_stats = visit_service.crew_visit_stats(db, c.id)
+        scored.append((score, followers, likes, len(fids), c, visit_stats))
     scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
     scored = scored[:limit]
     items = []
-    for i, (score, followers, likes, nlists, c) in enumerate(scored):
+    for i, (score, followers, likes, nlists, c, visit_stats) in enumerate(scored):
         items.append({
             "rank": i + 1,
             "community_id": c.id,
@@ -69,6 +70,10 @@ def group_ranking(limit: int = 12, user: Optional[models.User] = Depends(get_cur
             "like_count": likes,
             "list_count": nlists,
             "score": score,
+            "activity_score": score,
+            "verified_visit_count": int(visit_stats.get("visits", 0)),
+            "verified_revisit_count": int(visit_stats.get("revisits", 0)),
+            "trust_status": "observed" if visit_stats.get("visits", 0) else "collecting",
             "is_following": c.id in my_follow,
         })
     return {"count": len(items), "items": items}
