@@ -29,9 +29,20 @@ const TABS = [
 
 export type ShowcaseTab = (typeof TABS)[number]["key"]
 
-export function CrewShowcase({ groupId, menus, initialTab }: { groupId: string; menus?: Menu[]; initialTab?: ShowcaseTab }) {
+export function CrewShowcase({
+  groupId,
+  menus,
+  activeTab,
+  onTabChange,
+}: {
+  groupId: string
+  menus?: Menu[]
+  activeTab?: ShowcaseTab
+  onTabChange?: (tab: ShowcaseTab) => void
+}) {
   const router = useRouter()
-  const [tab, setTab] = React.useState<ShowcaseTab>(initialTab || "visits")
+  const [internalTab, setInternalTab] = React.useState<ShowcaseTab>("visits")
+  const tab = activeTab ?? internalTab
   const { data: d, loading, error, reload } = useCrewResource<{ lists: List[]; visits: Visit[]; posts: Post[] }>(`/api/groups/${encodeURIComponent(groupId)}/showcase`)
   const [dexOpen, setDexOpen] = React.useState(false)
 
@@ -55,7 +66,10 @@ export function CrewShowcase({ groupId, menus, initialTab }: { groupId: string; 
         {TABS.map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => {
+              setInternalTab(t.key)
+              onTabChange?.(t.key)
+            }}
             className={`flex-1 rounded-xl py-2 text-[12.5px] font-bold transition-colors ${
               tab === t.key ? "bg-amber-100 text-amber-800" : "bg-gray-50 text-gray-400"
             }`}

@@ -329,7 +329,7 @@ function CrewProfileContent() {
               onOpenShowcase={openShowcase}
               onOpenRanking={openRanking}
             />
-            <CrewShowcase key={`${crew.id}-${showcaseTab}`} groupId={crew.id} initialTab={showcaseTab} />
+            <CrewShowcase groupId={crew.id} activeTab={showcaseTab} onTabChange={setShowcaseTab} />
           </div>
 
           {/* 멤버 */}
