@@ -280,3 +280,36 @@ def test_redemption_kst_conditions_and_snapshot(db, crew, now):
     app.terms_snapshot = {"conditions": {}}  # Explicitly empty agreed conditions stay empty.
     d.conditions = {"min_party": 100}; db.commit()
     assert redemption_service.blocked_reason(db, app, d, crew, clock.utc_now(), 2) is None
+
+
+def test_visit_archive_uses_only_verified_events_and_preserves_sparse_state(db, client_for, crew, now):
+    empty = client_for(1).get("/api/groups/crew/showcase").json()
+    assert empty["visit_archive"] == []
+    assert empty["visit_summary"] == {
+        "observed": False,
+        "visits": 0,
+        "unique_places": 0,
+        "revisits": 0,
+        "regular_places": 0,
+        "last_visit": "",
+        "source_counts": {},
+    }
+
+    first = attend(db, 1)
+    attend(db, 2)
+    now["at"] += timedelta(days=1)
+    second = attend(db, 1)
+    attend(db, 2)
+    db.add(m.PlaceCheckin(place_id=1, user_id=1, community_id="crew", date="2026-09-06", party_size=50))
+    db.commit()
+
+    data = client_for(1).get("/api/groups/crew/showcase").json()
+    assert data["visit_summary"]["observed"] is True
+    assert data["visit_summary"]["visits"] == 2
+    assert data["visit_summary"]["unique_places"] == 1
+    assert data["visit_summary"]["revisits"] == 1
+    assert data["visit_archive"][0]["id"] == second.id
+    assert data["visit_archive"][0]["revisit"] is True
+    assert data["visit_archive"][0]["visit_number"] == 2
+    assert data["visit_archive"][0]["source_label"] == "merchant_approval"
+    assert data["visits"][0]["visits"] == 2

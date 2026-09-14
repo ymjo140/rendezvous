@@ -234,7 +234,7 @@ def get_showcase(db: Session, community_id: str, member_ids: list, limit: int = 
                 .limit(limit).all())]
 
     if not include_activity:
-        return {"lists": lists, "visits": [], "posts": []}
+        return {"lists": lists, "visits": [], "posts": [], "visit_archive": [], "visit_summary": None}
 
     visits = [{
         "place_id": p.id, "name": p.name, "address": p.address,
@@ -259,4 +259,11 @@ def get_showcase(db: Session, community_id: str, member_ids: list, limit: int = 
                             models.Post.is_public.is_(True))
                     .order_by(models.Post.created_at.desc()).limit(limit).all())]
 
-    return {"lists": lists, "visits": visits, "posts": posts}
+    visit_archive, visit_summary = visit_service.crew_visit_archive(db, cid, limit=limit)
+    return {
+        "lists": lists,
+        "visits": visits,
+        "posts": posts,
+        "visit_archive": visit_archive,
+        "visit_summary": visit_summary,
+    }

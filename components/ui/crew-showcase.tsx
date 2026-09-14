@@ -18,6 +18,26 @@ import { CrewLoadError } from "@/components/ui/crew-load-error"
 
 type List = { id: number; name: string; description: string | null; count: number; cover_image: string | null }
 type Visit = { place_id: number; name: string; address: string | null; visits: number; last_date: string; menu: string; is_regular: boolean }
+type VisitArchiveItem = {
+  id: string
+  place_id: number
+  place_name: string
+  visit_date_kst: string
+  occurred_at: string
+  participant_count: number
+  source_label: "signed_qr" | "merchant_approval" | "mixed" | "unknown"
+  visit_number: number
+  revisit: boolean
+}
+type VisitSummary = {
+  observed: boolean
+  visits: number
+  unique_places: number
+  revisits: number
+  regular_places: number
+  last_visit: string
+  source_counts: Record<string, number>
+}
 type Post = { id: string; content: string | null; image: string | null; place_name: string; author: string; created_at: string; likes: number }
 type Menu = { key: string; title: string; unlocked: boolean; place_name: string | null; image: string }
 
@@ -43,7 +63,7 @@ export function CrewShowcase({
   const router = useRouter()
   const [internalTab, setInternalTab] = React.useState<ShowcaseTab>("visits")
   const tab = activeTab ?? internalTab
-  const { data: d, loading, error, reload } = useCrewResource<{ lists: List[]; visits: Visit[]; posts: Post[] }>(`/api/groups/${encodeURIComponent(groupId)}/showcase`)
+  const { data: d, loading, error, reload } = useCrewResource<{ lists: List[]; visits: Visit[]; posts: Post[]; visit_archive?: VisitArchiveItem[]; visit_summary?: VisitSummary | null }>(`/api/groups/${encodeURIComponent(groupId)}/showcase`)
   const [dexOpen, setDexOpen] = React.useState(false)
 
 
@@ -81,33 +101,79 @@ export function CrewShowcase({
 
       <div className="mt-3">
         {tab === "visits" && (
-          d.visits.length === 0 ? (
-            <Empty text="아직 함께 간 곳이 없어요. 다녀와서 체크인하면 여기 쌓입니다." />
-          ) : (
-            <div className="space-y-1.5">
-              {d.visits.map((v) => (
-                <button
-                  key={v.place_id}
-                  onClick={() => router.push(`/places/${v.place_id}`)}
-                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left ${
-                    v.is_regular ? "border-amber-200 bg-amber-50/50" : "border-gray-100 bg-white"
-                  }`}
-                >
-                  {v.is_regular
-                    ? <Star className="h-4 w-4 flex-shrink-0 text-[#F5A623]" fill="#F5A623" />
-                    : <MapPin className="h-4 w-4 flex-shrink-0 text-gray-300" />}
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-bold text-gray-900">{v.name}</div>
-                    <div className="text-[11px] text-gray-500">
-                      {v.menu} · 마지막 {v.last_date}
-                      {v.is_regular && <span className="ml-1 font-bold text-amber-700">단골집</span>}
+          <div className="space-y-3">
+            {d.visit_summary && (
+              <div className="rounded-2xl border border-amber-100 bg-amber-50/60 px-3.5 py-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-bold text-amber-900">검증 방문 아카이브</span>
+                  <span className="text-[10px] font-semibold text-amber-700">
+                    {d.visit_summary.observed ? "관찰 중" : "기록 대기"}
+                  </span>
+                </div>
+                {d.visit_summary.observed ? (
+                  <p className="mt-1 text-[11px] text-amber-800">
+                    {d.visit_summary.visits}회 · 장소 {d.visit_summary.unique_places}곳 · 재방문 {d.visit_summary.revisits}회
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] leading-relaxed text-amber-700">
+                    실제 방문 인증 데이터가 쌓이면 이곳에 기록돼요. 예약·의향·기존 체크인은 포함하지 않아요.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {d.visit_archive && d.visit_archive.length > 0 && (
+              <div>
+                <p className="mb-1.5 text-[11px] font-bold text-slate-500">최근 방문</p>
+                <div className="space-y-1.5">
+                  {d.visit_archive.map((v) => (
+                    <div key={v.id} className="flex items-center gap-2.5 rounded-xl border border-gray-100 bg-white px-3 py-2.5">
+                      <MapPin className="h-4 w-4 flex-shrink-0 text-emerald-500" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-bold text-gray-900">{v.place_name}</div>
+                        <div className="text-[11px] text-gray-500">
+                          {v.visit_date_kst} · {v.participant_count}명 · {v.source_label === "signed_qr" ? "QR 인증" : v.source_label === "merchant_approval" ? "점주 승인" : v.source_label === "mixed" ? "복합 인증" : "인증 확인"}
+                          {v.revisit && <span className="ml-1 font-bold text-amber-700">재방문 {v.visit_number}회차</span>}
+                        </div>
+                      </div>
+                      <span className="flex-shrink-0 text-[10px] text-slate-400">{v.revisit ? "재방문" : "첫 방문"}</span>
                     </div>
-                  </div>
-                  <span className="flex-shrink-0 text-[11.5px] font-bold text-gray-400">{v.visits}회</span>
-                </button>
-              ))}
-            </div>
-          )
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {d.visits.length === 0 ? (
+              <Empty text="아직 함께 간 곳이 없어요. 다녀와서 체크인하면 여기 쌓입니다." />
+            ) : (
+              <div>
+                <p className="mb-1.5 text-[11px] font-bold text-slate-500">장소별 요약</p>
+                <div className="space-y-1.5">
+                  {d.visits.map((v) => (
+                    <button
+                      key={v.place_id}
+                      onClick={() => router.push(`/places/${v.place_id}`)}
+                      className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left ${
+                        v.is_regular ? "border-amber-200 bg-amber-50/50" : "border-gray-100 bg-white"
+                      }`}
+                    >
+                      {v.is_regular
+                        ? <Star className="h-4 w-4 flex-shrink-0 text-[#F5A623]" fill="#F5A623" />
+                        : <MapPin className="h-4 w-4 flex-shrink-0 text-gray-300" />}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-bold text-gray-900">{v.name}</div>
+                        <div className="text-[11px] text-gray-500">
+                          {v.menu} · 마지막 {v.last_date}
+                          {v.is_regular && <span className="ml-1 font-bold text-amber-700">단골집</span>}
+                        </div>
+                      </div>
+                      <span className="flex-shrink-0 text-[11.5px] font-bold text-gray-400">{v.visits}회</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {tab === "lists" && (
