@@ -5,11 +5,10 @@
 
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Users, Plus, ChevronRight, Sparkles, MessageCircle, Share2, Handshake, CalendarCheck, Map as MapIcon } from "lucide-react"
+import { Users, Plus, ChevronRight, MessageCircle, Share2, Handshake, CalendarCheck, Map as MapIcon } from "lucide-react"
 import { Copy, Check, X } from "lucide-react"
 import { fetchWithAuth } from "@/lib/api-client"
 import { TabBar } from "../tab-bar"
-import { CrewRanking } from "@/components/ui/crew-ranking"
 
 type CrewVisit = { place: string; date: string; amount: number; party: number }
 type CrewPartnership = { invites: number; active: number; pending: number; unread: boolean }
@@ -32,7 +31,6 @@ const VIS_LABEL: Record<string, string> = {
 export default function CrewsTabPage() {
   const router = useRouter()
   const [mine, setMine] = useState<Crew[]>([])
-  const [suggest, setSuggest] = useState<Crew[]>([])
   const [loading, setLoading] = useState(true)
   const [loggedIn, setLoggedIn] = useState(true)
   // 초대 링크를 눈으로 보고 복사하게 한다. 카카오 공유 SDK는 개발자 콘솔에
@@ -47,7 +45,6 @@ export default function CrewsTabPage() {
       .then((d) => {
         if (!d) return
         setMine(d.my_crews || [])
-        setSuggest(d.crew_suggestions || [])
         setLoggedIn(!!d.logged_in)
       })
       .catch(() => {})
@@ -58,8 +55,8 @@ export default function CrewsTabPage() {
     <div className="mx-auto min-h-screen max-w-md bg-white pb-24">
 
       <div className="px-4 pt-4">
-        <h1 className="text-lg font-bold text-slate-900">내 크루</h1>
-        <p className="mt-0.5 text-[12px] text-slate-400">취향으로 뭉쳐 맛집 리스트를 함께 쌓는 무리</p>
+        <h1 className="text-lg font-bold text-slate-900">크루 관리</h1>
+        <p className="mt-0.5 text-[12px] text-slate-400">채팅·예약·초대·제휴를 한곳에서 관리해요</p>
       </div>
 
       <div className="px-4 pt-4">
@@ -195,35 +192,6 @@ export default function CrewsTabPage() {
             </button>
           </div>
         )}
-      </div>
-
-      {/* 취향 맞는 크루 추천 — 가입 유도 */}
-      {suggest.length > 0 && (
-        <div className="px-4 pt-6">
-          <h2 className="mb-2 flex items-center gap-1.5 text-[15px] font-semibold text-slate-900">
-            <Sparkles className="h-4 w-4 text-[#F5A623]" />이런 크루는 어때?
-          </h2>
-          <div className="space-y-2">
-            {suggest.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => router.push(`/crew/${c.id}`)}
-                className="flex w-full items-center gap-3 rounded-2xl bg-slate-50 p-3 text-left"
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-xl">{c.icon}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-slate-800">{c.title}</span>
-                  <span className="text-[11px] text-slate-400">멤버 {c.members} · 공개 리스트 {c.lists}</span>
-                </span>
-                <Users className="h-4 w-4 shrink-0 text-slate-300" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div id="crew-ranking" className="px-4 pt-6">
-        <CrewRanking />
       </div>
 
       {invite && (

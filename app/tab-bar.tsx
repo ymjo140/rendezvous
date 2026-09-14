@@ -1,26 +1,23 @@
 "use client"
 
-// 하단 5탭 — 홈·우리 크루·탐색·내 크루 목록·프로필
-// 지도 자리를 '우리 크루'가 대체한다. 지도 탭은 구 홈탭을 감싼 19줄 껍데기였고,
-// 중간지점 추천은 이미 채팅·투표 안에 있어서 탭이 없어도 흐름이 안 끊긴다.
-// 지도가 필요하면 내 크루에서 연다(/map은 라우트로 남겨둠).
-// 브랜드색 #F5A623 유지.
-
 import React from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { Compass, ChefHat, LayoutGrid, Users, User } from "lucide-react"
+import { Compass, ChefHat, LayoutGrid, User } from "lucide-react"
 
 const BRAND = "#F5A623"
 
+/**
+ * 공개 경험은 크루 마을에서, 운영 기능은 크루 관리에서 연다.
+ * /crews와 /map은 기존 링크 호환을 위해 라우트를 유지한다.
+ */
 export function TabBar() {
   const router = useRouter()
   const pathname = usePathname()
 
   const tabs = [
     { key: "home", label: "홈", icon: Compass, path: "/", exact: true },
-    { key: "kitchen", label: "우리 크루", icon: ChefHat, path: "/kitchen" },
-    { key: "feed", label: "탐색", icon: LayoutGrid, path: "/feed" },
-    { key: "crews", label: "내 크루", icon: Users, path: "/crews" },
+    { key: "town", label: "크루 마을", icon: ChefHat, path: "/kitchen" },
+    { key: "feed", label: "장소 탐색", icon: LayoutGrid, path: "/feed" },
     { key: "profile", label: "프로필", icon: User, path: "/profile" },
   ]
 

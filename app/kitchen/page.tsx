@@ -19,16 +19,18 @@
 
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, ChevronDown, Users } from "lucide-react"
+import { Loader2, ChevronDown, Users, Settings2, Trophy, Compass } from "lucide-react"
 import { useCrewResource } from "@/lib/use-crew-resource"
 import { CrewLoadError } from "@/components/ui/crew-load-error"
 import { CrewShowcase } from "@/components/ui/crew-showcase"
+import { CrewRanking } from "@/components/ui/crew-ranking"
 import { CrewExchange } from "@/components/ui/crew-exchange"
 import { CrewMissions } from "@/components/ui/crew-missions"
 import { CrewVillage, NeighborStrip, type Member, type NeighborCrew } from "@/components/ui/crew-village"
 import { TabBar } from "../tab-bar"
 
 type Crew = { id: string; title: string; icon: string; members: number }
+type TownSection = "mine" | "ranking" | "discover"
 
 const LAST_CREW_KEY = "kitchen_last_crew"
 
@@ -39,6 +41,7 @@ export default function KitchenTabPage() {
   const neighbors = feed.data?.crew_suggestions || []
   const [sel, setSel] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
+  const [section, setSection] = useState<TownSection>("mine")
   const loading = feed.loading
   useEffect(() => {
     if (!feed.data) return
@@ -59,17 +62,27 @@ export default function KitchenTabPage() {
   return (
     <div className="mx-auto min-h-[100dvh] max-w-md bg-white pb-16">
       <div className="sticky top-0 z-10 flex h-14 items-center gap-2 border-b border-gray-100 bg-white/95 px-4 backdrop-blur">
-        <span className="font-bold text-gray-900">우리 크루</span>
-        {crews.length > 1 && current && (
+        <span className="font-bold text-gray-900">크루 마을</span>
+        <div className="ml-auto flex items-center gap-1.5">
           <button
-            onClick={() => setPicking((v) => !v)}
-            className="ml-auto flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-1 text-[12px] font-bold text-gray-700"
+            onClick={() => router.push("/crews")}
+            className="flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-1 text-[12px] font-bold text-gray-600"
+            aria-label="크루 관리"
           >
-            <span>{current.icon}</span>
-            <span className="max-w-[120px] truncate">{current.title}</span>
-            <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${picking ? "rotate-180" : ""}`} />
+            <Settings2 className="h-3.5 w-3.5" />
+            관리
           </button>
-        )}
+          {crews.length > 1 && current && (
+            <button
+              onClick={() => setPicking((v) => !v)}
+              className="flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-1 text-[12px] font-bold text-gray-700"
+            >
+              <span>{current.icon}</span>
+              <span className="max-w-[100px] truncate">{current.title}</span>
+              <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${picking ? "rotate-180" : ""}`} />
+            </button>
+          )}
+        </div>
       </div>
 
       {picking && (
@@ -90,12 +103,39 @@ export default function KitchenTabPage() {
         </div>
       )}
 
+      <div className="grid grid-cols-3 gap-1.5 px-4 pt-3">
+        {([
+          { key: "mine", label: "우리 크루", icon: Users },
+          { key: "ranking", label: "랭킹", icon: Trophy },
+          { key: "discover", label: "다른 크루", icon: Compass },
+        ] as const).map((tab) => {
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setSection(tab.key)}
+              className={`flex items-center justify-center gap-1 rounded-xl py-2 text-[12px] font-bold transition-colors ${section === tab.key ? "bg-amber-100 text-amber-800" : "bg-gray-50 text-gray-400"}`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-24 text-sm text-gray-400">
           <Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중
         </div>
-      ) : feed.error ? <CrewLoadError message={feed.error} retry={feed.reload} /> : !sel ? (
-        // 크루가 없으면 이 화면이 성립하지 않는다. 여기서 만들게 안내한다.
+      ) : feed.error ? <CrewLoadError message={feed.error} retry={feed.reload} /> : section === "ranking" ? (
+        <div className="px-4 pt-3">
+          <CrewRanking />
+        </div>
+      ) : section === "discover" ? (
+        <div className="px-4 pt-3">
+          <CrewDirectory crews={neighbors} />
+        </div>
+      ) : !sel ? (
         <div className="flex flex-col items-center gap-3 px-8 py-24 text-center">
           <Users className="h-10 w-10 text-gray-300" />
           <p className="text-[15px] font-bold text-gray-900">아직 크루가 없어요</p>
@@ -139,4 +179,46 @@ function KitchenContent({ crew, neighbors }: { crew: Crew; neighbors: NeighborCr
     <CrewExchange groupId={crew.id} />
     <CrewShowcase groupId={crew.id} menus={data.menus} />
   </>
+}
+
+
+function CrewDirectory({ crews }: { crews: NeighborCrew[] }) {
+  const router = useRouter()
+
+  return (
+    <section aria-label="다른 크루" className="space-y-3">
+      <div>
+        <h2 className="text-[16px] font-bold text-slate-900">다른 크루 둘러보기</h2>
+        <p className="mt-1 text-[11.5px] leading-relaxed text-slate-500">
+          공개 크루의 리스트와 방문 기록을 구경하고, 좋은 장소를 우리 리스트에 담아보세요.
+        </p>
+      </div>
+      {crews.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
+          <Compass className="mx-auto h-6 w-6 text-slate-300" />
+          <p className="mt-2 text-[12px] font-semibold text-slate-600">아직 둘러볼 공개 크루가 없어요.</p>
+          <p className="mt-1 text-[11px] text-slate-400">공개 크루와 방문 기록이 쌓이면 여기에 보여요.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {crews.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => router.push(`/crew/${encodeURIComponent(c.id)}`)}
+              className="flex w-full items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3 text-left transition-colors hover:bg-amber-50"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-xl">{c.icon}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-bold text-slate-900">{c.title}</span>
+                <span className="mt-0.5 block text-[11px] text-slate-400">
+                  멤버 {c.members}{typeof c.lists === "number" ? ` · 공개 리스트 ${c.lists}` : ""}
+                </span>
+              </span>
+              <span className="text-[11px] font-bold text-amber-700">둘러보기 ›</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  )
 }
