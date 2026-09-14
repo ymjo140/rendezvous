@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
-from services import taste_service, visit_service, beta_event_service
+from services import taste_service, visit_service, beta_event_service, crew_exchange_service
 from collections import Counter
 from api.dependencies import get_current_user
 from services.crew_access import (
@@ -408,6 +408,22 @@ def crew_showcase(cid: str, user: Optional[models.User] = Depends(get_current_us
     return kitchen.get_showcase(db, cid, _members(c),
                                 include_private_lists=_is_member(c, user),
                                 include_activity=can_view_activity(c, user))
+
+
+@router.get("/api/groups/{cid}/exchange")
+def crew_exchange(cid: str, user: Optional[models.User] = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """공개 리스트를 매개로 한 크루 간 교류 기록."""
+    c = db.query(models.Community).filter(models.Community.id == cid).first()
+    if c is None:
+        raise HTTPException(status_code=404, detail="모임을 찾을 수 없어요.")
+    require_crew(c, user)
+    return crew_exchange_service.get_exchange(
+        db,
+        cid,
+        visible=can_view_activity(c, user),
+        can_borrow=_is_member(c, user),
+    )
 
 
 @router.get("/api/groups/{cid}/mission-options")
