@@ -16,6 +16,7 @@ import {
   X,
   Bookmark,
   Plus,
+  ArrowRight,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -82,6 +83,36 @@ type PlaceDetail = {
     remaining: number | null; valid_to: string | null
   }[]
   reviews?: PlaceReview[]
+}
+
+type JourneyStage = "discover" | "saved" | "planned" | "visited" | "archived"
+type JourneyAction = "save" | "plan" | "checkin" | "review" | "archive"
+
+type PlaceJourney = {
+  place_id: number
+  authenticated: boolean
+  saved: boolean
+  folder_name: string | null
+  reviewed: boolean
+  review_created_at: string | null
+  verified_visit: {
+    id: string
+    visit_date_kst: string
+    community_id: string | null
+  } | null
+  upcoming_reservation: {
+    id: string
+    date: string
+    time: string
+    community_id: string | null
+  } | null
+  stage: JourneyStage
+  next_action: JourneyAction
+  next_action_label: string
+  next_action_description: string
+  checkin_path: string | null
+  archive_path: string | null
+  status_note: string | null
 }
 
 const formatPrice = (price?: string | number | null) => {
@@ -222,6 +253,7 @@ export default function PlaceDetailPage() {
   const [savePickerOpen, setSavePickerOpen] = useState(false)
   const [saveFolders, setSaveFolders] = useState<any[]>([])
   const [saveFoldersLoading, setSaveFoldersLoading] = useState(false)
+  const [journey, setJourney] = useState<PlaceJourney | null>(null)
 
   // 재방문 신뢰 배지(개인축/모임축)
   const [badges, setBadges] = useState<{
@@ -255,6 +287,27 @@ export default function PlaceDetailPage() {
     }
   }, [placeId])
 
+  // 발견 → 저장 → 방문 → 기록을 장소 단위로 이어 붙인다.
+  // 로그인하지 않은 경우에도 기본 단계와 저장 CTA를 내려받아 흐름을 설명한다.
+  useEffect(() => {
+    if (!placeId) return
+    let active = true
+    const token = localStorage.getItem("token")
+    fetch(`${API_BASE_URL}/api/places/${placeId}/journey`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: PlaceJourney | null) => {
+        if (!active || !data) return
+        setJourney(data)
+        setSavedPlace(Boolean(data.saved))
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [placeId, retryKey])
+
   // 재방문 신뢰 배지
   useEffect(() => {
     if (!placeId) return
@@ -272,6 +325,42 @@ export default function PlaceDetailPage() {
       active = false
     }
   }, [placeId])
+
+  const markPlaceSaved = () => {
+    setSavedPlace(true)
+    setJourney((prev) => {
+      if (!prev) {
+        return {
+          place_id: Number(placeId),
+          authenticated: true,
+          saved: true,
+          folder_name: null,
+          reviewed: false,
+          review_created_at: null,
+          verified_visit: null,
+          upcoming_reservation: null,
+          stage: "saved",
+          next_action: "plan",
+          next_action_label: "방문 일정 정하기",
+          next_action_description: "날짜를 정하면 방문 당일 체크인으로 기록을 남길 수 있어요.",
+          checkin_path: null,
+          archive_path: null,
+          status_note: null,
+        }
+      }
+      if (prev.stage === "discover") {
+        return {
+          ...prev,
+          saved: true,
+          stage: "saved",
+          next_action: "plan",
+          next_action_label: "방문 일정 정하기",
+          next_action_description: "날짜를 정하면 방문 당일 체크인으로 기록을 남길 수 있어요.",
+        }
+      }
+      return { ...prev, saved: true }
+    })
+  }
 
   // 저장 버튼 → 폴더 선택 시트 열기(+폴더 목록 로드)
   const handleSavePlace = async () => {
@@ -308,13 +397,13 @@ export default function PlaceDetailPage() {
         body: JSON.stringify({ folder_id: folderId, item_type: "place", place_id: place.id }),
       })
       if (sRes.ok) {
-        setSavedPlace(true)
+        markPlaceSaved()
         setSavePickerOpen(false)
         recordActivity("explore")
       } else {
         const err = await sRes.json().catch(() => null)
         if (String(err?.detail || "").includes("이미")) {
-          setSavedPlace(true)
+          markPlaceSaved()
           setSavePickerOpen(false)
         } else {
           throw new Error("save")
@@ -431,6 +520,15 @@ export default function PlaceDetailPage() {
     } finally {
       setReserveSubmitting(false)
     }
+  }
+
+  const handleJourneyAction = () => {
+    const action = journey?.next_action || "save"
+    if (action === "save") return handleSavePlace()
+    if (action === "plan") return openReserve()
+    if (action === "checkin" && journey?.checkin_path) return router.push(journey.checkin_path)
+    if (action === "review") return router.push(`/places/${placeId}?review=1`)
+    router.push(journey?.archive_path || "/kitchen")
   }
 
   useEffect(() => {
@@ -562,6 +660,7 @@ export default function PlaceDetailPage() {
         },
         body: JSON.stringify({
           place_name: place.name,
+          place_id: place.id,
           rating: avgRating,
           tags,
           score_taste: scores.taste,
@@ -579,7 +678,11 @@ export default function PlaceDetailPage() {
         return
       }
 
-      setReviewSuccess("리뷰가 등록되었습니다.")
+      setReviewSuccess(
+        journey?.verified_visit
+          ? "방문 기록이 저장됐어요. 크루 아카이브에 연결됩니다."
+          : "리뷰가 저장됐어요. 방문 확인 후 아카이브에 연결돼요.",
+      )
       recordActivity("review") // 게임 XP/퀘스트
       setTagsInput("")
       setComment("")
@@ -604,6 +707,43 @@ export default function PlaceDetailPage() {
   ] as const
   const averageScore =
     (scores.taste + scores.service + scores.price + scores.vibe) / 4
+
+  const journeyStage = journey?.stage ?? "discover"
+  const journeyStepIndex =
+    journeyStage === "archived" ? 4 :
+    journeyStage === "visited" ? 3 :
+    journeyStage === "planned" ? 2 :
+    journeyStage === "saved" ? 1 : 0
+  const journeyStageLabel: Record<JourneyStage, string> = {
+    discover: "둘러보는 중",
+    saved: "저장됨",
+    planned: "방문 예정",
+    visited: "방문 확인",
+    archived: "기록 완료",
+  }
+  const journeyCopy: Record<JourneyStage, { title: string; description: string }> = {
+    discover: {
+      title: "마음에 들면 다음 행동을 정해보세요",
+      description: "저장해 두면 방문 일정과 현장 체크인까지 한 흐름으로 이어져요.",
+    },
+    saved: {
+      title: "가볼 리스트에 담았어요",
+      description: "이제 언제 누구와 갈지 정하면 방문 당일 기록으로 이어져요.",
+    },
+    planned: {
+      title: "방문 계획이 있어요",
+      description: "도착하면 체크인하고, 확인된 방문만 크루 기록에 남겨요.",
+    },
+    visited: {
+      title: "방문 확인이 완료됐어요",
+      description: "짧은 평가를 남기면 이 장소의 방문 기록이 아카이브로 완성돼요.",
+    },
+    archived: {
+      title: "방문 기록이 아카이브됐어요",
+      description: "확인된 방문과 후기가 크루의 신뢰 기록으로 남아 있어요.",
+    },
+  }
+  const journeyActionLabel = journey?.next_action_label || "가볼 리스트에 저장"
 
   if (!placeId) {
     return (
@@ -764,6 +904,73 @@ export default function PlaceDetailPage() {
             )}
           </div>
         </header>
+
+        {journey ? (
+          <section
+            aria-labelledby="journey-title"
+            className="mb-4 rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold tracking-wide text-amber-600">방문 여정</p>
+                <h2 id="journey-title" className="mt-1 text-base font-bold text-gray-900">
+                  {journeyCopy[journeyStage].title}
+                </h2>
+                <p className="mt-1 text-xs leading-relaxed text-gray-600">
+                  {journeyCopy[journeyStage].description}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-amber-700 shadow-sm">
+                {journeyStageLabel[journeyStage]}
+              </span>
+            </div>
+
+            <div className="mt-4 grid grid-cols-4 gap-1.5">
+              {["발견", "가볼 리스트", "방문 확인", "기록 보관"].map((step, index) => (
+                <div
+                  key={step}
+                  className={`rounded-xl px-1.5 py-2 text-center ${
+                    index < journeyStepIndex
+                      ? "bg-amber-500 text-white"
+                      : index === journeyStepIndex
+                        ? "border border-amber-300 bg-white text-amber-700"
+                        : "bg-white/70 text-gray-300"
+                  }`}
+                >
+                  <div className="text-[11px] font-bold">
+                    {index < journeyStepIndex ? "✓" : index === journeyStepIndex ? "•" : index + 1}
+                  </div>
+                  <div className="mt-0.5 truncate text-[10px]">{step}</div>
+                </div>
+              ))}
+            </div>
+
+            {journey.status_note && (
+              <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+                {journey.status_note}
+              </p>
+            )}
+
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleJourneyAction}
+                className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-3 py-2.5 text-sm font-bold text-white transition-colors hover:bg-amber-700"
+              >
+                <span className="truncate">{journeyActionLabel}</span>
+                <ArrowRight className="h-4 w-4 shrink-0" />
+              </button>
+              {journey.stage === "archived" && journey.archive_path && (
+                <Link
+                  href={journey.archive_path}
+                  className="shrink-0 rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-xs font-bold text-amber-700"
+                >
+                  기록 보기
+                </Link>
+              )}
+            </div>
+          </section>
+        ) : null}
 
         <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm space-y-3">
           <h2 className="text-sm font-semibold text-gray-800">기본 정보</h2>
@@ -939,7 +1146,14 @@ export default function PlaceDetailPage() {
           id="review-form"
           className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
         >
-          <h2 className="text-sm font-semibold text-gray-800">리뷰 작성</h2>
+          <h2 className="text-sm font-semibold text-gray-800">
+            {journey?.reviewed ? "추가 방문 기록" : "방문 기록 남기기"}
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-gray-500">
+            {journey?.verified_visit
+              ? "방문 확인된 기록이에요. 남긴 평가는 장소와 크루 아카이브를 더 풍성하게 만들어요."
+              : "방문 후 남긴 평가예요. 현장 체크인으로 확인된 방문만 크루 아카이브와 랭킹 신호에 반영돼요."}
+          </p>
           <form onSubmit={handleReviewSubmit} className="mt-3 space-y-4">
             <div className="grid gap-3">
               {scoreItems.map((item) => (
@@ -1069,6 +1283,11 @@ export default function PlaceDetailPage() {
             {reviewSuccess && (
               <p className="text-xs text-green-600">{reviewSuccess}</p>
             )}
+            {reviewSuccess && journey?.verified_visit && journey.archive_path && (
+              <Link href={journey.archive_path} className="block text-center text-xs font-bold text-amber-700">
+                아카이브에서 방문 기록 보기 →
+              </Link>
+            )}
             <Button
               type="submit"
               className="w-full bg-amber-600 hover:bg-amber-700"
@@ -1172,7 +1391,10 @@ export default function PlaceDetailPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900">폴더에 저장</h3>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">가볼 리스트에 저장</h3>
+                <p className="mt-1 text-xs text-gray-500">저장 후 방문 일정을 정하면 체크인까지 이어져요.</p>
+              </div>
               <button
                 onClick={() => !savingPlace && setSavePickerOpen(false)}
                 className="p-1 text-gray-400 hover:text-gray-600"
@@ -1196,7 +1418,7 @@ export default function PlaceDetailPage() {
                   >
                     <span className="text-2xl">{f.icon || "📁"}</span>
                     <div className="flex-1">
-                      <div className="font-bold text-gray-800">{f.name}</div>
+                      <div className="font-bold text-gray-800">{f.is_default ? "가볼 곳" : f.name}</div>
                       <div className="text-xs text-gray-400">{f.item_count ?? 0}개 저장됨</div>
                     </div>
                   </button>

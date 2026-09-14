@@ -2,7 +2,7 @@ import json
 
 from fastapi import APIRouter, Depends, BackgroundTasks, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import and_, or_, text
 from typing import List, Optional
 
 from core.database import get_db
@@ -13,6 +13,7 @@ from services.meeting_service import MeetingService
 # 🌟 [수정됨] 파일 위치가 'core' 폴더이므로 경로를 core로 변경합니다.
 from core.data_provider import RealDataProvider 
 from api.dependencies import get_current_user
+from core import visit_time as visit_clock
 
 router = APIRouter()
 meeting_service = MeetingService()
@@ -340,6 +341,167 @@ def places_nearby(
             for r in rows
             if r[2] and r[3]
         ],
+    }
+
+
+
+@router.get("/api/places/{place_id}/journey")
+def get_place_journey(
+    place_id: int,
+    user: Optional[models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """장소를 발견한 뒤 저장·방문·기록으로 이어지는 개인 여정 상태.
+
+    예약 의도나 예전 셀프 체크인은 방문으로 승격하지 않는다. 아카이브 단계는
+    VisitEvent/VisitParticipant가 verified인 경우에만 열어, 희소한 초기 데이터도
+    신뢰 신호로 오해되지 않게 한다.
+    """
+    place = db.query(models.Place).filter(models.Place.id == place_id).first()
+    if not place:
+        raise HTTPException(status_code=404, detail="Place not found")
+
+    empty = {
+        "place_id": place_id,
+        "authenticated": bool(user),
+        "saved": False,
+        "folder_name": None,
+        "reviewed": False,
+        "review_created_at": None,
+        "verified_visit": None,
+        "upcoming_reservation": None,
+        "stage": "discover",
+        "next_action": "save",
+        "next_action_label": "가볼 리스트에 저장",
+        "next_action_description": "저장해 두면 방문 일정을 정하고, 현장 체크인까지 이어갈 수 있어요.",
+        "checkin_path": None,
+        "archive_path": None,
+        "status_note": None,
+    }
+    if not user:
+        return empty
+
+    saved_item = (
+        db.query(models.SavedItem)
+        .filter(
+            models.SavedItem.user_id == user.id,
+            models.SavedItem.item_type == "place",
+            models.SavedItem.place_id == place_id,
+        )
+        .order_by(models.SavedItem.created_at.desc())
+        .first()
+    )
+    folder = db.get(models.SaveFolder, saved_item.folder_id) if saved_item else None
+
+    # 새 장소 ID가 붙은 후기와, 과거에 이름만 저장된 후기를 함께 찾는다.
+    review = (
+        db.query(models.Review)
+        .filter(
+            models.Review.user_id == user.id,
+            or_(
+                models.Review.place_id == place_id,
+                and_(
+                    models.Review.place_id.is_(None),
+                    models.Review.place_name == place.name,
+                ),
+            ),
+        )
+        .order_by(models.Review.created_at.desc())
+        .first()
+    )
+
+    participant_visit_ids = (
+        db.query(models.VisitParticipant.visit_id)
+        .filter(models.VisitParticipant.user_id == user.id)
+        .subquery()
+    )
+    verified_visit = (
+        db.query(models.VisitEvent)
+        .filter(
+            models.VisitEvent.place_id == place_id,
+            models.VisitEvent.status == "verified",
+            or_(
+                models.VisitEvent.personal_user_id == user.id,
+                models.VisitEvent.id.in_(participant_visit_ids),
+            ),
+        )
+        .order_by(models.VisitEvent.occurred_at.desc())
+        .first()
+    )
+
+    today_kst = visit_clock.kst_date(visit_clock.utc_now()).isoformat()
+    upcoming_reservation = (
+        db.query(models.Reservation)
+        .filter(
+            models.Reservation.user_id == user.id,
+            models.Reservation.place_id == place_id,
+            models.Reservation.status == "confirmed",
+            models.Reservation.date >= today_kst,
+        )
+        .order_by(models.Reservation.date.asc(), models.Reservation.time.asc())
+        .first()
+    )
+
+    if verified_visit:
+        stage = "archived" if review else "visited"
+    elif upcoming_reservation:
+        stage = "planned"
+    elif saved_item:
+        stage = "saved"
+    else:
+        stage = "discover"
+
+    action_by_stage = {
+        "discover": ("save", "가볼 리스트에 저장", "저장해 두면 방문 일정을 정하고, 현장 체크인까지 이어갈 수 있어요."),
+        "saved": ("plan", "방문 일정 정하기", "날짜를 정하면 방문 당일 체크인으로 기록을 남길 수 있어요."),
+        "planned": ("checkin", "방문 당일 체크인하기", "도착하면 체크인해 주세요. 확인된 방문만 크루 기록에 반영돼요."),
+        "visited": ("review", "방문 기록 남기기", "방문 확인이 끝났어요. 짧은 평가를 남기면 아카이브가 완성돼요."),
+        "archived": ("archive", "아카이브에서 보기", "확인된 방문과 후기가 크루 기록으로 남아 있어요."),
+    }
+    next_action, next_action_label, next_action_description = action_by_stage[stage]
+
+    checkin_path = None
+    if upcoming_reservation:
+        checkin_path = f"/checkin/{place_id}?rid={upcoming_reservation.id}"
+        if upcoming_reservation.community_id:
+            checkin_path += f"&cid={upcoming_reservation.community_id}"
+
+    archive_path = None
+    if verified_visit:
+        archive_path = (
+            f"/crew/{verified_visit.community_id}"
+            if verified_visit.community_id
+            else "/profile"
+        )
+
+    return {
+        **empty,
+        "authenticated": True,
+        "saved": bool(saved_item),
+        "folder_name": folder.name if folder else None,
+        "reviewed": bool(review),
+        "review_created_at": review.created_at.strftime("%Y-%m-%d") if review else None,
+        "verified_visit": {
+            "id": verified_visit.id,
+            "visit_date_kst": verified_visit.visit_date_kst.isoformat(),
+            "community_id": verified_visit.community_id,
+        } if verified_visit else None,
+        "upcoming_reservation": {
+            "id": upcoming_reservation.id,
+            "date": upcoming_reservation.date,
+            "time": upcoming_reservation.time,
+            "community_id": upcoming_reservation.community_id,
+        } if upcoming_reservation else None,
+        "stage": stage,
+        "next_action": next_action,
+        "next_action_label": next_action_label,
+        "next_action_description": next_action_description,
+        "checkin_path": checkin_path,
+        "archive_path": archive_path,
+        "status_note": (
+            "후기는 남겼지만, 방문 확인 전이라 아카이브에는 아직 반영되지 않았어요."
+            if review and not verified_visit else None
+        ),
     }
 
 

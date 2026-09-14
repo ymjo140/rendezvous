@@ -166,7 +166,30 @@ function CheckinInner() {
           </div> : <p className="mt-4 text-center text-sm text-slate-600">개인 방문으로 기록했어요.</p>}
           <p className="mt-4 text-center text-xs text-slate-500">{visit.visit_date_kst} · 한국 시간 기준</p>
           <p className="mt-3 text-center text-xs text-slate-500">제휴 혜택 사용은 준비 중이에요.</p>
-          <button onClick={() => router.push("/")} className="mt-6 w-full py-3 text-sm text-slate-600">홈으로</button>
+          {visit.status === "verified" ? (
+            <div className="mt-6 space-y-2">
+              <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-center text-xs leading-relaxed text-emerald-800">
+                방문 확인이 끝났어요. 지금 짧게 기록하면 이 장소의 아카이브가 완성돼요.
+              </p>
+              <button
+                onClick={() => router.push(`/places/${encodeURIComponent(String(placeId))}?review=1`)}
+                className="w-full rounded-2xl bg-[#F5A623] py-3.5 font-bold text-white"
+              >
+                방문 기록 남기기
+              </button>
+              <button
+                onClick={() => router.push(crew ? `/crew/${encodeURIComponent(crew.id)}` : "/profile")}
+                className="w-full rounded-2xl border border-slate-200 py-3.5 text-sm font-semibold text-slate-700"
+              >
+                {crew ? "크루 아카이브 보기" : "내 기록 보기"}
+              </button>
+            </div>
+          ) : (
+            <p className="mt-5 rounded-2xl bg-amber-50 px-4 py-3 text-center text-xs leading-relaxed text-amber-800">
+              크루 멤버의 방문 확인이 끝나면 공동 방문으로 아카이브에 남아요. 이 화면을 닫아도 기록은 계속 확인할 수 있어요.
+            </p>
+          )}
+          <button onClick={() => router.push("/")} className="mt-4 w-full py-3 text-sm text-slate-600">홈으로</button>
         </section> : requestId ? <section className="mt-8 text-center" aria-live="polite">
           <Clock className="mx-auto h-9 w-9 text-amber-600" />
           <h2 className="mt-3 text-lg font-bold">직원 확인을 기다리고 있어요</h2>
