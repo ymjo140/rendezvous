@@ -66,6 +66,8 @@ class ShareToFriends(BaseModel):
 class ReviewCreate(BaseModel):
     place_name: str
     rating: float
+    # 장소명이 같은 곳을 섞지 않고, 저장·방문 여정과 후기를 연결한다.
+    place_id: Optional[int] = None
     tags: List[str] = []
     image_urls: List[str] = []
     score_taste: int
