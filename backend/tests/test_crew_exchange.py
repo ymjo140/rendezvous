@@ -74,7 +74,7 @@ def test_exchange_shows_public_crew_flow_without_user_identity(db, client_for, s
         copy_event(source_b, destination_a, 1, setup_exchange, added=3),
         copy_event(source_a, destination_b, 3, setup_exchange + timedelta(minutes=5), added=2),
         copy_event(private_source, destination_a, 1, setup_exchange + timedelta(minutes=10), added=9),
-        copy_event(source_b, destination_a, 1, setup_exchange + timedelta(minutes=15), added=4, creditable=False),
+        copy_event(source_b, destination_a, 2, setup_exchange + timedelta(minutes=15), added=4, creditable=False),
     ])
     db.commit()
 
