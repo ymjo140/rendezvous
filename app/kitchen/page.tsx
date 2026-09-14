@@ -23,6 +23,7 @@ import { Loader2, ChevronDown, Users } from "lucide-react"
 import { useCrewResource } from "@/lib/use-crew-resource"
 import { CrewLoadError } from "@/components/ui/crew-load-error"
 import { CrewShowcase } from "@/components/ui/crew-showcase"
+import { CrewExchange } from "@/components/ui/crew-exchange"
 import { CrewMissions } from "@/components/ui/crew-missions"
 import { CrewVillage, NeighborStrip, type Member, type NeighborCrew } from "@/components/ui/crew-village"
 import { TabBar } from "../tab-bar"
@@ -135,6 +136,7 @@ function KitchenContent({ crew, neighbors }: { crew: Crew; neighbors: NeighborCr
       <CrewMissions groupId={crew.id} />
     </div>
     <NeighborStrip crews={neighbors} onVisit={id => router.push(`/crew/${encodeURIComponent(id)}`)} />
+    <CrewExchange groupId={crew.id} />
     <CrewShowcase groupId={crew.id} menus={data.menus} />
   </>
 }
