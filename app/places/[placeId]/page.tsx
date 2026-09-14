@@ -254,7 +254,6 @@ export default function PlaceDetailPage() {
   const [saveFolders, setSaveFolders] = useState<any[]>([])
   const [saveFoldersLoading, setSaveFoldersLoading] = useState(false)
   const [journey, setJourney] = useState<PlaceJourney | null>(null)
-  const [journeyLoading, setJourneyLoading] = useState(false)
 
   // 재방문 신뢰 배지(개인축/모임축)
   const [badges, setBadges] = useState<{
@@ -293,7 +292,6 @@ export default function PlaceDetailPage() {
   useEffect(() => {
     if (!placeId) return
     let active = true
-    setJourneyLoading(true)
     const token = localStorage.getItem("token")
     fetch(`${API_BASE_URL}/api/places/${placeId}/journey`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -305,9 +303,6 @@ export default function PlaceDetailPage() {
         setSavedPlace(Boolean(data.saved))
       })
       .catch(() => {})
-      .finally(() => {
-        if (active) setJourneyLoading(false)
-      })
     return () => {
       active = false
     }
@@ -974,10 +969,6 @@ export default function PlaceDetailPage() {
                 </Link>
               )}
             </div>
-          </section>
-        ) : journeyLoading ? (
-          <section className="mb-4 rounded-2xl border border-gray-100 bg-white p-4 text-center text-xs text-gray-400">
-            방문 여정을 준비하고 있어요…
           </section>
         ) : null}
 
