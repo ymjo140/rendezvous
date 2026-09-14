@@ -154,7 +154,7 @@ export default function KitchenTabPage() {
         <div className="px-4 pt-3">
           {current && <KitchenContent key={current.id} crew={current} neighbors={neighbors} />}
         </div>
-      )
+      )}
 
       <TabBar />
     </div>
