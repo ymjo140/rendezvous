@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 128" fill="none">
+  <defs><filter id="s" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#5b4637" flood-opacity=".16"/></filter></defs>
+  <g filter="url(#s)">
+    <path d="M21 126c1-18 11-27 27-27s26 9 27 27H21Z" fill="#5A6F67"/>
+    <path d="M38 92h20v14H38z" fill="#F2B997"/>
+    <path d="M28 54c0-17 9-29 20-29s20 12 20 29v16c0 14-9 24-20 24S28 84 28 70V54Z" fill="#F6C5A4"/>
+    <path d="M27 58c-4-15 0-33 20-36 18-2 25 11 23 29l-6-8-8 4-7-8-10 8-10-2-2 13Z" fill="#241F22"/>
+    <path d="M28 48c1-18 12-27 24-25 8 1 14 7 16 16-8-4-18-5-27-2-4 1-8 5-13 11Z" fill="#322C30"/>
+    <circle cx="42" cy="64" r="2" fill="#2D2930"/><circle cx="57" cy="64" r="2" fill="#2D2930"/>
+    <path d="M46 76c3 2 6 2 9 0" stroke="#B86F67" stroke-width="2" stroke-linecap="round"/>
+    <path d="M35 102h30l6 24H25l10-24Z" fill="#6F8B83"/>
+    <path d="M48 104h4v22h-4z" fill="#F5EEE3" opacity=".85"/>
+  </g>
+</svg>
