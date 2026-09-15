@@ -19,7 +19,7 @@
 
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, ChevronDown, Users, Settings2, Trophy, Compass } from "lucide-react"
+import { ArrowRight, BookOpen, ChevronDown, Compass, Loader2, MapPin, Settings2, Sparkles, Trophy, Users } from "lucide-react"
 import { useCrewResource } from "@/lib/use-crew-resource"
 import { CrewLoadError } from "@/components/ui/crew-load-error"
 import { CrewShowcase } from "@/components/ui/crew-showcase"
@@ -29,7 +29,7 @@ import { CrewMissions } from "@/components/ui/crew-missions"
 import { CrewVillage, NeighborStrip, type Member, type NeighborCrew } from "@/components/ui/crew-village"
 import { TabBar } from "../tab-bar"
 
-type Crew = { id: string; title: string; icon: string; members: number }
+type Crew = { id: string; title: string; icon: string; members: number; lists?: number }
 type TownSection = "mine" | "ranking" | "discover"
 
 const LAST_CREW_KEY = "kitchen_last_crew"
@@ -60,13 +60,16 @@ export default function KitchenTabPage() {
   const current = crews.find((c) => c.id === sel)
 
   return (
-    <div className="mx-auto min-h-[100dvh] max-w-md bg-white pb-16">
-      <div className="sticky top-0 z-10 flex h-14 items-center gap-2 border-b border-gray-100 bg-white/95 px-4 backdrop-blur">
-        <span className="font-bold text-gray-900">크루 마을</span>
+    <div className="mx-auto min-h-[100dvh] max-w-md bg-[#fcfbf8] pb-16">
+      <div className="sticky top-0 z-10 flex h-[60px] items-center gap-2 border-b border-[#eee9e1] bg-[#fcfbf8]/95 px-4 backdrop-blur">
+        <div>
+          <span className="block text-[10px] font-extrabold tracking-[0.14em] text-[#b17b4f]">RENDEZVOUS CREW</span>
+          <span className="mt-0.5 block text-[17px] font-black tracking-[-0.04em] text-slate-900">우리 크루</span>
+        </div>
         <div className="ml-auto flex items-center gap-1.5">
           <button
             onClick={() => router.push("/crews")}
-            className="flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-1 text-[12px] font-bold text-gray-600"
+            className="flex items-center gap-1 rounded-full border border-slate-100 bg-white px-2.5 py-1.5 text-[12px] font-bold text-gray-600 shadow-sm"
             aria-label="크루 관리"
           >
             <Settings2 className="h-3.5 w-3.5" />
@@ -75,7 +78,7 @@ export default function KitchenTabPage() {
           {crews.length > 1 && current && (
             <button
               onClick={() => setPicking((v) => !v)}
-              className="flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-1 text-[12px] font-bold text-gray-700"
+              className="flex items-center gap-1 rounded-full border border-slate-100 bg-white px-2.5 py-1.5 text-[12px] font-bold text-gray-700 shadow-sm"
             >
               <span>{current.icon}</span>
               <span className="max-w-[100px] truncate">{current.title}</span>
@@ -86,7 +89,7 @@ export default function KitchenTabPage() {
       </div>
 
       {picking && (
-        <div className="border-b border-gray-100 bg-gray-50/60 px-4 py-2">
+        <div className="border-b border-gray-100 bg-white px-4 py-2 shadow-sm">
           {crews.map((c) => (
             <button
               key={c.id}
@@ -103,7 +106,9 @@ export default function KitchenTabPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-1.5 px-4 pt-3">
+      <div className="px-4 pt-3">
+        <p className="mb-2 px-1 text-[11.5px] leading-relaxed text-slate-500">크루원과 함께 방문하고, 다녀온 기록으로 서로의 취향을 증명해보세요.</p>
+      <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-[#f2eee8] p-1">
         {([
           { key: "mine", label: "우리 크루", icon: Users },
           { key: "ranking", label: "랭킹", icon: Trophy },
@@ -114,7 +119,7 @@ export default function KitchenTabPage() {
             <button
               key={tab.key}
               onClick={() => setSection(tab.key)}
-              className={`flex items-center justify-center gap-1 rounded-xl py-2 text-[12px] font-bold transition-colors ${section === tab.key ? "bg-amber-100 text-amber-800" : "bg-gray-50 text-gray-400"}`}
+              className={`flex items-center justify-center gap-1 rounded-xl py-2.5 text-[12px] font-bold transition-all ${section === tab.key ? "bg-white text-[#a7632b] shadow-sm" : "text-slate-400"}`}
             >
               <Icon className="h-3.5 w-3.5" />
               {tab.label}
@@ -122,12 +127,20 @@ export default function KitchenTabPage() {
           )
         })}
       </div>
+      </div>
+
+      {(feed.refreshing || (feed.error && feed.data)) && (
+        <div className="mx-4 mt-2 flex items-center gap-1.5 rounded-xl bg-white/80 px-3 py-2 text-[10.5px] text-slate-400" role={feed.error ? "status" : "status"}>
+          {feed.refreshing && <Loader2 className="h-3 w-3 animate-spin" />}
+          {feed.error ? "마지막으로 확인된 크루 기록을 보여드리고 있어요." : "최신 크루 기록을 확인하는 중이에요."}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-24 text-sm text-gray-400">
           <Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중
         </div>
-      ) : feed.error ? <CrewLoadError message={feed.error} retry={feed.reload} /> : section === "ranking" ? (
+      ) : feed.error && !feed.data ? <CrewLoadError message={feed.error} retry={feed.reload} /> : section === "ranking" ? (
         <div className="px-4 pt-3">
           <CrewRanking />
         </div>
@@ -162,23 +175,112 @@ export default function KitchenTabPage() {
 }
 
 
-type Kitchen = { tier: string; members: Member[]; unlocked_count: number; total_count: number; menus: { key: string; title: string; unlocked: boolean; place_name: string | null; image: string }[] }
+type Kitchen = {
+  tier: string
+  tier_desc?: string | null
+  next_tier?: { name: string; need: number; remain: number } | null
+  total_visits?: number
+  members: Member[]
+  unlocked_count: number
+  total_count: number
+  regulars?: { place_id: number; name: string; visits: number; last_date: string; menu: string }[]
+  menus: { key: string; title: string; unlocked: boolean; place_name: string | null; image: string }[]
+}
 function KitchenContent({ crew, neighbors }: { crew: Crew; neighbors: NeighborCrew[] }) {
   const router = useRouter()
-  const { data, loading, error, reload } = useCrewResource<Kitchen>(`/api/groups/${encodeURIComponent(crew.id)}/kitchen`)
+  const { data, loading, error, refreshing, reload } = useCrewResource<Kitchen>(`/api/groups/${encodeURIComponent(crew.id)}/kitchen`)
   if (loading) return <p role="status" className="py-12 text-center text-sm text-gray-500">크루 기록을 불러오는 중…</p>
-  if (error) return <CrewLoadError message={error} retry={reload} />
+  if (error && !data) return <CrewLoadError message={error} retry={reload} />
   if (!data) return null
+  const regularCount = data.regulars?.length ?? 0
   return <>
+    {(refreshing || error) && (
+      <div className="mb-2 flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-[10.5px] text-slate-400" role="status">
+        {refreshing && <Loader2 className="h-3 w-3 animate-spin" />}
+        {error ? "마지막으로 확인된 크루 기록을 보여드리고 있어요." : "최신 크루 기록을 확인하는 중이에요."}
+      </div>
+    )}
     <div className="relative">
-      <CrewVillage title={crew.title} icon={crew.icon} tier={data.tier} members={data.members}
-        unlocked={data.unlocked_count} total={data.total_count} onEnter={() => router.push(`/crew/${encodeURIComponent(crew.id)}`)} />
+      <CrewVillage
+        title={crew.title}
+        icon={crew.icon}
+        tier={data.tier}
+        tierDesc={data.tier_desc}
+        nextTier={data.next_tier}
+        members={data.members}
+        unlocked={data.unlocked_count}
+        total={data.total_count}
+        totalVisits={data.total_visits ?? 0}
+        regularCount={regularCount}
+        onEnter={() => router.push(`/crew/${encodeURIComponent(crew.id)}`)}
+      />
       <CrewMissions groupId={crew.id} />
     </div>
+    <CrewNextAction
+      crewId={crew.id}
+      nextTier={data.next_tier}
+      unlocked={data.unlocked_count}
+      totalVisits={data.total_visits ?? 0}
+      regularCount={regularCount}
+      onDiscover={() => router.push("/feed")}
+      onArchive={() => router.push(`/crew/${encodeURIComponent(crew.id)}`)}
+    />
     <NeighborStrip crews={neighbors} onVisit={id => router.push(`/crew/${encodeURIComponent(id)}`)} />
     <CrewExchange groupId={crew.id} />
     <CrewShowcase groupId={crew.id} menus={data.menus} />
   </>
+}
+
+function CrewNextAction({
+  crewId,
+  nextTier,
+  unlocked,
+  totalVisits,
+  regularCount,
+  onDiscover,
+  onArchive,
+}: {
+  crewId: string
+  nextTier?: { name: string; need: number; remain: number } | null
+  unlocked: number
+  totalVisits: number
+  regularCount: number
+  onDiscover: () => void
+  onArchive: () => void
+}) {
+  return (
+    <section className="mt-3 rounded-[24px] border border-slate-100 bg-white p-3.5 shadow-[0_5px_18px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start gap-2.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#fff2df] text-[#c47731]"><Sparkles className="h-4 w-4" /></span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-extrabold tracking-[0.12em] text-[#b17b4f]">NEXT CREW MOMENT</p>
+          <h3 className="mt-0.5 text-[14px] font-black tracking-[-0.02em] text-slate-900">
+            {nextTier ? `다음 등급까지 ${nextTier.remain}곳 남았어요` : "우리 크루의 기록이 완성됐어요"}
+          </h3>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+            {nextTier
+              ? `새로운 장소를 함께 방문하면 ${nextTier.name}으로 올라가요. 방문 후 평가는 크루 기록에도 이어집니다.`
+              : "새로운 장소를 발견하거나 단골집을 다시 방문해 기록을 계속 풍성하게 만들어보세요."}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-1.5">
+        <button type="button" onClick={onDiscover} className="flex items-center justify-center gap-1 rounded-xl bg-[#fff6e9] py-2.5 text-[11px] font-bold text-[#a7632b]">
+          <MapPin className="h-3.5 w-3.5" /> 장소 고르기
+        </button>
+        <button type="button" onClick={onArchive} className="flex items-center justify-center gap-1 rounded-xl bg-slate-50 py-2.5 text-[11px] font-bold text-slate-600">
+          <BookOpen className="h-3.5 w-3.5" /> 기록 보기
+        </button>
+        <a href={`/crew/${encodeURIComponent(crewId)}/missions?action=borrow`} className="flex items-center justify-center gap-1 rounded-xl bg-[#f3f0ff] py-2.5 text-[11px] font-bold text-[#6253a4]">
+          다른 크루 <ArrowRight className="h-3.5 w-3.5" />
+        </a>
+      </div>
+      <div className="mt-2.5 flex items-center justify-between text-[10px] text-slate-400">
+        <span>새로운 장소 {unlocked}곳 · 함께 방문 {totalVisits}회 · 단골 {regularCount}곳</span>
+        <span className="font-semibold text-[#b17b4f]">방문 후 평가 = 기록 완성</span>
+      </div>
+    </section>
+  )
 }
 
 

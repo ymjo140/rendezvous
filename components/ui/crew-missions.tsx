@@ -59,7 +59,7 @@ export function CrewMissions({ groupId }: { groupId: string }) {
   const { data: m, loading, error, reload } = useCrewResource<Missions>(`/api/groups/${encodeURIComponent(groupId)}/missions`)
   const [open, setOpen] = React.useState(false)
   if (loading) return <span role="status" className="absolute left-3 top-3 rounded-xl bg-white p-2 text-xs"><Loader2 className="inline h-3 w-3 animate-spin" /> 퀘스트 확인 중</span>
-  if (error) return <div className="absolute left-2 top-0 z-10 max-w-[90%]"><CrewLoadError message={error} retry={reload} /></div>
+  if (error && !m) return <div className="absolute left-2 top-0 z-10 max-w-[90%]"><CrewLoadError message={error} retry={reload} /></div>
   if (!m) return null
 
   const showSteps = m.steps_done < m.steps.length

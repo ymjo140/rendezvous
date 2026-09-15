@@ -19,6 +19,16 @@ type CacheEntry = {
 const resourceCache = new Map<string, CacheEntry>()
 const STALE_AFTER_MS = 30_000
 const MIN_REFRESH_INTERVAL_MS = 5_000
+const PERSISTED_MAX_AGE_MS = 15 * 60_000
+
+/** 화면을 다시 열 때도 먼저 보여줄 가치가 있는 크루 리소스만 저장한다. */
+function shouldPersist(path: string | null): path is string {
+  return Boolean(path && (path === "/api/home/feed" || path.startsWith("/api/groups/") || path.startsWith("/api/group-ranking")))
+}
+
+function storageKey(path: string) {
+  return `rendezvous:resource:${cacheKey(path)}`
+}
 
 function cacheKey(path: string) {
   let token = "guest"
@@ -30,14 +40,42 @@ function cacheKey(path: string) {
   return token + ":" + path
 }
 
-function readCache<T>(path: string | null) {
+function readMemoryCache<T>(path: string | null) {
   if (!path) return null
   const entry = resourceCache.get(cacheKey(path))
   return entry ? { data: entry.data as T, updatedAt: entry.updatedAt } : null
 }
 
+function readCache<T>(path: string | null) {
+  if (!path) return null
+  const key = cacheKey(path)
+  const memory = readMemoryCache<T>(path)
+  if (memory) return { data: memory.data as T, updatedAt: memory.updatedAt }
+  if (!shouldPersist(path) || typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(storageKey(path))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as CacheEntry
+    if (!parsed || Date.now() - parsed.updatedAt > PERSISTED_MAX_AGE_MS) {
+      window.localStorage.removeItem(storageKey(path))
+      return null
+    }
+    resourceCache.set(key, { data: parsed.data, updatedAt: parsed.updatedAt })
+    return { data: parsed.data as T, updatedAt: parsed.updatedAt }
+  } catch {
+    return null
+  }
+}
+
 function writeCache<T>(path: string, data: T) {
-  resourceCache.set(cacheKey(path), { data, updatedAt: Date.now() })
+  const entry = { data, updatedAt: Date.now() }
+  resourceCache.set(cacheKey(path), entry)
+  if (!shouldPersist(path) || typeof window === "undefined") return
+  try {
+    window.localStorage.setItem(storageKey(path), JSON.stringify(entry))
+  } catch {
+    // 저장 공간이 부족한 환경에서도 메모리 캐시만으로 정상 동작한다.
+  }
 }
 
 export async function readApi<T>(response: Response): Promise<T> {
@@ -57,7 +95,10 @@ export function crewActivityChanged() {
 export function useCrewResource<T>(path: string | null) {
   const [version, setVersion] = useState(0)
   const [state, setState] = useState<ResourceState<T>>(() => {
-    const cached = readCache<T>(path)
+    // localStorage는 서버 렌더와 클라이언트 첫 렌더의 결과를 다르게 만들 수
+    // 있으므로 초기화에서는 메모리 캐시만 읽는다. 영속 캐시는 effect에서
+    // 즉시 복원해 hydration mismatch 없이 빠른 stale-while-revalidate를 유지한다.
+    const cached = readMemoryCache<T>(path)
     return {
       path,
       data: cached?.data ?? null,
