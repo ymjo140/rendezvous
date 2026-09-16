@@ -9,6 +9,7 @@ type LoungeMember = {
   name: string
   avatar: string
   avatar_id?: string | null
+  gender?: string | null
   is_host: boolean
 }
 
@@ -64,6 +65,7 @@ export function CrewLounge({
                 <CrewAvatar
                   memberId={member.id}
                   avatarId={member.avatar_id}
+                  gender={member.gender}
                   name={member.name}
                   size="md"
                   mode="full"

@@ -17,6 +17,7 @@ export type Member = {
   name: string
   avatar: string
   avatar_id?: string | null
+  gender?: string | null
   is_host: boolean
 }
 
@@ -114,16 +115,17 @@ export function CrewVillage({
             <span className="inline-flex items-center gap-1"><Users className="h-3.5 w-3.5 text-[#c87b36]" /> 함께한 멤버 {members.length}명</span>
             <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-[#c87b36]" /> 방문 {totalVisits}회</span>
           </div>
-          <div className="mt-1.5 flex min-h-[68px] items-end justify-center gap-0.5">
+          <div className="mt-1.5 flex min-h-[82px] items-end justify-center gap-0.5">
             {visibleMembers.length > 0 ? visibleMembers.map((member) => (
               <div key={member.id} className="flex min-w-0 flex-1 flex-col items-center">
                 <CrewAvatar
                   memberId={member.id}
                   avatarId={member.avatar_id}
+                  gender={member.gender}
                   name={member.name}
                   size="md"
                   mode="full"
-                  className="h-[76px] w-[58px] drop-shadow-[0_5px_4px_rgba(88,55,30,0.18)]"
+                  className="h-[86px] w-[64px] drop-shadow-[0_5px_4px_rgba(88,55,30,0.18)]"
                 />
                 <span className="mt-[-1px] max-w-full truncate rounded-full bg-white/75 px-1.5 text-[9px] font-semibold text-[#755a45]">
                   {member.is_host ? "👑 " : ""}{member.name}
