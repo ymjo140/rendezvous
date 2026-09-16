@@ -1,139 +1,215 @@
 "use client"
 
 import React from "react"
+import { ArrowUpRight, ChevronRight, MapPin, Users } from "lucide-react"
+import { CrewAvatar } from "@/components/ui/crew-avatar"
 
-/** 크루들의 동네 — 가운데가 우리 크루, 아래가 놀러갈 수 있는 다른 크루.
+/**
+ * 크루 마을의 시각적 기준점.
  *
- *  아이러브커피의 '친구 카페 방문'이 이 구조다. 내 가게를 키우고, 친구 가게에 놀러가고,
- *  가면 서로 이득이 있다. 그게 그 게임의 바이럴 엔진이었다.
- *
- *  우리한테 특히 잘 맞는 이유: 공개 리스트·팔로우·좋아요·랭킹이 이미 다 만들어져 있는데
- *  **쓸 이유가 없어서 죽어 있다.** 리스트를 공개해도 돌아오는 게 없으니 아무도 안 만들고,
- *  만든 게 없으니 아무도 안 본다. 방문이 그 이유를 만든다.
- *
- *  ── 그림에 대해
- *  처음엔 SVG로 도형을 각지게 배치해 픽셀아트 흉내를 냈는데 조잡했다. 진짜 픽셀아트는
- *  격자에 점을 찍은 것이고 그 질감은 도형으로 안 나온다. 그래서 PNG 스프라이트로 바꿨다
- *  (public/pixel/). 만드는 방법은 scratchpad/gen_pixel_style.py 참고 —
- *  **5단계를 한 장에 나란히 그리게 해야** 그림체가 통일된다. 따로 뽑으면 5개가 다 다르다.
- *
- *  확대는 image-rendering: pixelated로 한다. 미리 줄여 저장하면 도트가 뭉개진다.
+ * 3D 이동이나 게임식 조작은 넣지 않는다. 한 장의 고정된 동네 장면 위에
+ * 실제 크루 데이터(등급·방문·멤버)를 겹쳐 보여줘서, 서비스의 기록이 쌓이는
+ * 느낌만 남긴다. 배경은 public/crew/village-hero.webp에서 관리한다.
  */
 
-export type Member = { id: number; name: string; avatar: string; is_host: boolean }
-export type NeighborCrew = { id: string; title: string; icon: string; members: number; lists?: number }
-
-/** 등급 → 스프라이트 번호. 가게가 커지고 셰프 옷이 바뀐다. */
-const TIER_STAGE: Record<string, number> = {
-  "골목식당": 1, "동네 맛집": 2, "지역 대표": 3, "미식가의 집": 4, "미슐랭": 5,
+export type Member = {
+  id: number
+  name: string
+  avatar: string
+  avatar_id?: string | null
+  is_host: boolean
 }
-const stageOf = (tier: string) => TIER_STAGE[tier] || 1
 
-const PIXEL: React.CSSProperties = { imageRendering: "pixelated" }
+export type NeighborCrew = {
+  id: string
+  title: string
+  icon: string
+  members: number
+  lists?: number
+}
+
+type NextTier = { name: string; need: number; remain: number } | null | undefined
+
+const CARD_BG = "url('/crew/village-hero.webp')"
 
 export function CrewVillage({
-  title, icon, tier, members, unlocked, total, onEnter,
+  title,
+  icon,
+  tier,
+  tierDesc,
+  nextTier,
+  members,
+  unlocked,
+  total,
+  totalVisits = 0,
+  regularCount = 0,
+  onEnter,
 }: {
-  title: string; icon: string | null; tier: string
-  members: Member[]; unlocked: number; total: number
+  title: string
+  icon: string | null
+  tier: string
+  tierDesc?: string | null
+  nextTier?: NextTier
+  members: Member[]
+  unlocked: number
+  total: number
+  totalVisits?: number
+  regularCount?: number
   onEnter?: () => void
 }) {
-  const stage = stageOf(tier)
-  // 등급이 오를수록 가게가 커 보여야 한다 — 원본 크기 차이에 더해 표시 배율도 키운다
-  const shopH = [0, 92, 108, 124, 140, 156][stage]
+  const progress = nextTier
+    ? Math.min(100, Math.round((unlocked / Math.max(nextTier.need, 1)) * 100))
+    : 100
+  const visibleMembers = members.slice(0, 5)
+  const remainingMembers = Math.max(0, members.length - visibleMembers.length)
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-amber-100">
-      {/* 하늘 */}
-      <div className="relative h-[248px] bg-gradient-to-b from-[#9FD6ED] to-[#DCF0F7]">
-        {/* 구름 — 도트 느낌을 깨지 않게 단순한 사각형 조합 */}
-        <div className="absolute left-6 top-6 h-3 w-12 rounded-none bg-white/85" />
-        <div className="absolute left-9 top-3 h-3 w-7 bg-white/85" />
-        <div className="absolute right-10 top-4 h-3 w-10 bg-white/80" />
+    <section className="relative overflow-hidden rounded-[28px] border border-[#e6d8c5] bg-[#f1e2ce] shadow-[0_12px_34px_rgba(100,70,40,0.12)]">
+      <div
+        className="relative min-h-[332px] bg-cover bg-center"
+        style={{ backgroundImage: CARD_BG }}
+      >
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,250,241,.12)_0%,rgba(255,249,239,.05)_35%,rgba(45,30,20,.12)_64%,rgba(37,26,18,.58)_100%)]" />
 
-        {/* 간판 */}
-        <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-lg border-2 border-[#C2620F] bg-white/95 px-3 py-1">
-          <span className="text-[12px] font-extrabold text-[#C2620F]">
-            {icon || "🍽️"} {title.length > 10 ? title.slice(0, 10) + "…" : title}
+        <div className="relative z-[1] flex items-center justify-between gap-2 px-4 pt-4">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/82 px-2.5 py-1.5 text-[10px] font-extrabold tracking-[0.13em] text-[#5e4533] shadow-sm backdrop-blur-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#e59843]" /> OUR CREW
+          </span>
+          <span className="rounded-full border border-white/70 bg-[#fffaf2]/90 px-2.5 py-1.5 text-[11px] font-bold text-[#89552d] shadow-sm backdrop-blur-sm">
+            {icon || "🍽️"} {tier}
           </span>
         </div>
 
-        {/* 가게 + 셰프 — 땅 위에 세운다 */}
-        <div className="absolute inset-x-0 bottom-[52px] flex items-end justify-center gap-1">
+        <div className="relative z-[1] max-w-[58%] px-4 pt-9">
+          <p className="text-[11px] font-semibold text-[#7e5c44]">함께 고르고, 실제로 다녀온 기록</p>
+          <h2 className="mt-1.5 text-[23px] font-black leading-[1.12] tracking-[-0.04em] text-[#35261e] drop-shadow-[0_1px_0_rgba(255,255,255,.5)]">
+            {title}
+          </h2>
+          <p className="mt-2 line-clamp-2 text-[11.5px] leading-relaxed text-[#624737]">
+            {tierDesc || "우리만의 방문 기록을 차곡차곡 쌓아보세요."}
+          </p>
           <button
             type="button"
             onClick={onEnter}
-            className="active:scale-95"
-            aria-label="우리 크루 들어가기"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#3a2b23] px-3.5 py-2 text-[11px] font-bold text-white shadow-md transition-transform active:scale-95"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/pixel/shop-${stage}.png`} alt="" style={{ ...PIXEL, height: shopH }} />
+            크루 기록 열기 <ArrowUpRight className="h-3.5 w-3.5" />
           </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`/pixel/chef-${stage}.png`} alt="" style={{ ...PIXEL, height: 74 }} />
         </div>
 
-        {/* 땅 */}
-        <div className="absolute inset-x-0 bottom-0 h-[52px] bg-[#7CC85F]">
-          <div className="h-[5px] w-full bg-[#66B24B]" />
-          <div className="absolute inset-x-0 bottom-0 h-[26px] bg-[#8B6B45]" />
+        <div className="absolute right-3 top-[122px] z-[1] hidden w-[126px] rounded-2xl border border-white/65 bg-white/76 p-2.5 shadow-sm backdrop-blur-md min-[360px]:block">
+          <div className="flex items-center justify-between text-[10px] font-bold text-[#6f4c34]">
+            <span>메뉴 도감</span><span>{unlocked}/{total}</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#ead9c5]">
+            <div className="h-full rounded-full bg-[#e79c47] transition-all" style={{ width: `${progress}%` }} />
+          </div>
+          <p className="mt-1.5 text-[9.5px] leading-snug text-[#8b6f5c]">
+            {nextTier ? `다음 등급까지 ${nextTier.remain}가지` : "모든 메뉴를 기록했어요"}
+          </p>
         </div>
 
-        {/* 멤버 — 땅 위에 선다 */}
-        <div className="absolute inset-x-0 bottom-1 flex items-end justify-center gap-3 px-3">
-          {members.slice(0, 5).map((m) => (
-            <div key={m.id} className="flex flex-col items-center">
-              <span className="text-[17px] leading-none">{m.avatar}</span>
-              <span className="mt-0.5 rounded-full bg-white/92 px-1.5 text-[9px] font-bold text-[#5C4A32]">
-                {m.is_host ? "👑" : ""}{m.name.length > 4 ? m.name.slice(0, 4) : m.name}
+        <div className="absolute inset-x-3 bottom-3 z-[2] rounded-[22px] border border-white/70 bg-[#fffaf2]/92 px-3 pb-2.5 pt-1.5 shadow-lg backdrop-blur-md">
+          <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-[#80634d]">
+            <span className="inline-flex items-center gap-1"><Users className="h-3.5 w-3.5 text-[#c87b36]" /> 함께한 멤버 {members.length}명</span>
+            <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-[#c87b36]" /> 방문 {totalVisits}회</span>
+          </div>
+          <div className="mt-1.5 flex min-h-[68px] items-end justify-center gap-0.5">
+            {visibleMembers.length > 0 ? visibleMembers.map((member) => (
+              <div key={member.id} className="flex min-w-0 flex-1 flex-col items-center">
+                <CrewAvatar
+                  memberId={member.id}
+                  avatarId={member.avatar_id}
+                  name={member.name}
+                  size="md"
+                  mode="full"
+                  className="h-[76px] w-[58px] drop-shadow-[0_5px_4px_rgba(88,55,30,0.18)]"
+                />
+                <span className="mt-[-1px] max-w-full truncate rounded-full bg-white/75 px-1.5 text-[9px] font-semibold text-[#755a45]">
+                  {member.is_host ? "👑 " : ""}{member.name}
+                </span>
+              </div>
+            )) : (
+              <div className="flex flex-col items-center justify-center py-2 text-center text-[10px] text-[#a4866d]">
+                <Users className="mb-1 h-4 w-4 text-[#d1ae8b]" />
+                멤버를 초대하면<br />이곳에 함께 기록돼요
+              </div>
+            )}
+            {remainingMembers > 0 && (
+              <span className="mb-5 -ml-2 flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white bg-[#3a2b23] px-1 text-[10px] font-bold text-white">
+                +{remainingMembers}
               </span>
-            </div>
-          ))}
+            )}
+          </div>
         </div>
       </div>
 
-      {/* 수집 현황 — 그림 위에 얹어 화면을 안 먹게 */}
-      <div className="absolute right-2.5 top-2.5 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-bold text-amber-800 shadow-sm">
-        메뉴 {unlocked}/{total}
+      <div className="grid grid-cols-3 divide-x divide-[#ead8c1] bg-[#fffaf2] px-2 py-2.5">
+        <Metric label="새로운 장소" value={unlocked} />
+        <Metric label="단골집" value={regularCount} />
+        <Metric label="다음 기록" value={nextTier ? `${nextTier.remain}곳` : "완료"} />
       </div>
+    </section>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="text-center">
+      <div className="text-[14px] font-black text-[#3e2c20]">{value}</div>
+      <div className="mt-0.5 text-[9.5px] font-medium text-[#a1846b]">{label}</div>
     </div>
   )
 }
 
-/** 다른 크루 놀러가기 — 아이러브커피의 '친구 카페' 줄. */
+/** 다른 크루의 공개 공간을 둘러보는 가로 탐색 스트립. */
 export function NeighborStrip({
-  crews, onVisit,
+  crews,
+  onVisit,
 }: { crews: NeighborCrew[]; onVisit: (id: string) => void }) {
   if (crews.length === 0) return null
   return (
-    <div className="mt-3">
-      <div className="flex items-baseline justify-between px-0.5">
-        <h3 className="text-[13.5px] font-bold text-slate-900">다른 크루 놀러가기</h3>
-        <span className="text-[11px] text-gray-400">리스트를 구경하고 담아보세요</span>
+    <section className="mt-5">
+      <div className="flex items-end justify-between gap-3 px-0.5">
+        <div>
+          <p className="text-[10px] font-extrabold tracking-[0.14em] text-[#b17b4f]">CREW EXCHANGE</p>
+          <h3 className="mt-0.5 text-[16px] font-black tracking-[-0.03em] text-slate-900">다른 크루의 기록 구경하기</h3>
+        </div>
+        <span className="pb-0.5 text-[10.5px] text-slate-400">좋은 곳은 우리 리스트로</span>
       </div>
-      <div className="mt-2 flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: "touch" }}>
-        {crews.map((c, i) => (
+      <div className="mt-3 flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]" style={{ WebkitOverflowScrolling: "touch" }}>
+        {crews.map((crew, index) => (
           <button
-            key={c.id}
-            onClick={() => onVisit(c.id)}
-            className="w-[106px] flex-shrink-0 overflow-hidden rounded-xl border border-gray-100 bg-white text-left active:scale-95"
+            key={crew.id}
+            type="button"
+            onClick={() => onVisit(crew.id)}
+            className="group w-[160px] shrink-0 overflow-hidden rounded-[20px] border border-slate-100 bg-white text-left shadow-[0_4px_14px_rgba(15,23,42,0.05)] transition-transform active:scale-[.98]"
           >
-            <div className="flex h-[70px] items-end justify-center bg-gradient-to-b from-[#CDEBF5] to-[#DFF3E4]">
-              {/* 이웃 가게 그림은 돌려쓴다 — 남의 등급까지 받아오면 요청이 크루 수만큼 는다 */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/pixel/shop-${(i % 4) + 1}.png`} alt="" style={{ ...PIXEL, height: 56 }} />
+            <div
+              className="relative h-[84px] bg-cover bg-center"
+              style={{ backgroundImage: CARD_BG, backgroundPosition: `${42 + (index % 3) * 18}% center` }}
+            >
+              <div className="absolute inset-0 bg-gradient-to-t from-[#33231b]/70 via-transparent to-transparent" />
+              <span className="absolute bottom-2 left-2 flex h-8 w-8 items-center justify-center rounded-xl border border-white/70 bg-white/90 text-lg shadow-sm">
+                {crew.icon || "🍽️"}
+              </span>
+              <span className="absolute right-2 top-2 rounded-full bg-white/88 px-2 py-1 text-[9px] font-bold text-[#785035]">
+                공개 기록
+              </span>
             </div>
-            <div className="px-2 py-1.5">
-              <div className="truncate text-[11.5px] font-bold text-gray-800">
-                {c.icon} {c.title}
+            <div className="px-3 py-2.5">
+              <div className="truncate text-[12px] font-bold text-slate-900">{crew.title}</div>
+              <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">
+                <span>{crew.members}명 멤버</span>
+                {typeof crew.lists === "number" && <><span>·</span><span>리스트 {crew.lists}</span></>}
               </div>
-              <div className="text-[10px] text-gray-400">
-                멤버 {c.members}{typeof c.lists === "number" ? ` · 리스트 ${c.lists}` : ""}
+              <div className="mt-2 inline-flex items-center gap-0.5 text-[10px] font-bold text-[#b46b32]">
+                둘러보기 <ChevronRight className="h-3 w-3" />
               </div>
             </div>
           </button>
         ))}
       </div>
-    </div>
+    </section>
   )
 }
