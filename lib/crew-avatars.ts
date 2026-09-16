@@ -88,11 +88,6 @@ const FEMALE_AVATAR_ORDER: CrewAvatarId[] = [
   "female-brown-short",
 ]
 
-const ALL_AVATAR_ORDER: CrewAvatarId[] = [
-  ...MALE_AVATAR_ORDER,
-  ...FEMALE_AVATAR_ORDER,
-]
-
 const LEGACY_AVATAR_ALIASES: Record<LegacyCrewAvatarId, CrewAvatarId> = {
   "black-short": "male-black-short",
   "yellow-perm": "female-yellow-perm",
@@ -141,7 +136,10 @@ export function avatarIdForMember(
     ? FEMALE_AVATAR_ORDER
     : gender === "male"
       ? MALE_AVATAR_ORDER
-      : ALL_AVATAR_ORDER
+      // 성별을 아직 설정하지 않은 사용자를 memberId로 여성/남성처럼
+      // 추정하지 않는다. 명시적 선택이 없을 때는 공통 기본 캐릭터를
+      // 보여주고, 마이페이지에서 본인이 직접 고르게 한다.
+      : (["male-black-short"] as CrewAvatarId[])
   const index = Math.abs(memberId) % order.length
   return order[index]
 }

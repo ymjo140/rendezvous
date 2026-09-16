@@ -21,6 +21,11 @@ class UserCreate(BaseModel):
 class UserProfileUpdate(BaseModel):
     name: str
 
+class AvatarProfileUpdate(BaseModel):
+    """크루 화면에 표시할 성별·기본 캐릭터 설정."""
+    gender: str
+    avatar_id: str
+
 class UserPreferenceUpdate(BaseModel):
     foods: List[str] = []
     disliked_foods: List[str] = []

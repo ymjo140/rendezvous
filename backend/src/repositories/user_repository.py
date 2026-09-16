@@ -44,10 +44,21 @@ class UserRepository:
         return db_user
 
     def create_default_avatar(self, db: Session, user_id: int):
+        user = self.get_by_id(db, user_id)
+        gender = str(getattr(user, "gender", "") or "").strip().lower()
+        crew_avatar = {
+            "남성": "male-black-short", "남자": "male-black-short", "male": "male-black-short", "man": "male-black-short", "m": "male-black-short",
+            "여성": "female-brown-short", "여자": "female-brown-short", "female": "female-brown-short", "woman": "female-brown-short", "f": "female-brown-short",
+        }.get(gender)
+        equipped = {"body": "body_basic", "eyes": "eyes_normal", "eyebrows": "brows_basic", "top": "top_tshirt", "bottom": "bottom_shorts", "shoes": "shoes_sneakers"}
+        inventory = ["body_basic", "eyes_normal", "brows_basic", "hair_01", "top_tshirt", "bottom_shorts", "shoes_sneakers"]
+        if crew_avatar:
+            equipped["crew_avatar"] = crew_avatar
+            inventory.append(crew_avatar)
         avatar = models.UserAvatar(
             user_id=user_id,
-            equipped={"body": "body_basic", "eyes": "eyes_normal", "eyebrows": "brows_basic", "top": "top_tshirt", "bottom": "bottom_shorts", "shoes": "shoes_sneakers"},
-            inventory=["body_basic", "eyes_normal", "brows_basic", "hair_01", "top_tshirt", "bottom_shorts", "shoes_sneakers"]
+            equipped=equipped,
+            inventory=inventory
         )
         db.add(avatar)
 
