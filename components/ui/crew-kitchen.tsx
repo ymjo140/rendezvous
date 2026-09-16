@@ -28,7 +28,7 @@ type Kitchen = {
   next_tier: { name: string; need: number; remain: number } | null
   unlocked_count: number; total_count: number; total_visits: number; legacy_visits: number
   menus: Menu[]; regulars: Regular[]
-  members?: { id: number; name: string; avatar: string; is_host: boolean }[]
+  members?: { id: number; name: string; avatar: string; gender?: string | null; is_host: boolean }[]
 }
 
 /** showTitle=false — 우리 크루 탭에서는 상단 헤더가 이미 제목이라 두 번 나온다.

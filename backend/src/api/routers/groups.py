@@ -141,6 +141,7 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
             mu = us.get(mid)
             if mu:
                 members.append({"id": mu.id, "name": mu.name, "avatar": mu.avatar or "🙂",
+                                "gender": mu.gender or "unknown",
                                 "is_host": mid == c.host_id})
 
     # 인증 크루: 같은 도메인 인증을 가진 멤버 수 (가게에 주는 신뢰 신호)
@@ -366,13 +367,14 @@ def crew_kitchen(cid: str, user: Optional[models.User] = Depends(get_current_use
     # 화면에 크루 멤버를 캐릭터로 세운다 — 우리 공간이라는 게 사람으로 보여야 한다
     ids = _members(c)
     if ids:
-        rows = (db.query(models.User.id, models.User.name, models.User.avatar)
+        rows = (db.query(models.User.id, models.User.name, models.User.avatar, models.User.gender)
                   .filter(models.User.id.in_(ids)).all())
         by = {r[0]: r for r in rows}
         data["members"] = [
             {"id": i,
              "name": (by[i][1] if i in by else None) or "멤버",
              "avatar": (by[i][2] if i in by else None) or "🙂",
+             "gender": (by[i][3] if i in by else None) or "unknown",
              "is_host": i == c.host_id}
             for i in ids if i in by
         ][:8]     # 8명 넘어가면 지면에 다 못 세운다
