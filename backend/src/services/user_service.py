@@ -28,9 +28,15 @@ class UserService:
 
     def get_my_info(self, db: Session, user: models.User):
         avatar = self.repo.get_avatar_info(db, user.id)
-        avatar_data = {}
+        avatar_data = {"equipped": {}, "inventory": [], "level": 1, "crew_avatar_id": None}
         if avatar:
-            avatar_data = { "equipped": avatar.equipped, "inventory": avatar.inventory, "level": avatar.level }
+            equipped = avatar.equipped or {}
+            avatar_data = {
+                "equipped": equipped,
+                "inventory": avatar.inventory or [],
+                "level": avatar.level,
+                "crew_avatar_id": equipped.get("crew_avatar"),
+            }
         
         my_reviews = self.repo.get_user_reviews(db, user.id)
         
@@ -94,6 +100,60 @@ class UserService:
         user.name = req.name
         db.commit()
         return {"message": "Updated", "name": user.name}
+
+    def update_avatar_profile(self, db: Session, user: models.User, req: schemas.AvatarProfileUpdate):
+        """성별과 캐릭터를 명시적으로 저장한다.
+
+        기존 화면은 member id를 기준으로 캐릭터를 추정해서 성별이 뒤바뀔 수
+        있었다. 이제 선택 가능한 6종만 허용하고, 사용자가 고른 값만 크루에
+        전파한다. 별도 컬럼을 추가하지 않고 기존 User/UserAvatar JSON을 쓴다.
+        """
+        gender_aliases = {
+            "남성": "male", "남자": "male", "male": "male", "man": "male", "m": "male",
+            "여성": "female", "여자": "female", "female": "female", "woman": "female", "f": "female",
+            "기타": "other", "other": "other", "non-binary": "other", "nonbinary": "other",
+        }
+        gender = gender_aliases.get(str(req.gender or "").strip().lower())
+        if gender is None:
+            raise HTTPException(400, "성별을 선택해주세요.")
+
+        avatar_gender = {
+            "male-black-short": "male",
+            "male-brown-short": "male",
+            "male-yellow-short": "male",
+            "female-brown-short": "female",
+            "female-yellow-perm": "female",
+            "female-black-long": "female",
+        }
+        avatar_id = str(req.avatar_id or "").strip()
+        if avatar_id not in avatar_gender:
+            raise HTTPException(400, "지원하지 않는 캐릭터입니다.")
+        if gender in {"male", "female"} and avatar_gender[avatar_id] != gender:
+            raise HTTPException(400, "선택한 성별과 캐릭터가 맞지 않습니다.")
+
+        avatar = self.repo.get_avatar_info(db, user.id)
+        if not avatar:
+            avatar = models.UserAvatar(user_id=user.id, equipped={}, inventory=[])
+            db.add(avatar)
+            db.flush()
+
+        equipped = dict(avatar.equipped or {})
+        inventory = list(avatar.inventory or [])
+        equipped["crew_avatar"] = avatar_id
+        if avatar_id not in inventory:
+            inventory.append(avatar_id)
+        avatar.equipped = equipped
+        avatar.inventory = inventory
+        user.gender = gender
+        flag_modified(avatar, "equipped")
+        flag_modified(avatar, "inventory")
+        db.commit()
+        return {
+            "message": "캐릭터 설정을 저장했어요.",
+            "gender": gender,
+            "avatar_id": avatar_id,
+            "avatar": {"equipped": equipped, "inventory": inventory, "level": avatar.level, "crew_avatar_id": avatar_id},
+        }
 
     def withdraw(self, db: Session, user: models.User):
         """회원 탈퇴(스토어 필수): 개인 콘텐츠/연결 삭제 + 계정 익명화.

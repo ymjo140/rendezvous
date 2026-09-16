@@ -79,6 +79,11 @@ def update_user_location(req: schemas.LocationUpdate, current_user: models.User 
 def update_profile(req: schemas.UserProfileUpdate, current_user: models.User = Depends(require_user), db: Session = Depends(get_db)):
     return user_service.update_profile(db, current_user, req)
 
+@router.put("/api/users/me/avatar")
+def update_avatar_profile(req: schemas.AvatarProfileUpdate, current_user: models.User = Depends(require_user), db: Session = Depends(get_db)):
+    """마이페이지에서 고른 크루 캐릭터를 사용자·아바타 기록에 함께 저장한다."""
+    return user_service.update_avatar_profile(db, current_user, req)
+
 @router.put("/api/users/me/preferences")
 def update_preferences(prefs: schemas.UserPreferenceUpdate, current_user: models.User = Depends(require_user), db: Session = Depends(get_db)):
     return user_service.update_preferences(db, current_user, prefs)

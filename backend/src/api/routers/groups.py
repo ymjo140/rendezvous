@@ -37,6 +37,23 @@ def _followers(db: Session, cid: str):
     return db.query(models.CommunityFollow).filter(models.CommunityFollow.community_id == cid).count()
 
 
+def _crew_avatar_ids(db: Session, user_ids):
+    """UserAvatar JSON에 저장된 크루 캐릭터만 읽어온다.
+
+    캐릭터를 member id로 추정하면 가입 순서가 바뀔 때 성별과 외형이
+    뒤섞이므로, 주방·공개 크루 화면 모두 같은 저장값을 사용한다.
+    """
+    ids = list(user_ids or [])
+    if not ids:
+        return {}
+    rows = (db.query(models.UserAvatar.user_id, models.UserAvatar.equipped)
+              .filter(models.UserAvatar.user_id.in_(ids)).all())
+    return {
+        row[0]: ((row[1] or {}).get("crew_avatar") if isinstance(row[1], dict) else None)
+        for row in rows
+    }
+
+
 @router.get("/api/group-ranking")
 def group_ranking(limit: int = 12, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
     """인기 맛집 모임 랭킹 — 공개 수준이 노출인 모임만. score=팔로워x3+리스트좋아요x2+리스트수."""
@@ -137,10 +154,12 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
     if show_members:
         mids = _members(c)[:20]
         us = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(mids)).all()} if mids else {}
+        avatar_ids = _crew_avatar_ids(db, mids)
         for mid in mids:
             mu = us.get(mid)
             if mu:
                 members.append({"id": mu.id, "name": mu.name, "avatar": mu.avatar or "🙂",
+                                "avatar_id": avatar_ids.get(mu.id),
                                 "gender": mu.gender or "unknown",
                                 "is_host": mid == c.host_id})
 
@@ -370,10 +389,12 @@ def crew_kitchen(cid: str, user: Optional[models.User] = Depends(get_current_use
         rows = (db.query(models.User.id, models.User.name, models.User.avatar, models.User.gender)
                   .filter(models.User.id.in_(ids)).all())
         by = {r[0]: r for r in rows}
+        avatar_ids = _crew_avatar_ids(db, ids)
         data["members"] = [
             {"id": i,
              "name": (by[i][1] if i in by else None) or "멤버",
              "avatar": (by[i][2] if i in by else None) or "🙂",
+             "avatar_id": avatar_ids.get(i),
              "gender": (by[i][3] if i in by else None) or "unknown",
              "is_host": i == c.host_id}
             for i in ids if i in by

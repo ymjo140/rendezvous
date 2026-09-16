@@ -28,7 +28,7 @@ from domain import models
 def db():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     # Exclude the recommendation array/vector tables, which need PostgreSQL.
-    names = ["User", "Community", "Place", "SaveFolder", "SavedItem", "Post",
+    names = ["User", "UserAvatar", "Community", "Place", "SaveFolder", "SavedItem", "Post",
              "ListLike", "ListSave", "ListComment", "CommunityFollow", "UserFollow",
              "UserVerification", "ActionLog", "PlaceVisitFeedback", "PlaceCheckin", "CoinHistory",
              "Reservation", "CrewPartnership", "CrewPartnershipApp", "ChatRoom",

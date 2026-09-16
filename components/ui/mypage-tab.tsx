@@ -26,15 +26,19 @@ import { NaverImportSheet } from "@/components/ui/naver-import-sheet"
 import { FriendsPanel } from "@/components/ui/components/friends/FriendsPanel"
 import { CashWalletCard } from "@/components/ui/components/wallet/CashWalletCard"
 import { GameProfileCard } from "@/components/ui/components/game/GameProfileCard"
+import { CrewAvatar } from "@/components/ui/crew-avatar"
+import { CrewCharacterStudio } from "@/components/ui/crew-character-studio"
 import { fetchWithAuth } from "@/lib/api-client"
 import { logAction } from "@/lib/analytics-client"
 import { getTasteType } from "@/lib/taste-persona"
+import type { CrewAvatarId } from "@/lib/crew-avatars"
 
 // --- 타입 정의 ---
 interface UserInfo {
     id: number; name: string; email: string; wallet_balance: number; 
+    gender?: string | null;
     location_name?: string; lat?: number; lng?: number; 
-    avatar: { level: number; equipped: Record<string, string | null>; inventory: string[]; }; 
+    avatar: { level?: number; equipped?: Record<string, string | null>; inventory?: string[]; crew_avatar_id?: string | null; };
     favorites: { id: number; name: string; category?: string; address?: string }[]; 
     reviews: any[]; 
     preferences?: any;
@@ -758,9 +762,6 @@ export function MyPageTab() {
       finally { setLocLoading(false); }
   };
 
-  // 프로필 캐릭터 = 취향 페르소나 이모지 (드레스업 아바타 대체)
-  const personaEmoji = getTasteType(user?.preferences)?.emoji ?? "🍽️";
-
   // --- UI Rendering ---
   
   if (isGuest) {
@@ -790,8 +791,16 @@ export function MyPageTab() {
 
             <CardContent className="relative p-6 z-10">
                 <div className="flex items-center gap-5">
-                    <div className="w-24 h-24 rounded-full border-4 border-white/30 shadow-inner bg-white/25 backdrop-blur-md overflow-hidden flex items-center justify-center relative flex-shrink-0">
-                          <span className="text-5xl leading-none select-none">{personaEmoji}</span>
+                    <div className="flex h-28 w-24 shrink-0 items-end justify-center overflow-hidden rounded-2xl border-4 border-white/30 bg-white/25 shadow-inner backdrop-blur-md">
+                          <CrewAvatar
+                              memberId={user.id}
+                              avatarId={user.avatar?.crew_avatar_id}
+                              gender={user.gender}
+                              name={user.name}
+                              size="lg"
+                              mode="full"
+                              className="h-28 w-20"
+                          />
                     </div>
                     
                     <div className="flex-1 min-w-0">
@@ -843,6 +852,25 @@ export function MyPageTab() {
             </CardContent>
         </Card>
       </div>
+
+      {/* 1-1. 성별·외형을 직접 고르고, 크루 전체에 같은 캐릭터로 반영 */}
+      <CrewCharacterStudio
+          userId={user.id}
+          userName={user.name}
+          gender={user.gender}
+          avatarId={user.avatar?.crew_avatar_id}
+          onSaved={({ gender, avatarId }: { gender: string; avatarId: CrewAvatarId }) => {
+              setUser(prev => prev ? {
+                  ...prev,
+                  gender,
+                  avatar: {
+                      ...(prev.avatar || {}),
+                      crew_avatar_id: avatarId,
+                      equipped: { ...(prev.avatar?.equipped || {}), crew_avatar: avatarId },
+                  },
+              } : prev)
+          }}
+      />
 
       {/* 1-2. 내 취향 유형 */}
       {(() => {
@@ -1601,4 +1629,3 @@ export function MyPageTab() {
     </div>
   )
 }
-
