@@ -38,7 +38,7 @@ interface UserInfo {
     id: number; name: string; email: string; wallet_balance: number; 
     gender?: string | null;
     location_name?: string; lat?: number; lng?: number; 
-    avatar: { level?: number; equipped?: Record<string, string | null>; inventory?: string[]; crew_avatar_id?: string | null; };
+    avatar: { level?: number; equipped?: Record<string, string | null>; inventory?: string[]; crew_avatar_id?: string | null; crew_pose_id?: string | null; };
     favorites: { id: number; name: string; category?: string; address?: string }[]; 
     reviews: any[]; 
     preferences?: any;
@@ -791,7 +791,7 @@ export function MyPageTab() {
 
             <CardContent className="relative p-6 z-10">
                 <div className="flex items-center gap-5">
-                    <div className="flex h-28 w-24 shrink-0 items-end justify-center overflow-hidden rounded-2xl border-4 border-white/30 bg-white/25 shadow-inner backdrop-blur-md">
+                    <div className="flex h-36 w-28 shrink-0 items-center justify-center rounded-2xl border-4 border-white/30 bg-white/25 px-1 shadow-inner backdrop-blur-md">
                           <CrewAvatar
                               memberId={user.id}
                               avatarId={user.avatar?.crew_avatar_id}
@@ -799,7 +799,7 @@ export function MyPageTab() {
                               name={user.name}
                               size="lg"
                               mode="full"
-                              className="h-28 w-20"
+                              className="h-36 w-24"
                           />
                     </div>
                     
@@ -859,14 +859,16 @@ export function MyPageTab() {
           userName={user.name}
           gender={user.gender}
           avatarId={user.avatar?.crew_avatar_id}
-          onSaved={({ gender, avatarId }: { gender: string; avatarId: CrewAvatarId }) => {
+          poseId={user.avatar?.crew_pose_id}
+          onSaved={({ gender, avatarId, poseId }: { gender: string; avatarId: CrewAvatarId; poseId: string }) => {
               setUser(prev => prev ? {
                   ...prev,
                   gender,
                   avatar: {
                       ...(prev.avatar || {}),
                       crew_avatar_id: avatarId,
-                      equipped: { ...(prev.avatar?.equipped || {}), crew_avatar: avatarId },
+                      crew_pose_id: poseId,
+                      equipped: { ...(prev.avatar?.equipped || {}), crew_avatar: avatarId, crew_pose: poseId },
                   },
               } : prev)
           }}

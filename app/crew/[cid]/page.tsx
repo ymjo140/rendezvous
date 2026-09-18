@@ -28,7 +28,7 @@ type Crew = {
   partnership_eligible?: boolean; partnership_track?: "org" | "activity" | null
   member_count: number; follower_count: number; like_count: number; list_count: number
   is_following: boolean; is_member: boolean; is_host: boolean
-  members: { id: number; name: string; avatar: string; avatar_id?: string | null; gender?: string | null; is_host: boolean }[]
+  members: { id: number; name: string; avatar: string; avatar_id?: string | null; gender?: string | null; pose_id?: string | null; is_host: boolean }[]
   lists: CrewList[]
   member_visits: number; member_revisits: number; visit_verified: boolean
 }

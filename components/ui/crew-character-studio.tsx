@@ -6,10 +6,13 @@ import { CrewAvatar } from "@/components/ui/crew-avatar"
 import { fetchWithAuth } from "@/lib/api-client"
 import {
   CREW_AVATARS,
+  CREW_POSES,
   normalizeCrewAvatarId,
   normalizeCrewGender,
+  normalizeCrewPoseId,
   type CrewAvatarId,
   type CrewGender,
+  type CrewPoseId,
 } from "@/lib/crew-avatars"
 
 type CrewCharacterStudioProps = {
@@ -17,7 +20,8 @@ type CrewCharacterStudioProps = {
   userName: string
   gender?: string | null
   avatarId?: string | null
-  onSaved: (data: { gender: string; avatarId: CrewAvatarId }) => void
+  poseId?: string | null
+  onSaved: (data: { gender: string; avatarId: CrewAvatarId; poseId: CrewPoseId }) => void
 }
 
 const GENDER_OPTIONS: Array<{ value: CrewGender; label: string }> = [
@@ -37,6 +41,7 @@ export function CrewCharacterStudio({
   userName,
   gender,
   avatarId,
+  poseId,
   onSaved,
 }: CrewCharacterStudioProps) {
   const catalog = useMemo(() => Object.values(CREW_AVATARS), [])
@@ -50,6 +55,7 @@ export function CrewCharacterStudio({
 
   const [selectedGender, setSelectedGender] = useState<CrewGender>(initialGender)
   const [selectedAvatar, setSelectedAvatar] = useState<CrewAvatarId>(initialSelection)
+  const [selectedPose, setSelectedPose] = useState<CrewPoseId>(normalizeCrewPoseId(poseId))
   const [saving, setSaving] = useState(false)
   const [savedMessage, setSavedMessage] = useState<string | null>(null)
 
@@ -86,7 +92,7 @@ export function CrewCharacterStudio({
       const res = await fetchWithAuth("/api/users/me/avatar", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gender: selectedGender, avatar_id: selectedAvatar }),
+        body: JSON.stringify({ gender: selectedGender, avatar_id: selectedAvatar, pose_id: selectedPose }),
       })
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}))
@@ -94,9 +100,11 @@ export function CrewCharacterStudio({
       }
       const data = await res.json()
       const savedAvatar = normalizeCrewAvatarId(data.avatar_id) || selectedAvatar
+      const savedPose = normalizeCrewPoseId(data.pose_id || selectedPose)
       setSelectedAvatar(savedAvatar)
+      setSelectedPose(savedPose)
       setSavedMessage("저장했어요. 크루 화면에도 곧 반영됩니다.")
-      onSaved({ gender: data.gender || selectedGender, avatarId: savedAvatar })
+      onSaved({ gender: data.gender || selectedGender, avatarId: savedAvatar, poseId: savedPose })
     } catch (error) {
       setSavedMessage(error instanceof Error ? error.message : "저장에 실패했어요.")
     } finally {
@@ -115,7 +123,7 @@ export function CrewCharacterStudio({
               {userName}님의 성별과 외형을 직접 고르면<br />모든 크루 화면에서 같은 캐릭터로 보여요.
             </p>
           </div>
-          <div className="flex h-28 w-24 shrink-0 items-end justify-center overflow-hidden rounded-2xl border border-white/80 bg-[#ead8c1] shadow-inner">
+          <div className="relative flex h-36 w-28 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-[#ead8c1] px-1 shadow-inner">
             <CrewAvatar
               memberId={userId}
               avatarId={selectedAvatar}
@@ -123,8 +131,11 @@ export function CrewCharacterStudio({
               name={userName}
               size="lg"
               mode="full"
-              className="h-28 w-20"
+              className="h-36 w-24"
             />
+            <span className="absolute bottom-2 right-2 rounded-full border border-white bg-white px-2 py-1 text-[11px] shadow-sm" aria-label={`${CREW_POSES[selectedPose].label} 포즈`}>
+              {CREW_POSES[selectedPose].icon}
+            </span>
           </div>
         </div>
 
@@ -178,6 +189,33 @@ export function CrewCharacterStudio({
               </button>
             )
           })}
+        </div>
+
+        <div className="mt-5 border-t border-[#f0e5d8] pt-4">
+          <div className="flex items-end justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-1.5 text-[13px] font-bold text-[#4b382b]">🕺 포즈 상점</div>
+              <p className="mt-1 text-[10px] text-[#a4876b]">가게 앞에서 어떤 모습으로 기록될지 골라보세요.</p>
+            </div>
+            <span className="rounded-full bg-[#fff1c9] px-2 py-1 text-[9px] font-bold text-[#b27421]">베타 무료</span>
+          </div>
+          <div className="mt-3 grid grid-cols-4 gap-1.5">
+            {Object.values(CREW_POSES).map((pose) => {
+              const selected = pose.id === selectedPose
+              return (
+                <button
+                  key={pose.id}
+                  type="button"
+                  onClick={() => { setSelectedPose(pose.id); setSavedMessage(null) }}
+                  className={`flex min-w-0 flex-col items-center rounded-2xl border px-1 py-2 text-center transition-all ${selected ? "border-[#d58b35] bg-[#fff5df] ring-2 ring-[#f3c878]/50" : "border-[#eee2d4] bg-white hover:border-[#e2c49c]"}`}
+                >
+                  <span className="text-2xl leading-none">{pose.icon}</span>
+                  <span className="mt-1 line-clamp-2 min-h-[22px] text-[9px] font-semibold leading-tight text-[#725942]">{pose.label}</span>
+                  <span className={`mt-1 text-[8px] font-bold ${pose.priceLabel === "준비 중" ? "text-[#a4876b]" : "text-[#c58b4b]"}`}>{pose.priceLabel}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         <div className="mt-4 rounded-2xl border border-dashed border-[#e6d4bf] bg-[#fffaf5] p-3">

@@ -54,9 +54,26 @@ def _crew_avatar_ids(db: Session, user_ids):
     }
 
 
+def _crew_pose_ids(db: Session, user_ids):
+    ids = list(user_ids or [])
+    if not ids:
+        return {}
+    rows = (db.query(models.UserAvatar.user_id, models.UserAvatar.equipped)
+              .filter(models.UserAvatar.user_id.in_(ids)).all())
+    return {
+        row[0]: ((row[1] or {}).get("crew_pose", "stand") if isinstance(row[1], dict) else "stand")
+        for row in rows
+    }
+
+
 @router.get("/api/group-ranking")
 def group_ranking(limit: int = 12, user: Optional[models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
-    """인기 맛집 모임 랭킹 — 공개 수준이 노출인 모임만. score=팔로워x3+리스트좋아요x2+리스트수."""
+    """공개 크루 랭킹.
+
+    검증 방문·새로운 장소·재방문을 중심에 두고, 팔로워·좋아요는 보조 신호로
+    사용한다. 실제 기록이 3회 미만이면 신뢰도처럼 보이는 점수를 표시하지 않고
+    collecting 상태로 내려준다.
+    """
     comms = db.query(models.Community).filter(models.Community.visibility.in_(VISIBLE)).all()
     if not comms:
         return {"count": 0, "items": []}
@@ -69,13 +86,25 @@ def group_ranking(limit: int = 12, user: Optional[models.User] = Depends(get_cur
         fids = _public_folder_ids(db, c.id)
         likes, _ = _likes_for(db, fids)
         followers = _followers(db, c.id)
-        score = followers * 3 + likes * 2 + len(fids)
         visit_stats = visit_service.crew_visit_stats(db, c.id)
-        scored.append((score, followers, likes, len(fids), c, visit_stats))
+        verified_visits = int(visit_stats.get("visits", 0) or 0)
+        unique_places = int(visit_stats.get("unique_places", 0) or 0)
+        revisits = int(visit_stats.get("revisits", 0) or 0)
+        # 방문을 가장 강하게, 저장·팔로우는 발견 보조 신호로만 반영한다.
+        activity_score = verified_visits * 8 + unique_places * 5 + revisits * 3
+        social_score = followers * 2 + likes + len(fids)
+        score = activity_score * 10 + social_score
+        scored.append((score, followers, likes, len(fids), c, visit_stats, activity_score))
     scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
     scored = scored[:limit]
     items = []
-    for i, (score, followers, likes, nlists, c, visit_stats) in enumerate(scored):
+    for i, (score, followers, likes, nlists, c, visit_stats, activity_score) in enumerate(scored):
+        verified_visits = int(visit_stats.get("visits", 0) or 0)
+        unique_places = int(visit_stats.get("unique_places", 0) or 0)
+        revisits = int(visit_stats.get("revisits", 0) or 0)
+        trust_score = None
+        if verified_visits >= 3:
+            trust_score = min(100, 40 + unique_places * 8 + revisits * 4 + min(len(_members(c)), 5) * 2)
         items.append({
             "rank": i + 1,
             "community_id": c.id,
@@ -87,10 +116,13 @@ def group_ranking(limit: int = 12, user: Optional[models.User] = Depends(get_cur
             "like_count": likes,
             "list_count": nlists,
             "score": score,
-            "activity_score": score,
-            "verified_visit_count": int(visit_stats.get("visits", 0)),
-            "verified_revisit_count": int(visit_stats.get("revisits", 0)),
-            "trust_status": "observed" if visit_stats.get("visits", 0) else "collecting",
+            "activity_score": activity_score,
+            "verified_visit_count": verified_visits,
+            "unique_place_count": unique_places,
+            "verified_revisit_count": revisits,
+            "trust_score": trust_score,
+            "trust_status": "observed" if verified_visits >= 3 else "collecting",
+            "ranking_status": "verified" if verified_visits >= 3 else "provisional",
             "is_following": c.id in my_follow,
         })
     return {"count": len(items), "items": items}
@@ -155,11 +187,13 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
         mids = _members(c)[:20]
         us = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(mids)).all()} if mids else {}
         avatar_ids = _crew_avatar_ids(db, mids)
+        pose_ids = _crew_pose_ids(db, mids)
         for mid in mids:
             mu = us.get(mid)
             if mu:
                 members.append({"id": mu.id, "name": mu.name, "avatar": mu.avatar or "🙂",
                                 "avatar_id": avatar_ids.get(mu.id),
+                                "pose_id": pose_ids.get(mu.id, "stand"),
                                 "gender": mu.gender or "unknown",
                                 "is_host": mid == c.host_id})
 
@@ -390,11 +424,13 @@ def crew_kitchen(cid: str, user: Optional[models.User] = Depends(get_current_use
                   .filter(models.User.id.in_(ids)).all())
         by = {r[0]: r for r in rows}
         avatar_ids = _crew_avatar_ids(db, ids)
+        pose_ids = _crew_pose_ids(db, ids)
         data["members"] = [
             {"id": i,
              "name": (by[i][1] if i in by else None) or "멤버",
              "avatar": (by[i][2] if i in by else None) or "🙂",
              "avatar_id": avatar_ids.get(i),
+             "pose_id": pose_ids.get(i, "stand"),
              "gender": (by[i][3] if i in by else None) or "unknown",
              "is_host": i == c.host_id}
             for i in ids if i in by

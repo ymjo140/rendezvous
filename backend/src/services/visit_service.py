@@ -129,7 +129,8 @@ def crew_visit_stats(db, community_id: str, place_id: Optional[int] = None) -> d
     counts = Counter(row.place_id for row in rows)
     legacy = legacy_visit_stats(db, community_id, place_id) if community_id else {"visits": 0, "amount": 0}
     return {
-        "visits": len(rows), "revisits": sum(max(n - 1, 0) for n in counts.values()),
+        "visits": len(rows), "unique_places": len(counts),
+        "revisits": sum(max(n - 1, 0) for n in counts.values()),
         "regular_places": sum(n >= REGULAR_MIN_VISITS for n in counts.values()),
         "regular_visits": sum(n for n in counts.values() if n >= REGULAR_MIN_VISITS),
         "last_visit": max((r.visit_date_kst.isoformat() for r in rows), default=""),

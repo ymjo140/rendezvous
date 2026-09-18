@@ -16,7 +16,7 @@ from typing import Optional
 
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -717,6 +717,252 @@ def _place_fallback(db: Session, sheet, interp: dict, limit: int,
     return out, note
 
 
+def _direct_search_places(db: Session, sheet, raw_query: str, interp: dict,
+                          limit: int = 10, crew_visited=None) -> list[dict]:
+    """검색어 자체로 장소를 찾아 통합 발견 피드에 넣는다.
+
+    기존 검색은 장소를 지역 fallback으로만 채워서 '빵탐방'처럼 지역이 없는
+    검색어에서는 장소가 나오지 않았다. 검색어 해석 결과를 장소명·업태·
+    카테고리에도 적용해 장소와 크루가 같은 스트림에서 경쟁하게 한다.
+    """
+    raw = (raw_query or "").strip()
+    foods = [f for f in (interp.get("foods") or []) if f in FOOD_KEYWORDS]
+    terms: list[str] = []
+    if interp.get("residual_q"):
+        terms.extend(str(interp["residual_q"]).split())
+    for food in foods:
+        terms.extend(FOOD_KEYWORDS.get(food, []))
+    if raw and not terms:
+        terms.extend(raw.split())
+    terms = list(dict.fromkeys(t.strip() for t in terms if len(t.strip()) >= 2))
+
+    query = db.query(models.Place).filter(
+        models.Place.main_category.in_(["FOOD", "RESTAURANT", "CAFE", "PUB"]),
+        (models.Place.biz_status.is_(None) | (models.Place.biz_status != "폐업")),
+    )
+
+    region = interp.get("region") or {}
+    lat, lng = region.get("lat"), region.get("lng")
+    if lat is not None and lng is not None:
+        import math
+        radius = float(region.get("radius_km") or 2.0)
+        dlat = radius / 111.0
+        dlng = radius / (111.0 * max(0.2, math.cos(math.radians(lat))))
+        query = query.filter(
+            models.Place.lat.between(lat - dlat, lat + dlat),
+            models.Place.lng.between(lng - dlng, lng + dlng),
+        )
+
+    if terms:
+        clauses = []
+        for term in terms[:18]:
+            like = f"%{term}%"
+            clauses.extend([
+                models.Place.name.ilike(like),
+                models.Place.cuisine_type.ilike(like),
+                models.Place.category.ilike(like),
+                models.Place.uptae.ilike(like),
+            ])
+        query = query.filter(or_(*clauses))
+
+    rows = query.order_by(
+        models.Place.review_count.desc().nullslast(),
+        models.Place.wemeet_rating.desc().nullslast(),
+        models.Place.id.asc(),
+    ).limit(max(12, limit * 5)).all()
+    if not rows:
+        return []
+
+    place_ids = [p.id for p in rows]
+    saves = dict(
+        db.query(models.SavedItem.place_id, func.count(func.distinct(models.SavedItem.user_id)))
+        .filter(models.SavedItem.place_id.in_(place_ids))
+        .group_by(models.SavedItem.place_id).all()
+    )
+    verified_visits = dict(
+        db.query(models.VisitEvent.place_id, func.count(models.VisitEvent.id))
+        .filter(models.VisitEvent.place_id.in_(place_ids), models.VisitEvent.status == "verified")
+        .group_by(models.VisitEvent.place_id).all()
+    )
+    personal_revisits = dict(
+        db.query(models.PlaceVisitFeedback.place_id, func.count(func.distinct(models.PlaceVisitFeedback.user_id)))
+        .filter(
+            models.PlaceVisitFeedback.place_id.in_(place_ids),
+            models.PlaceVisitFeedback.personal_revisit == True,  # noqa: E712
+        )
+        .group_by(models.PlaceVisitFeedback.place_id).all()
+    )
+    crew_visited = crew_visited or set()
+
+    out = []
+    seen = set()
+    for place in rows:
+        key = (place.name or "", round(place.lat or 0, 5), round(place.lng or 0, 5))
+        if key in seen:
+            continue
+        seen.add(key)
+        blob = " ".join([
+            place.name or "", place.cuisine_type or "", place.category or "", place.uptae or "",
+        ]).lower()
+        exact = bool(raw and raw.lower() in blob)
+        matched = any(term.lower() in blob for term in terms)
+        social = min((saves.get(place.id, 0) or 0) / 5, 1.0) * 0.25
+        verified = min((verified_visits.get(place.id, 0) or 0) / 5, 1.0) * 0.35
+        revisit = min((personal_revisits.get(place.id, 0) or 0) / 3, 1.0) * 0.15
+        relevance = 0.55 if exact else (0.35 if matched else 0.15)
+        score = relevance + social + verified + revisit
+        if place.id in crew_visited:
+            reason = "우리 크루가 다녀온 곳"
+        elif verified_visits.get(place.id, 0):
+            reason = f"검증 방문 {verified_visits[place.id]}회"
+        elif saves.get(place.id, 0):
+            reason = f"{saves[place.id]}명이 저장한 곳"
+        else:
+            reason = place.cuisine_type or place.category or "새롭게 발견된 장소"
+        out.append({
+            "kind": "place",
+            "label": "장소",
+            "id": place.id,
+            "name": place.name,
+            "description": place.address or "",
+            "image": getattr(place, "hero_image", None),
+            "address": place.address or "",
+            "cuisine": place.uptae or place.cuisine_type or place.category or "",
+            "saves": int(saves.get(place.id, 0) or 0),
+            "verified_visits": int(verified_visits.get(place.id, 0) or 0),
+            "revisits": int(personal_revisits.get(place.id, 0) or 0),
+            "trust_status": "observed" if (verified_visits.get(place.id, 0) or 0) >= 3 else "collecting",
+            "reason": reason,
+            "score": round(score, 4),
+            "href": f"/places/{place.id}",
+            "years_open": _years_open(getattr(place, "opened_at", None)),
+            "budget": _budget_hint(getattr(place, "uptae", None), getattr(place, "cuisine_type", None)),
+        })
+    out.sort(key=lambda item: (item["score"], item["verified_visits"], item["saves"]), reverse=True)
+    return out[:limit]
+
+
+def _crew_discovery_hits(db: Session, raw_query: str, interp: dict,
+                         user: Optional[models.User], limit: int = 8) -> list[dict]:
+    """공개 크루를 장소와 같은 검색 결과 스트림에 넣는다.
+
+    멤버 목록은 읽지 않고 공개 크루의 이름·설명·공개 리스트·검증 방문
+    집계만 사용한다. 초기 데이터가 부족한 크루는 신뢰도처럼 포장하지 않는다.
+    """
+    communities = db.query(models.Community).filter(models.Community.visibility.in_(VISIBLE)).all()
+    if not communities:
+        return []
+
+    folders = (db.query(models.SaveFolder)
+               .filter(models.SaveFolder.community_id.isnot(None), public_folder_clause(),
+                       models.SaveFolder.item_count > 0)  # noqa: E712
+               .all())
+    folder_ids = [folder.id for folder in folders]
+    folder_places = _folder_place_ids(db, folder_ids) if folder_ids else {}
+    all_place_ids = list({pid for pids in folder_places.values() for pid in pids})
+    place_rows = (db.query(models.Place.id, models.Place.name, models.Place.address,
+                           models.Place.cuisine_type, models.Place.category, models.Place.hero_image)
+                  .filter(models.Place.id.in_(all_place_ids)).all()) if all_place_ids else []
+    place_meta = {
+        row[0]: {"name": row[1] or "", "address": row[2] or "", "cuisine": row[3] or "",
+                 "category": row[4] or "", "image": row[5]}
+        for row in place_rows
+    }
+    folders_by_crew: dict[str, list] = {}
+    for folder in folders:
+        folders_by_crew.setdefault(str(folder.community_id), []).append(folder)
+
+    raw = (raw_query or "").strip().lower()
+    search_tokens = [token for token in raw.split() if token]
+    for food in interp.get("foods") or []:
+        search_tokens.extend(FOOD_KEYWORDS.get(food, []))
+    search_tokens = list(dict.fromkeys(token.lower() for token in search_tokens if len(token) >= 2))
+    region_name = ((interp.get("region") or {}).get("name") or "").lower()
+    following = set()
+    if user:
+        following = {row[0] for row in db.query(models.CommunityFollow.community_id)
+                     .filter(models.CommunityFollow.follower_id == user.id).all()}
+
+    public_list_counts = dict(
+        db.query(models.SaveFolder.community_id, func.count(models.SaveFolder.id))
+        .filter(models.SaveFolder.community_id.isnot(None), public_folder_clause(), models.SaveFolder.item_count > 0)
+        .group_by(models.SaveFolder.community_id).all()
+    )
+    results = []
+    for community in communities:
+        crew_folders = folders_by_crew.get(str(community.id), [])
+        pids = list({pid for folder in crew_folders for pid in folder_places.get(folder.id, [])})
+        place_blobs = [
+            " ".join([place_meta[pid]["name"], place_meta[pid]["address"],
+                      place_meta[pid]["cuisine"], place_meta[pid]["category"]]).lower()
+            for pid in pids if pid in place_meta
+        ]
+        folder_blob = " ".join(
+            f"{folder.name or ''} {folder.description or ''}" for folder in crew_folders
+        ).lower()
+        blob = " ".join([
+            community.title or "", community.description or "", getattr(community, "org_name", None) or "",
+            folder_blob, " ".join(place_blobs),
+        ]).lower()
+        if search_tokens and not any(token in blob for token in search_tokens):
+            continue
+        if region_name and region_name not in blob:
+            continue
+
+        stats = visit_service.crew_visit_stats(db, community.id)
+        verified_visits = int(stats.get("visits", 0) or 0)
+        revisits = int(stats.get("revisits", 0) or 0)
+        followers = db.query(models.CommunityFollow).filter(
+            models.CommunityFollow.community_id == community.id).count()
+        members = crew_members(community)
+        exact_title = bool(raw and raw in (community.title or "").lower())
+        text_score = 0.7 if exact_title else (0.45 if search_tokens else 0.2)
+        activity_score = min(verified_visits / 8, 1.0) * 0.35
+        social_score = min((followers + int(public_list_counts.get(community.id, 0) or 0)) / 8, 1.0) * 0.15
+        score = text_score + activity_score + social_score
+
+        cover = next((folder.cover_image for folder in crew_folders if folder.cover_image), None)
+        preview_places = []
+        for pid in pids:
+            meta = place_meta.get(pid)
+            if not meta:
+                continue
+            if not cover and meta["image"]:
+                cover = meta["image"]
+            if len(preview_places) < 3:
+                preview_places.append(meta["name"])
+        if exact_title:
+            reason = "검색어와 이름이 맞는 크루"
+        elif verified_visits:
+            reason = f"검증 방문 {verified_visits}회"
+        elif preview_places:
+            reason = f"{preview_places[0]} 기록이 있어요"
+        else:
+            reason = "공개 기록이 쌓이는 중"
+        results.append({
+            "kind": "crew",
+            "label": "크루",
+            "id": str(community.id),
+            "name": community.title or "이름 없는 크루",
+            "description": community.description or "함께 가고 기록하는 크루",
+            "image": cover,
+            "icon": community.icon or "👥",
+            "members": len(members),
+            "lists": int(public_list_counts.get(community.id, 0) or 0),
+            "followers": followers,
+            "verified_visits": verified_visits,
+            "revisits": revisits,
+            "trust_status": "observed" if verified_visits >= 3 else "collecting",
+            "reason": reason,
+            "preview_places": preview_places,
+            "is_following": community.id in following,
+            "score": round(score, 4),
+            "href": f"/crew/{community.id}",
+        })
+    results.sort(key=lambda item: (item["score"], item["verified_visits"], item["followers"]), reverse=True)
+    return results[:limit]
+
+
 def _haversine_km(lat1, lng1, lat2, lng2) -> float:
     from math import asin, cos, radians, sin, sqrt
     lat1, lng1, lat2, lng2 = map(lambda v: radians(float(v)), (lat1, lng1, lat2, lng2))
@@ -740,10 +986,11 @@ def home_search(
     """리스트 단위 검색 — 필터 4축(지역·맥락·정렬·재방문 검증).
     검색의 기본 단위는 장소가 아니라 '믿을 무리가 만든 리스트'다."""
     uid = user.id if user else None
+    raw_search = (q or "").strip()
 
     # 검색어를 지역·음식·목적으로 쪼갠다. 해석한 말은 q에서 빼야 한다 —
     # 남겨두면 q와 region이 AND로 걸려 '신논현 파스타'가 확정적으로 0건이 된다.
-    interp = query_interpreter.interpret(db, q, FOOD_KEYWORDS, TAG_NAME_HINTS)
+    interp = query_interpreter.interpret(db, raw_search, FOOD_KEYWORDS, TAG_NAME_HINTS)
     if interp["region"] and not (regions or region):
         region = interp["region"]["name"]
     if interp["foods"] and not foods:
@@ -948,11 +1195,82 @@ def home_search(
             db, sheet, interp, need,
             crew_visited=crew_visited, my_crew_ids=my_crew_ids)
 
+    # 지역이 없는 검색어(예: "빵탐방")도 장소를 직접 검색한다. 기존에는
+    # 지역 fallback만 있었기 때문에 이 경우 장소가 검색 결과에 들어오지 않았다.
+    if raw_search or food_set:
+        direct_places = _direct_search_places(
+            db, sheet, raw_search, interp, limit=max(8, min(need, 12)),
+            crew_visited=crew_visited,
+        )
+        if direct_places:
+            places = direct_places
+            places_note = "검색어와 방문·저장 기록을 함께 보고 추천했어요"
+
+    crew_hits = _crew_discovery_hits(db, raw_search, interp, user, limit=8)
+    if verified:
+        crew_hits = [hit for hit in crew_hits if hit.get("revisits", 0) > 0]
+        places = [place for place in places if (place.get("revisit", 0) or place.get("revisits", 0)) > 0]
+
+    # 장소·크루·리스트를 별도 탭이 아니라 한 스트림으로 내려준다.
+    # 기존 items/places 응답은 다른 화면 호환을 위해 유지한다.
+    discovery = []
+    for item in items:
+        # 크루가 만든 리스트는 아래 crew_hits가 크루 단위로 대표한다.
+        # 같은 크루가 두 번 보이지 않도록 큐레이터 리스트만 이 경로에 남긴다.
+        if item.get("by", {}).get("kind") == "crew":
+            continue
+        if verified and (item.get("revisit", 0) or 0) < 1:
+            continue
+        discovery.append({
+            "kind": "list",
+            "label": "리스트",
+            "id": str(item["folder_id"]),
+            "name": item["name"],
+            "description": item.get("description") or f"{item.get('item_count', 0)}곳을 담은 공개 리스트",
+            "image": item.get("cover_image"),
+            "icon": item.get("icon") or "📁",
+            "saves": item.get("saves", 0),
+            "verified_visits": 0,
+            "revisits": item.get("revisit", 0),
+            "trust_status": "collecting",
+            "reason": item.get("reason") or "공개 리스트",
+            "area": item.get("area") or "",
+            "score": float(item.get("saves", 0) or 0) / 10,
+            "href": f"/lists/{item['folder_id']}",
+        })
+    discovery.extend(crew_hits)
+    for place in places:
+        if place.get("kind") == "place":
+            discovery.append(place)
+            continue
+        discovery.append({
+            "kind": "place",
+            "label": "장소",
+            "id": place["id"],
+            "name": place["name"],
+            "description": place.get("address") or "",
+            "image": place.get("image"),
+            "cuisine": place.get("cuisine") or place.get("category") or "",
+            "saves": 0,
+            "verified_visits": 0,
+            "revisits": place.get("revisit", 0),
+            "trust_status": "collecting",
+            "reason": place.get("reason") or "새롭게 발견된 장소",
+            "score": float(place.get("rank", 0) or 0),
+            "href": f"/places/{place['id']}",
+        })
+    discovery.sort(key=lambda item: (
+        float(item.get("score") or 0),
+        int(item.get("verified_visits") or 0),
+        int(item.get("saves") or 0),
+    ), reverse=True)
+
     return {
         "interpretation": interp,
         "places": places,
         "places_note": places_note,
         "items": items,
+        "discovery": discovery[:24],
         "count": len(items),
         "filters": {"q": q or "", "regions": region_set, "tags": sorted(tag_set), "foods": sorted(food_set), "sort": eff_sort, "verified": verified},
         "context_tags": CONTEXT_TAGS,

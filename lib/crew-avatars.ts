@@ -16,6 +16,24 @@ type LegacyCrewAvatarId =
 
 export type CrewGender = "male" | "female" | "other" | "unknown"
 
+export type CrewPoseId = "stand" | "wave" | "bread" | "heart"
+
+export type CrewPoseDefinition = {
+  id: CrewPoseId
+  label: string
+  icon: string
+  priceLabel: string
+}
+
+// 1차에는 통짜 캐릭터와 충돌하지 않도록 포즈 카탈로그·장착 상태만 먼저 제공한다.
+// 실제 포즈 PNG는 같은 기준선으로 제작한 다음 컬렉션에서 교체한다.
+export const CREW_POSES: Record<CrewPoseId, CrewPoseDefinition> = {
+  stand: { id: "stand", label: "차분히 서기", icon: "🧍", priceLabel: "무료" },
+  wave: { id: "wave", label: "손 흔들기", icon: "👋", priceLabel: "무료" },
+  bread: { id: "bread", label: "빵 들기", icon: "🥖", priceLabel: "무료" },
+  heart: { id: "heart", label: "하트 포즈", icon: "🫶", priceLabel: "준비 중" },
+}
+
 export type CrewAvatarDefinition = {
   id: CrewAvatarId
   label: string
@@ -116,6 +134,11 @@ export function normalizeCrewAvatarId(value: string | null | undefined): CrewAva
 
 export function isCrewAvatarId(value: string | null | undefined): boolean {
   return normalizeCrewAvatarId(value) !== null
+}
+
+export function normalizeCrewPoseId(value: string | null | undefined): CrewPoseId {
+  if (value === "wave" || value === "bread" || value === "heart") return value
+  return "stand"
 }
 
 export function avatarIdForMember(

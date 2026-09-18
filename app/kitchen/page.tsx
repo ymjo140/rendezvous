@@ -26,7 +26,7 @@ import { CrewShowcase } from "@/components/ui/crew-showcase"
 import { CrewRanking } from "@/components/ui/crew-ranking"
 import { CrewExchange } from "@/components/ui/crew-exchange"
 import { CrewMissions } from "@/components/ui/crew-missions"
-import { CrewVillage, NeighborStrip, type Member, type NeighborCrew } from "@/components/ui/crew-village"
+import { CrewVillage, NeighborStrip, type HeroPlace, type Member, type NeighborCrew } from "@/components/ui/crew-village"
 import { TabBar } from "../tab-bar"
 
 type Crew = { id: string; title: string; icon: string; members: number; lists?: number }
@@ -184,6 +184,7 @@ type Kitchen = {
   unlocked_count: number
   total_count: number
   regulars?: { place_id: number; name: string; visits: number; last_date: string; menu: string }[]
+  hero_place?: HeroPlace | null
   menus: { key: string; title: string; unlocked: boolean; place_name: string | null; image: string }[]
 }
 function KitchenContent({ crew, neighbors }: { crew: Crew; neighbors: NeighborCrew[] }) {
@@ -212,6 +213,7 @@ function KitchenContent({ crew, neighbors }: { crew: Crew; neighbors: NeighborCr
         total={data.total_count}
         totalVisits={data.total_visits ?? 0}
         regularCount={regularCount}
+        heroPlace={data.hero_place}
         onEnter={() => router.push(`/crew/${encodeURIComponent(crew.id)}`)}
       />
       <CrewMissions groupId={crew.id} />

@@ -49,8 +49,25 @@ def _place_visits(db, cid):
 
 
 def get_kitchen(db: Session, community_id: str) -> Dict[str, Any]:
+    place_rows = _place_visits(db, community_id)
     rows = [(p.id, n, first.isoformat(), last.isoformat(), p.name, p.uptae or "", p.main_category)
-            for p, n, first, last in _place_visits(db, community_id)]
+            for p, n, first, last in place_rows]
+
+    # 크루원은 가게 안이 아니라 크루가 실제로 다녀온 대표 가게 앞에 선다.
+    # 가장 최근 검증 방문 장소를 대표 장면으로 사용하고, 기록이 없으면
+    # 프론트의 기본 동네 배경으로 안전하게 fallback한다.
+    hero_place = None
+    if place_rows:
+        place, visits, first, last = sorted(place_rows, key=lambda row: row[3] or "", reverse=True)[0]
+        hero_place = {
+            "id": place.id,
+            "name": place.name,
+            "category": place.uptae or place.cuisine_type or place.category or "장소",
+            "address": place.address,
+            "image": getattr(place, "hero_image", None),
+            "visits": int(visits or 0),
+            "last_visit": last.isoformat() if last else None,
+        }
 
     # 메뉴별로 '처음 해금한 가게'를 남긴다 — 카드에 "OO에서 해금" 하고 보여주려고
     unlocked: Dict[str, Dict[str, Any]] = {}
@@ -95,6 +112,7 @@ def get_kitchen(db: Session, community_id: str) -> Dict[str, Any]:
         "unlocked_count": len(unlocked),
         "total_count": len(mt.MENU_CARDS),
         "total_visits": total_visits,
+        "hero_place": hero_place,
         "legacy_visits": visit_service.legacy_visit_stats(db, community_id)["visits"],
         "menus": menus,
         "regulars": regulars,

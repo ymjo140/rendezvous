@@ -17,8 +17,11 @@ type RankingItem = {
   score: number
   activity_score: number
   verified_visit_count: number
+  unique_place_count?: number
   verified_revisit_count: number
+  trust_score?: number | null
   trust_status: "observed" | "collecting"
+  ranking_status?: "verified" | "provisional"
   visibility: string
 }
 
@@ -56,11 +59,11 @@ export function CrewRanking() {
         <div className="min-w-0 flex-1">
           <h2 className="text-[15px] font-bold text-slate-900">공개 크루 랭킹</h2>
           <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
-            공개 리스트를 쌓고 팔로워가 늘수록 순위가 올라가요.
+            함께 다녀온 검증 방문과 새로운 장소 기록이 순위의 중심이에요.
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-amber-700">
-          활동 신호
+          방문 기반
         </span>
       </div>
 
@@ -96,8 +99,8 @@ export function CrewRanking() {
                   item.trust_status === "observed" ? "text-emerald-600" : "text-slate-400"
                 }`}>
                   {item.trust_status === "observed"
-                    ? `방문 인증 ${item.verified_visit_count}회`
-                    : "방문 데이터 쌓이는 중"}
+                    ? `방문 인증 ${item.verified_visit_count}회 · 장소 ${item.unique_place_count ?? 0}곳 · 신뢰도 ${item.trust_score ?? "-"}`
+                    : "초기 랭킹 · 방문 데이터 쌓이는 중"}
                 </span>
               </span>
               <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
