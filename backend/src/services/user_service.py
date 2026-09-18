@@ -28,7 +28,7 @@ class UserService:
 
     def get_my_info(self, db: Session, user: models.User):
         avatar = self.repo.get_avatar_info(db, user.id)
-        avatar_data = {"equipped": {}, "inventory": [], "level": 1, "crew_avatar_id": None}
+        avatar_data = {"equipped": {}, "inventory": [], "level": 1, "crew_avatar_id": None, "crew_pose_id": "stand"}
         if avatar:
             equipped = avatar.equipped or {}
             avatar_data = {
@@ -36,6 +36,7 @@ class UserService:
                 "inventory": avatar.inventory or [],
                 "level": avatar.level,
                 "crew_avatar_id": equipped.get("crew_avatar"),
+                "crew_pose_id": equipped.get("crew_pose", "stand"),
             }
         
         my_reviews = self.repo.get_user_reviews(db, user.id)
@@ -130,6 +131,9 @@ class UserService:
             raise HTTPException(400, "지원하지 않는 캐릭터입니다.")
         if gender in {"male", "female"} and avatar_gender[avatar_id] != gender:
             raise HTTPException(400, "선택한 성별과 캐릭터가 맞지 않습니다.")
+        pose_id = str(req.pose_id or "stand").strip().lower()
+        if pose_id not in {"stand", "wave", "bread", "heart"}:
+            raise HTTPException(400, "지원하지 않는 포즈입니다.")
 
         avatar = self.repo.get_avatar_info(db, user.id)
         if not avatar:
@@ -140,8 +144,10 @@ class UserService:
         equipped = dict(avatar.equipped or {})
         inventory = list(avatar.inventory or [])
         equipped["crew_avatar"] = avatar_id
-        if avatar_id not in inventory:
-            inventory.append(avatar_id)
+        equipped["crew_pose"] = pose_id
+        for item_id in (avatar_id, f"pose:{pose_id}"):
+            if item_id not in inventory:
+                inventory.append(item_id)
         avatar.equipped = equipped
         avatar.inventory = inventory
         user.gender = gender
@@ -152,7 +158,14 @@ class UserService:
             "message": "캐릭터 설정을 저장했어요.",
             "gender": gender,
             "avatar_id": avatar_id,
-            "avatar": {"equipped": equipped, "inventory": inventory, "level": avatar.level, "crew_avatar_id": avatar_id},
+            "pose_id": pose_id,
+            "avatar": {
+                "equipped": equipped,
+                "inventory": inventory,
+                "level": avatar.level,
+                "crew_avatar_id": avatar_id,
+                "crew_pose_id": pose_id,
+            },
         }
 
     def withdraw(self, db: Session, user: models.User):

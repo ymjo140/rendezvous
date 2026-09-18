@@ -31,9 +31,9 @@ export function CrewAvatar({
   const selectedId: CrewAvatarId = avatarIdForMember(memberId, avatarId, gender)
   const avatar = CREW_AVATARS[selectedId]
   const boxClass = [
-    "relative block shrink-0 overflow-hidden",
+    "relative block shrink-0",
     SIZE_CLASS[size],
-    mode === "portrait" ? "rounded-full bg-slate-50 ring-1 ring-white" : "",
+    mode === "portrait" ? "overflow-hidden rounded-full bg-slate-50 ring-1 ring-white" : "overflow-visible",
     className,
   ].filter(Boolean).join(" ")
 

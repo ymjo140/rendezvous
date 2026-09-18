@@ -17,7 +17,7 @@ export function TabBar() {
   const tabs = [
     { key: "home", label: "홈", icon: Compass, path: "/", exact: true },
     { key: "town", label: "크루 마을", icon: ChefHat, path: "/kitchen" },
-    { key: "feed", label: "장소 탐색", icon: LayoutGrid, path: "/feed" },
+    { key: "feed", label: "탐색", icon: LayoutGrid, path: "/search" },
     { key: "profile", label: "프로필", icon: User, path: "/profile" },
   ]
 
