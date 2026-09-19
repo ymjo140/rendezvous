@@ -123,3 +123,22 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Poses are a quiet 2D presentation choice, not an on-scene status badge or
+   an animated game mechanic. Keep the feet anchored to the same baseline. */
+@layer utilities {
+  .crew-pose-wave {
+    transform: translateY(-1px) rotate(-2deg);
+    transform-origin: 50% 100%;
+  }
+
+  .crew-pose-bread {
+    transform: translateY(-1px) rotate(1deg);
+    transform-origin: 50% 100%;
+  }
+
+  .crew-pose-heart {
+    transform: translateY(-1px) scale(1.01);
+    transform-origin: 50% 100%;
+  }
+}

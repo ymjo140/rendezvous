@@ -3,7 +3,6 @@
 import React from "react"
 import { ArrowUpRight, ChevronRight, Users } from "lucide-react"
 import { CrewAvatar } from "@/components/ui/crew-avatar"
-import { CREW_POSES, normalizeCrewPoseId } from "@/lib/crew-avatars"
 
 /**
  * 크루 마을의 시각적 기준점.
@@ -108,24 +107,16 @@ export function CrewVillage({
         <div className="absolute inset-x-3 bottom-1 z-10 grid min-h-[128px] grid-cols-3 items-end gap-1">
           {visibleMembers.length > 0 ? visibleMembers.map((member) => (
             <div key={member.id} className="flex min-w-0 flex-col items-center justify-end">
-              <div className="relative">
-                <CrewAvatar
-                  memberId={member.id}
-                  avatarId={member.avatar_id}
-                  gender={member.gender}
-                  name={member.name}
-                  size="md"
-                  mode="full"
-                  className="h-[112px] w-[84px] drop-shadow-[0_5px_4px_rgba(88,55,30,0.28)]"
-                />
-                <span
-                  className="absolute -right-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full border border-white bg-white/95 px-1 text-[10px] shadow-sm"
-                  title={CREW_POSES[normalizeCrewPoseId(member.pose_id)].label}
-                  aria-label={`${member.name} 포즈: ${CREW_POSES[normalizeCrewPoseId(member.pose_id)].label}`}
-                >
-                  {CREW_POSES[normalizeCrewPoseId(member.pose_id)].icon}
-                </span>
-              </div>
+              <CrewAvatar
+                memberId={member.id}
+                avatarId={member.avatar_id}
+                gender={member.gender}
+                poseId={member.pose_id}
+                name={member.name}
+                size="md"
+                mode="full"
+                className="h-[112px] w-[84px] drop-shadow-[0_5px_4px_rgba(88,55,30,0.28)]"
+              />
               <span className="-mt-0.5 max-w-full truncate rounded-full border border-white/90 bg-white px-2 py-1 text-[9px] font-bold text-[#503a2d] shadow-sm">
                 {member.is_host ? "👑 " : ""}{member.name}
               </span>

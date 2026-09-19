@@ -796,6 +796,7 @@ export function MyPageTab() {
                               memberId={user.id}
                               avatarId={user.avatar?.crew_avatar_id}
                               gender={user.gender}
+                              poseId={user.avatar?.crew_pose_id}
                               name={user.name}
                               size="lg"
                               mode="full"

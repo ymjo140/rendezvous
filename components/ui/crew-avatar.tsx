@@ -1,13 +1,20 @@
 "use client"
 
 import Image from "next/image"
-import { avatarIdForMember, CREW_AVATARS, type CrewAvatarId } from "@/lib/crew-avatars"
+import {
+  avatarIdForMember,
+  CREW_AVATARS,
+  normalizeCrewPoseId,
+  type CrewAvatarId,
+  type CrewPoseId,
+} from "@/lib/crew-avatars"
 
 type CrewAvatarProps = {
   memberId: number
   avatarId?: string | null
   gender?: string | null
   name?: string
+  poseId?: string | null
   size?: "sm" | "md" | "lg"
   mode?: "portrait" | "full"
   className?: string
@@ -24,29 +31,62 @@ export function CrewAvatar({
   avatarId,
   gender,
   name,
+  poseId,
   size = "sm",
   mode = "portrait",
   className = "",
 }: CrewAvatarProps) {
   const selectedId: CrewAvatarId = avatarIdForMember(memberId, avatarId, gender)
   const avatar = CREW_AVATARS[selectedId]
+  const selectedPose: CrewPoseId = normalizeCrewPoseId(poseId)
+  const poseClass = mode === "full" ? POSE_CLASS[selectedPose] : ""
   const boxClass = [
-    "relative block shrink-0",
+    "relative shrink-0",
     SIZE_CLASS[size],
-    mode === "portrait" ? "overflow-hidden rounded-full bg-slate-50 ring-1 ring-white" : "overflow-visible",
+    mode === "portrait"
+      ? "block overflow-hidden rounded-full bg-slate-50 ring-1 ring-white"
+      : "flex items-end justify-center overflow-visible",
+    poseClass,
     className,
   ].filter(Boolean).join(" ")
 
+  const imageProps = {
+    src: avatar.src,
+    alt: name ? name + " 아바타" : avatar.label,
+    sizes: size === "lg" ? "144px" : size === "md" ? "112px" : "44px",
+    priority: size === "lg",
+  }
+
   return (
-    <span className={boxClass} data-avatar-id={selectedId} data-avatar-gender={gender || "unknown"}>
+    <span
+      className={boxClass}
+      data-avatar-id={selectedId}
+      data-avatar-gender={gender || "unknown"}
+      data-pose-id={selectedPose}
+    >
+      {mode === "portrait" ? (
       <Image
-        src={avatar.src}
-        alt={name ? name + " 아바타" : avatar.label}
+        {...imageProps}
+        alt={imageProps.alt}
         fill
-        sizes={size === "lg" ? "96px" : size === "md" ? "64px" : "44px"}
-        className={`${mode === "portrait" ? "object-cover object-top" : "object-contain object-bottom"} [image-rendering:pixelated]`}
-        priority={size === "lg"}
+        className="object-cover object-top [image-rendering:pixelated]"
       />
+      ) : (
+        <Image
+          {...imageProps}
+          alt={imageProps.alt}
+          width={avatar.width}
+          height={avatar.height}
+          className="h-full w-auto max-w-none object-contain object-bottom [image-rendering:pixelated]"
+        />
+      )}
     </span>
   )
+}
+
+const POSE_CLASS: Record<CrewPoseId, string> = {
+  stand: "",
+  wave: "crew-pose-wave",
+  bread: "crew-pose-bread",
+  heart: "crew-pose-heart",
 }
