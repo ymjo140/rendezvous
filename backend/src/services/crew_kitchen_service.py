@@ -2,6 +2,7 @@
 """크루 주방·방문 미션은 검증된 공동 방문에서 계산한다.
 과거 신고 기록은 보존하되 해금·단골·제휴 자격으로 승격하지 않는다.
 """
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func
@@ -25,6 +26,176 @@ TIERS = [
 ]
 
 REGULAR_MIN_VISITS = visit_service.REGULAR_MIN_VISITS
+
+
+def _recent(value, cutoff):
+    if value is None:
+        return False
+    try:
+        return clock.as_utc(value) >= cutoff
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
+def _activity_stamp(value):
+    if value is None:
+        return None
+    try:
+        return clock.as_utc(value)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def member_contributions(db: Session, community_id: str, member_ids: List[int], *, days: int = 30) -> Dict[int, Dict[str, Any]]:
+    """Calculate a transparent, recent-weighted contribution score per crew member.
+
+    The score is deliberately derived from existing verified activity rather than
+    introducing a new balance or gamification table.  A member contributes through
+    verified visits, useful records (reviews/posts), places saved to the crew list,
+    and list comments.  Recent activity receives a bonus so the stage does not stay
+    occupied by inactive founding members forever.
+    """
+    ids = list(dict.fromkeys(int(uid) for uid in (member_ids or []) if uid is not None))
+    result: Dict[int, Dict[str, Any]] = {
+        uid: {
+            "score": 0,
+            "recent_score": 0,
+            "verified_visits": 0,
+            "unique_places": 0,
+            "menu_types": 0,
+            "records": 0,
+            "last_activity": None,
+            "_places": set(),
+            "_menus": set(),
+            "_recent_visits": 0,
+            "_recent_places": set(),
+            "_record_score": 0,
+            "_recent_record_score": 0,
+            "_last_activity_at": None,
+        }
+        for uid in ids
+    }
+    if not result:
+        return {}
+
+    cutoff = clock.utc_now() - timedelta(days=max(1, int(days)))
+    cutoff_date = clock.kst_date(cutoff)
+    place_ids = set()
+
+    visit_rows = (db.query(models.VisitParticipant.user_id, models.VisitEvent.place_id,
+                           models.VisitEvent.occurred_at, models.VisitEvent.visit_date_kst)
+                  .join(models.VisitEvent, models.VisitEvent.id == models.VisitParticipant.visit_id)
+                  .filter(models.VisitEvent.community_id == str(community_id),
+                          models.VisitEvent.status == "verified",
+                          models.VisitParticipant.user_id.in_(ids)).all())
+    for uid, place_id, occurred_at, visit_date in visit_rows:
+        score = result.get(uid)
+        if score is None:
+            continue
+        score["verified_visits"] += 1
+        score["_places"].add(place_id)
+        place_ids.add(place_id)
+        is_recent = (visit_date is not None and visit_date >= cutoff_date) or _recent(occurred_at, cutoff)
+        if is_recent:
+            score["_recent_visits"] += 1
+            score["_recent_places"].add(place_id)
+        stamp = _activity_stamp(occurred_at)
+        if stamp is not None and (score["_last_activity_at"] is None or stamp > score["_last_activity_at"]):
+            score["_last_activity_at"] = stamp
+
+    place_menu_keys = {}
+    if place_ids:
+        places = (db.query(models.Place.id, models.Place.name, models.Place.uptae,
+                           models.Place.cuisine_type, models.Place.main_category)
+                  .filter(models.Place.id.in_(place_ids)).all())
+        place_menu_keys = {
+            row[0]: mt.menu_key(row[1] or "", row[2] or "", row[3] or row[4])
+            for row in places
+        }
+    for score in result.values():
+        score["_menus"].update(place_menu_keys.get(pid) for pid in score["_places"] if pid in place_menu_keys)
+
+    def add_record(uid, created_at, weight: int):
+        score = result.get(uid)
+        if score is None:
+            return
+        score["records"] += 1
+        score["_record_score"] += weight
+        if _recent(created_at, cutoff):
+            score["_recent_record_score"] += weight
+        stamp = _activity_stamp(created_at)
+        if stamp is not None and (score["_last_activity_at"] is None or stamp > score["_last_activity_at"]):
+            score["_last_activity_at"] = stamp
+
+    if place_ids:
+        for uid, place_id, created_at in (db.query(models.Review.user_id, models.Review.place_id,
+                                                    models.Review.created_at)
+                                          .filter(models.Review.user_id.in_(ids),
+                                                  models.Review.place_id.in_(place_ids)).all()):
+            add_record(uid, created_at, 3)
+        for uid, place_id, created_at in (db.query(models.Post.user_id, models.Post.place_id,
+                                                   models.Post.created_at)
+                                         .filter(models.Post.user_id.in_(ids),
+                                                 models.Post.place_id.in_(place_ids),
+                                                 models.Post.is_public.is_(True)).all()):
+            add_record(uid, created_at, 2)
+
+    for uid, created_at in (db.query(models.SavedItem.user_id, models.SavedItem.created_at)
+                            .join(models.SaveFolder, models.SaveFolder.id == models.SavedItem.folder_id)
+                            .filter(models.SaveFolder.community_id == str(community_id),
+                                    models.SavedItem.user_id.in_(ids),
+                                    models.SavedItem.item_type == "place").all()):
+        add_record(uid, created_at, 1)
+
+    for uid, created_at in (db.query(models.ListComment.user_id, models.ListComment.created_at)
+                            .join(models.SaveFolder, models.SaveFolder.id == models.ListComment.folder_id)
+                            .filter(models.SaveFolder.community_id == str(community_id),
+                                    models.ListComment.user_id.in_(ids)).all()):
+        add_record(uid, created_at, 1)
+
+    for score in result.values():
+        score["unique_places"] = len(score["_places"])
+        score["menu_types"] = len(score["_menus"])
+        # 방문·장소 다양성·메뉴 다양성을 가장 강하게 보고, 기록 행동은
+        # 실제 콘텐츠를 남긴 정도에 따라 보조한다. 최근 활동은 별도 보너스다.
+        base = (
+            score["verified_visits"] * 5
+            + score["unique_places"] * 3
+            + score["menu_types"] * 2
+            + score["_record_score"]
+        )
+        recent_bonus = (
+            score["_recent_visits"] * 3
+            + len(score["_recent_places"]) * 2
+            + score["_recent_record_score"]
+        )
+        score["score"] = int(base + recent_bonus)
+        score["recent_score"] = int(recent_bonus)
+        if score["_last_activity_at"] is not None:
+            score["last_activity"] = score["_last_activity_at"].isoformat()
+        for key in ("_places", "_menus", "_recent_places", "_recent_visits", "_record_score",
+                    "_recent_record_score", "_last_activity_at"):
+            score.pop(key, None)
+    return result
+
+
+def rank_member_ids(db: Session, community_id: str, member_ids: List[int], viewer_id: Optional[int] = None):
+    """Return stable representative order plus the score payload for the roster."""
+    ids = list(dict.fromkeys(int(uid) for uid in (member_ids or []) if uid is not None))
+    contributions = member_contributions(db, community_id, ids)
+    positions = {uid: index for index, uid in enumerate(ids)}
+
+    # Stable multi-pass sort: score first, then recent activity, then latest
+    # activity. The final input order is the deterministic tie-breaker.
+    ranked = list(ids)
+    ranked.sort(key=lambda uid: positions[uid])
+    ranked.sort(key=lambda uid: contributions.get(uid, {}).get("last_activity") or "", reverse=True)
+    ranked.sort(key=lambda uid: int(contributions.get(uid, {}).get("recent_score", 0)), reverse=True)
+    ranked.sort(key=lambda uid: int(contributions.get(uid, {}).get("score", 0)), reverse=True)
+    # '우리 크루'에서는 내가 내 공간에서 사라지지 않게 첫 자리를 보장한다.
+    if viewer_id in positions:
+        ranked = [viewer_id] + [uid for uid in ranked if uid != viewer_id]
+    return ranked, contributions
 
 
 def _tier_of(unlocked: int):

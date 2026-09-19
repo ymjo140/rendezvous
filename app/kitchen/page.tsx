@@ -180,6 +180,9 @@ type Kitchen = {
   tier_desc?: string | null
   next_tier?: { name: string; need: number; remain: number } | null
   total_visits?: number
+  member_count?: number
+  current_user_id?: number | null
+  member_sort?: "recent_contribution"
   members: Member[]
   unlocked_count: number
   total_count: number
@@ -220,6 +223,7 @@ function KitchenContent({ crew, neighbors, onRanking }: { crew: Crew; neighbors:
         totalVisits={data.total_visits ?? 0}
         regularCount={regularCount}
         heroPlace={data.hero_place}
+        memberCount={data.member_count ?? crew.members}
         onEnter={() => router.push(`/crew/${encodeURIComponent(crew.id)}`)}
       />
       <CrewMissions
