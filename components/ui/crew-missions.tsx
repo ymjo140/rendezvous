@@ -79,7 +79,7 @@ export function CrewMissions({
   return (
     <>
       {/* 캐릭터 머리보다 위에 놓는 컴팩트 액션 레일 */}
-      <div className="absolute left-3 top-[52px] z-20 flex items-start gap-1">
+      <div className="absolute left-3 top-3 z-20 flex items-start gap-1">
         <button
           onClick={() => setOpen(true)}
           className="relative flex h-[43px] w-[44px] flex-col items-center justify-center gap-0.5 rounded-xl border border-[#f1cc7b] bg-[#fff2cf]/95 px-1 py-1 shadow-[0_3px_10px_rgba(126,80,20,0.14)] active:scale-95"
