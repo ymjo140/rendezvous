@@ -2,7 +2,7 @@
 
 import React from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { Compass, ChefHat, LayoutGrid, User } from "lucide-react"
+import { Compass, ChefHat, LayoutGrid, Mail, User } from "lucide-react"
 
 const BRAND = "#F5A623"
 
@@ -18,6 +18,7 @@ export function TabBar() {
     { key: "home", label: "홈", icon: Compass, path: "/", exact: true },
     { key: "town", label: "크루 마을", icon: ChefHat, path: "/kitchen" },
     { key: "feed", label: "탐색", icon: LayoutGrid, path: "/search" },
+    { key: "mail", label: "메일", icon: Mail, path: "/mail" },
     { key: "profile", label: "프로필", icon: User, path: "/profile" },
   ]
 
