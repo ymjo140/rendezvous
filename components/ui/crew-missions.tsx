@@ -8,8 +8,8 @@ import { CrewLoadError } from "@/components/ui/crew-load-error"
 
 /** 퀘스트 — 마을 위에 떠 있는 버튼, 누르면 모달.
  *
- *  아이러브커피의 좌측 세로 아이콘(퀘스트·특별주문·업적)이 이 형태다. 화면을 차지하지
- *  않으면서 '할 게 남았다'는 걸 배지로 알린다. 목록으로 깔면 마을이 밀려 내려간다.
+ *  아이러브커피의 액션 아이콘을 참고하되, 현재 화면에서는 캐릭터를 가리지 않도록
+ *  장면 위쪽에 작게 가로로 배치한다. 목록으로 깔면 마을이 밀려 내려간다.
  *
  *  계단 3개는 일회성 온보딩이라 다 깨면 사라진다. 그 자리를 주간이 이어받는다.
  *  주간인 이유는 밥은 매일 먹어도 크루로 모이는 건 주 1~2회라서다.
@@ -78,16 +78,16 @@ export function CrewMissions({
 
   return (
     <>
-      {/* 마을 위에 떠 있는 버튼 묶음 — 퀘스트 아래 핵심 기록으로 바로 이동 */}
-      <div className="absolute left-2.5 top-2.5 z-20 flex flex-col gap-1.5">
+      {/* 캐릭터 머리보다 위에 놓는 컴팩트 액션 레일 */}
+      <div className="absolute left-3 top-[52px] z-20 flex items-start gap-1">
         <button
           onClick={() => setOpen(true)}
-          className="relative flex w-[56px] flex-col items-center gap-0.5 rounded-2xl border border-[#f1cc7b] bg-[#fff2cf]/95 px-1.5 py-2 shadow-[0_3px_10px_rgba(126,80,20,0.14)] active:scale-95"
+          className="relative flex h-[43px] w-[44px] flex-col items-center justify-center gap-0.5 rounded-xl border border-[#f1cc7b] bg-[#fff2cf]/95 px-1 py-1 shadow-[0_3px_10px_rgba(126,80,20,0.14)] active:scale-95"
         >
-          <ClipboardList className="h-5 w-5 text-[#F5A623]" />
-          <span className="text-[10px] font-extrabold text-[#a86613]">퀘스트</span>
+          <ClipboardList className="h-4 w-4 text-[#F5A623]" />
+          <span className="text-[8.5px] font-extrabold leading-none text-[#a86613]">퀘스트</span>
           {left > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+            <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-rose-500 px-0.5 text-[9px] font-bold text-white">
               {left}
             </span>
           )}
@@ -153,11 +153,11 @@ function FloatingAction({
       type="button"
       onClick={onClick}
       aria-label={ariaLabel || label}
-      className="flex w-[56px] flex-col items-center gap-0.5 rounded-2xl border border-[#f1cc7b] bg-[#fff8e8]/95 px-1.5 py-1.5 text-[#a86613] shadow-[0_3px_10px_rgba(126,80,20,0.12)] transition-transform active:scale-95 disabled:opacity-60"
+      className="flex h-[43px] w-[44px] flex-col items-center justify-center gap-0.5 rounded-xl border border-[#f1cc7b] bg-[#fff8e8]/95 px-1 py-1 text-[#a86613] shadow-[0_3px_10px_rgba(126,80,20,0.12)] transition-transform active:scale-95 disabled:opacity-60"
       disabled={!onClick}
     >
-      <Icon className="h-[18px] w-[18px] text-[#F5A623]" strokeWidth={2.4} />
-      <span className="text-[9.5px] font-extrabold">{label}</span>
+      <Icon className="h-4 w-4 text-[#F5A623]" strokeWidth={2.4} />
+      <span className="text-[8.5px] font-extrabold leading-none">{label}</span>
     </button>
   )
 }
