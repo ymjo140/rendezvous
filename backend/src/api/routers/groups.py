@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from domain import models
-from services import taste_service, visit_service, beta_event_service, crew_exchange_service
+from services import taste_service, visit_service, beta_event_service, crew_exchange_service, crew_kitchen_service
 from collections import Counter
 from api.dependencies import get_current_user
 from services.crew_access import (
@@ -184,7 +184,10 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
     members = []
     show_members = show_activity
     if show_members:
-        mids = _members(c)[:20]
+        ordered_ids, contributions = crew_kitchen_service.rank_member_ids(
+            db, cid, _members(c), user.id if user else None
+        )
+        mids = ordered_ids[:20]
         us = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(mids)).all()} if mids else {}
         avatar_ids = _crew_avatar_ids(db, mids)
         pose_ids = _crew_pose_ids(db, mids)
@@ -195,7 +198,13 @@ def group_detail(cid: str, user: Optional[models.User] = Depends(get_current_use
                                 "avatar_id": avatar_ids.get(mu.id),
                                 "pose_id": pose_ids.get(mu.id, "stand"),
                                 "gender": mu.gender or "unknown",
-                                "is_host": mid == c.host_id})
+                                "is_host": mid == c.host_id,
+                                "is_current_user": bool(user and mid == user.id),
+                                "contribution": contributions.get(mid, {
+                                    "score": 0, "recent_score": 0, "verified_visits": 0,
+                                    "unique_places": 0, "menu_types": 0, "records": 0,
+                                    "last_activity": None,
+                                })})
 
     # 인증 크루: 같은 도메인 인증을 가진 멤버 수 (가게에 주는 신뢰 신호)
     _ctype = getattr(c, "crew_type", None) or "friends"
@@ -420,11 +429,14 @@ def crew_kitchen(cid: str, user: Optional[models.User] = Depends(get_current_use
     # 화면에 크루 멤버를 캐릭터로 세운다 — 우리 공간이라는 게 사람으로 보여야 한다
     ids = _members(c)
     if ids:
+        ordered_ids, contributions = crew_kitchen_service.rank_member_ids(
+            db, cid, ids, user.id if user else None
+        )
         rows = (db.query(models.User.id, models.User.name, models.User.avatar, models.User.gender)
                   .filter(models.User.id.in_(ids)).all())
         by = {r[0]: r for r in rows}
-        avatar_ids = _crew_avatar_ids(db, ids)
-        pose_ids = _crew_pose_ids(db, ids)
+        avatar_ids = _crew_avatar_ids(db, ordered_ids)
+        pose_ids = _crew_pose_ids(db, ordered_ids)
         data["members"] = [
             {"id": i,
              "name": (by[i][1] if i in by else None) or "멤버",
@@ -432,11 +444,20 @@ def crew_kitchen(cid: str, user: Optional[models.User] = Depends(get_current_use
              "avatar_id": avatar_ids.get(i),
              "pose_id": pose_ids.get(i, "stand"),
              "gender": (by[i][3] if i in by else None) or "unknown",
-             "is_host": i == c.host_id}
-            for i in ids if i in by
-        ][:8]     # 8명 넘어가면 지면에 다 못 세운다
+             "is_host": i == c.host_id,
+             "is_current_user": bool(user and i == user.id),
+             "contribution": contributions.get(i, {
+                 "score": 0, "recent_score": 0, "verified_visits": 0,
+                 "unique_places": 0, "menu_types": 0, "records": 0,
+                 "last_activity": None,
+             })}
+            for i in ordered_ids if i in by
+        ]
     else:
         data["members"] = []
+    data["member_count"] = len(ids)
+    data["current_user_id"] = user.id if user else None
+    data["member_sort"] = "recent_contribution"
     return data
 
 

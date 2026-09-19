@@ -16,6 +16,7 @@ type LoungeMember = {
 type CrewLoungeProps = {
   title: string
   members: LoungeMember[]
+  memberCount?: number
   visitVerified: boolean
   memberVisits: number
   memberRevisits: number
@@ -26,13 +27,14 @@ type CrewLoungeProps = {
 export function CrewLounge({
   title,
   members,
+  memberCount,
   visitVerified,
   memberVisits,
   memberRevisits,
   onOpenShowcase,
   onOpenRanking,
 }: CrewLoungeProps) {
-  const seated = members.slice(0, 5)
+  const seated = members.slice(0, 4)
 
   return (
     <section className="mt-5 overflow-hidden rounded-3xl border border-[#eadbc7] bg-[#fffaf2]">
@@ -40,7 +42,7 @@ export function CrewLounge({
         <div>
           <p className="text-[11px] font-semibold tracking-wide text-[#b88a5a]">OUR CREW LOUNGE</p>
           <h2 className="mt-0.5 text-[16px] font-bold text-[#3e3025]">{title}의 라운지</h2>
-          <p className="mt-1 text-[11px] text-[#8b7664]">함께 다녀온 기록이 공간을 채워요.</p>
+          <p className="mt-1 text-[11px] text-[#8b7664]">대표 멤버 · 최근 기여도 순{memberCount ? ` · 멤버 ${memberCount}명` : ""}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#8a633e] shadow-sm">
           <Award className="h-3.5 w-3.5 text-[#d59a3a]" />
@@ -61,7 +63,7 @@ export function CrewLounge({
 
           <div className="relative z-[2] flex w-full items-end justify-center gap-0.5">
             {seated.map((member) => (
-              <div key={member.id} className="flex w-[19%] min-w-0 flex-col items-center">
+              <div key={member.id} className="flex w-1/4 min-w-0 flex-col items-center">
                 <CrewAvatar
                   memberId={member.id}
                   avatarId={member.avatar_id}

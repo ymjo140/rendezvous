@@ -323,6 +323,7 @@ function CrewProfileContent() {
             <CrewLounge
               title={crew.title}
               members={crew.members}
+              memberCount={crew.member_count}
               visitVerified={crew.visit_verified}
               memberVisits={crew.member_visits}
               memberRevisits={crew.member_revisits}
