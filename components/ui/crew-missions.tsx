@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { Check, Lock, Loader2, X, ClipboardList } from "lucide-react"
+import { Archive, BookOpen, Check, ClipboardList, Lock, Loader2, Trophy, X, type LucideIcon } from "lucide-react"
 import Link from "next/link"
 import { useCrewResource } from "@/lib/use-crew-resource"
 import { CrewLoadError } from "@/components/ui/crew-load-error"
@@ -55,7 +55,17 @@ function Row({ m }: { m: Mission }) {
   )
 }
 
-export function CrewMissions({ groupId }: { groupId: string }) {
+export function CrewMissions({
+  groupId,
+  onMenuDex,
+  onRanking,
+  onVisits,
+}: {
+  groupId: string
+  onMenuDex?: () => void
+  onRanking?: () => void
+  onVisits?: () => void
+}) {
   const { data: m, loading, error, reload } = useCrewResource<Missions>(`/api/groups/${encodeURIComponent(groupId)}/missions`)
   const [open, setOpen] = React.useState(false)
   if (loading) return <span role="status" className="absolute left-3 top-3 rounded-xl bg-white p-2 text-xs"><Loader2 className="inline h-3 w-3 animate-spin" /> 퀘스트 확인 중</span>
@@ -68,19 +78,24 @@ export function CrewMissions({ groupId }: { groupId: string }) {
 
   return (
     <>
-      {/* 마을 위에 떠 있는 버튼 */}
-      <button
-        onClick={() => setOpen(true)}
-        className="absolute left-2.5 top-2.5 flex flex-col items-center gap-0.5 rounded-2xl bg-white/92 px-2.5 py-2 shadow-sm active:scale-95"
-      >
-        <ClipboardList className="h-5 w-5 text-[#C2620F]" />
-        <span className="text-[10px] font-bold text-[#C2620F]">퀘스트</span>
-        {left > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
-            {left}
-          </span>
-        )}
-      </button>
+      {/* 마을 위에 떠 있는 버튼 묶음 — 퀘스트 아래 핵심 기록으로 바로 이동 */}
+      <div className="absolute left-2.5 top-2.5 z-20 flex flex-col gap-1.5">
+        <button
+          onClick={() => setOpen(true)}
+          className="relative flex w-[56px] flex-col items-center gap-0.5 rounded-2xl border border-[#f1cc7b] bg-[#fff2cf]/95 px-1.5 py-2 shadow-[0_3px_10px_rgba(126,80,20,0.14)] active:scale-95"
+        >
+          <ClipboardList className="h-5 w-5 text-[#F5A623]" />
+          <span className="text-[10px] font-extrabold text-[#a86613]">퀘스트</span>
+          {left > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+              {left}
+            </span>
+          )}
+        </button>
+        <FloatingAction icon={BookOpen} label="도감" onClick={onMenuDex} />
+        <FloatingAction icon={Trophy} label="랭킹" onClick={onRanking} />
+        <FloatingAction icon={Archive} label="기록" onClick={onVisits} ariaLabel="방문 기록" />
+      </div>
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setOpen(false)}>
@@ -119,5 +134,30 @@ export function CrewMissions({ groupId }: { groupId: string }) {
         </div>
       )}
     </>
+  )
+}
+
+function FloatingAction({
+  icon: Icon,
+  label,
+  onClick,
+  ariaLabel,
+}: {
+  icon: LucideIcon
+  label: string
+  onClick?: () => void
+  ariaLabel?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel || label}
+      className="flex w-[56px] flex-col items-center gap-0.5 rounded-2xl border border-[#f1cc7b] bg-[#fff8e8]/95 px-1.5 py-1.5 text-[#a86613] shadow-[0_3px_10px_rgba(126,80,20,0.12)] transition-transform active:scale-95 disabled:opacity-60"
+      disabled={!onClick}
+    >
+      <Icon className="h-[18px] w-[18px] text-[#F5A623]" strokeWidth={2.4} />
+      <span className="text-[9.5px] font-extrabold">{label}</span>
+    </button>
   )
 }

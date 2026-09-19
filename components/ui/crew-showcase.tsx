@@ -49,17 +49,20 @@ const TABS = [
 ] as const
 
 export type ShowcaseTab = (typeof TABS)[number]["key"]
+export type ShowcaseCommand = { target: "menu" | "visits"; nonce: number }
 
 export function CrewShowcase({
   groupId,
   menus,
   activeTab,
   onTabChange,
+  command,
 }: {
   groupId: string
   menus?: Menu[]
   activeTab?: ShowcaseTab
   onTabChange?: (tab: ShowcaseTab) => void
+  command?: ShowcaseCommand | null
 }) {
   const router = useRouter()
   const [internalTab, setInternalTab] = React.useState<ShowcaseTab>("visits")
@@ -67,6 +70,21 @@ export function CrewShowcase({
   const { data: d, loading, error, refreshing, reload } = useCrewResource<{ lists: List[]; visits: Visit[]; posts: Post[]; visit_archive?: VisitArchiveItem[]; visit_summary?: VisitSummary | null }>(`/api/groups/${encodeURIComponent(groupId)}/showcase`)
   const [dexOpen, setDexOpen] = React.useState(false)
 
+  React.useEffect(() => {
+    if (!command || !d) return
+    if (command.target === "menu") {
+      // 플로팅 도감 버튼은 접힌 도감을 열고 그 위치로 이동한다.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDexOpen(true)
+    }
+    if (command.target === "visits") {
+      setInternalTab("visits")
+    }
+    const targetId = command.target === "menu" ? "crew-menu-codex" : "crew-showcase"
+    window.requestAnimationFrame(() => {
+      document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+  }, [command, d])
 
   if (loading) {
     return (
@@ -245,7 +263,7 @@ export function CrewShowcase({
 
       {/* 메뉴 도감 — 접어둔다. 잠긴 칸이 화면을 먹지 않게. */}
       {menus && menus.length > 0 && (
-        <div className="mt-4">
+        <div id="crew-menu-codex" className="mt-4 scroll-mt-20">
           <button
             onClick={() => setDexOpen((v) => !v)}
             className="flex w-full items-center justify-between rounded-xl border border-gray-100 px-3.5 py-2.5"

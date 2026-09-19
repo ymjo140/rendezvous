@@ -94,10 +94,7 @@ export function CrewVillage({
         />
         <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-transparent to-[#4a3424]/20" />
 
-        <div className="relative z-10 flex items-center justify-between gap-2 px-4 pt-4">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/90 bg-white px-3 py-1.5 text-[10px] font-extrabold tracking-[0.13em] text-[#4d382b] shadow-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#e59843]" /> 우리 크루
-          </span>
+        <div className="relative z-10 flex items-center justify-end gap-2 px-4 pt-4">
           <span className="rounded-full border border-white/90 bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#71472b] shadow-sm">
             {icon || "🍽️"} {tier}
           </span>
