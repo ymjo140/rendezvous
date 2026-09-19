@@ -123,19 +123,20 @@ export function CrewCharacterStudio({
               {userName}님의 성별과 외형을 직접 고르면<br />모든 크루 화면에서 같은 캐릭터로 보여요.
             </p>
           </div>
-          <div className="relative flex h-36 w-28 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-[#ead8c1] px-1 shadow-inner">
+          <div
+            className="relative flex h-36 w-28 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-[#ead8c1] px-1 shadow-inner"
+            aria-label={`현재 선택된 동작: ${CREW_POSES[selectedPose].label}`}
+          >
             <CrewAvatar
               memberId={userId}
               avatarId={selectedAvatar}
               gender={selectedGender}
+              poseId={selectedPose}
               name={userName}
               size="lg"
               mode="full"
               className="h-36 w-24"
             />
-            <span className="absolute bottom-2 right-2 rounded-full border border-white bg-white px-2 py-1 text-[11px] shadow-sm" aria-label={`${CREW_POSES[selectedPose].label} 포즈`}>
-              {CREW_POSES[selectedPose].icon}
-            </span>
           </div>
         </div>
 

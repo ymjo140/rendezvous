@@ -41,6 +41,10 @@ export type CrewAvatarDefinition = {
   hairColor: "black" | "brown" | "yellow"
   hairstyle: "short" | "perm" | "long" | "bob"
   src: string
+  // The source canvas is intentionally kept so full-body renders can use the
+  // same baseline without object-contain shrinking narrow canvases.
+  width: number
+  height: number
 }
 
 export const CREW_AVATARS: Record<CrewAvatarId, CrewAvatarDefinition> = {
@@ -51,6 +55,8 @@ export const CREW_AVATARS: Record<CrewAvatarId, CrewAvatarDefinition> = {
     hairColor: "black",
     hairstyle: "short",
     src: "/crew/avatars/v2/crew-avatar-male-black-short.png",
+    width: 159,
+    height: 256,
   },
   "female-brown-short": {
     id: "female-brown-short",
@@ -59,6 +65,8 @@ export const CREW_AVATARS: Record<CrewAvatarId, CrewAvatarDefinition> = {
     hairColor: "brown",
     hairstyle: "short",
     src: "/crew/avatars/v2/crew-avatar-female-brown-short.png",
+    width: 257,
+    height: 256,
   },
   "male-brown-short": {
     id: "male-brown-short",
@@ -67,6 +75,8 @@ export const CREW_AVATARS: Record<CrewAvatarId, CrewAvatarDefinition> = {
     hairColor: "brown",
     hairstyle: "short",
     src: "/crew/avatars/v2/crew-avatar-male-brown-short.png",
+    width: 151,
+    height: 256,
   },
   "female-yellow-perm": {
     id: "female-yellow-perm",
@@ -75,6 +85,8 @@ export const CREW_AVATARS: Record<CrewAvatarId, CrewAvatarDefinition> = {
     hairColor: "yellow",
     hairstyle: "perm",
     src: "/crew/avatars/v2/crew-avatar-female-yellow-perm.png",
+    width: 209,
+    height: 256,
   },
   "female-black-long": {
     id: "female-black-long",
@@ -83,6 +95,8 @@ export const CREW_AVATARS: Record<CrewAvatarId, CrewAvatarDefinition> = {
     hairColor: "black",
     hairstyle: "long",
     src: "/crew/avatars/v2/crew-avatar-female-black-long.png",
+    width: 230,
+    height: 256,
   },
   "male-yellow-short": {
     id: "male-yellow-short",
@@ -91,6 +105,8 @@ export const CREW_AVATARS: Record<CrewAvatarId, CrewAvatarDefinition> = {
     hairColor: "yellow",
     hairstyle: "short",
     src: "/crew/avatars/v2/crew-avatar-male-yellow-short.png",
+    width: 249,
+    height: 256,
   },
 }
 
