@@ -22,7 +22,7 @@ import { useRouter } from "next/navigation"
 import { ArrowRight, BookOpen, ChevronDown, Compass, Loader2, MapPin, Settings2, Sparkles, Trophy, Users } from "lucide-react"
 import { useCrewResource } from "@/lib/use-crew-resource"
 import { CrewLoadError } from "@/components/ui/crew-load-error"
-import { CrewShowcase } from "@/components/ui/crew-showcase"
+import { CrewShowcase, type ShowcaseCommand } from "@/components/ui/crew-showcase"
 import { CrewRanking } from "@/components/ui/crew-ranking"
 import { CrewExchange } from "@/components/ui/crew-exchange"
 import { CrewMissions } from "@/components/ui/crew-missions"
@@ -165,7 +165,7 @@ export default function KitchenTabPage() {
         </div>
       ) : (
         <div className="px-4 pt-3">
-          {current && <KitchenContent key={current.id} crew={current} neighbors={neighbors} />}
+          {current && <KitchenContent key={current.id} crew={current} neighbors={neighbors} onRanking={() => setSection("ranking")} />}
         </div>
       )}
 
@@ -187,9 +187,15 @@ type Kitchen = {
   hero_place?: HeroPlace | null
   menus: { key: string; title: string; unlocked: boolean; place_name: string | null; image: string }[]
 }
-function KitchenContent({ crew, neighbors }: { crew: Crew; neighbors: NeighborCrew[] }) {
+function KitchenContent({ crew, neighbors, onRanking }: { crew: Crew; neighbors: NeighborCrew[]; onRanking: () => void }) {
   const router = useRouter()
   const { data, loading, error, refreshing, reload } = useCrewResource<Kitchen>(`/api/groups/${encodeURIComponent(crew.id)}/kitchen`)
+  const [showcaseCommand, setShowcaseCommand] = useState<ShowcaseCommand | null>(null)
+
+  const focusShowcase = (target: ShowcaseCommand["target"]) => {
+    setShowcaseCommand({ target, nonce: Date.now() })
+  }
+
   if (loading) return <p role="status" className="py-12 text-center text-sm text-gray-500">크루 기록을 불러오는 중…</p>
   if (error && !data) return <CrewLoadError message={error} retry={reload} />
   if (!data) return null
@@ -216,7 +222,12 @@ function KitchenContent({ crew, neighbors }: { crew: Crew; neighbors: NeighborCr
         heroPlace={data.hero_place}
         onEnter={() => router.push(`/crew/${encodeURIComponent(crew.id)}`)}
       />
-      <CrewMissions groupId={crew.id} />
+      <CrewMissions
+        groupId={crew.id}
+        onMenuDex={() => focusShowcase("menu")}
+        onRanking={onRanking}
+        onVisits={() => focusShowcase("visits")}
+      />
     </div>
     <CrewNextAction
       crewId={crew.id}
@@ -229,7 +240,7 @@ function KitchenContent({ crew, neighbors }: { crew: Crew; neighbors: NeighborCr
     />
     <NeighborStrip crews={neighbors} onVisit={id => router.push(`/crew/${encodeURIComponent(id)}`)} />
     <CrewExchange groupId={crew.id} />
-    <CrewShowcase groupId={crew.id} menus={data.menus} />
+    <CrewShowcase groupId={crew.id} menus={data.menus} command={showcaseCommand} />
   </>
 }
 
