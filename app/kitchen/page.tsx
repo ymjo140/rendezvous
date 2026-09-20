@@ -8,8 +8,8 @@
 // 구조는 아이러브커피를 따랐다:
 //   가운데 = 우리 크루 건물 (등급에 따라 커지고 층이 는다)
 //   그 위  = 퀘스트 버튼 (화면을 안 먹고 배지로 알린다)
-//   아래   = 다른 크루 놀러가기 → 그 크루의 리스트를 본다
-//   그 밑  = 리스트 · 방문기록 · 게시물 (크루의 얼굴)
+//   다른 크루 탭 = 공개 크루 탐색과 교류 기록
+//   우리 크루 탭 = 현재 크루의 리스트 · 방문기록 · 게시물
 //
 // '우리 크루'는 보여주는 곳, '내 크루'는 운영하는 곳(채팅·예약·제휴)이다.
 // 놀러온 사람이 볼 게 여기 다 있어야 '다른 크루 놀러가기'가 성립한다.
@@ -26,7 +26,7 @@ import { CrewShowcase, type ShowcaseCommand } from "@/components/ui/crew-showcas
 import { CrewRanking } from "@/components/ui/crew-ranking"
 import { CrewExchange } from "@/components/ui/crew-exchange"
 import { CrewMissions } from "@/components/ui/crew-missions"
-import { CrewVillage, NeighborStrip, type HeroPlace, type Member, type NeighborCrew } from "@/components/ui/crew-village"
+import { CrewVillage, type HeroPlace, type Member, type NeighborCrew } from "@/components/ui/crew-village"
 import { TabBar } from "../tab-bar"
 
 type Crew = { id: string; title: string; icon: string; members: number; lists?: number }
@@ -147,7 +147,7 @@ export default function KitchenTabPage() {
         </div>
       ) : section === "discover" ? (
         <div className="px-4 pt-3">
-          <CrewDirectory crews={neighbors} />
+          <CrewDirectory crews={neighbors} groupId={sel ?? undefined} />
         </div>
       ) : !sel ? (
         <div className="flex flex-col items-center gap-3 px-8 py-24 text-center">
@@ -235,7 +235,6 @@ function KitchenContent({ crew, neighbors, onRanking }: { crew: Crew; neighbors:
       />
     </div>
     <CrewNextAction
-      crewId={crew.id}
       nextTier={data.next_tier}
       unlocked={data.unlocked_count}
       totalVisits={data.total_visits ?? 0}
@@ -243,14 +242,11 @@ function KitchenContent({ crew, neighbors, onRanking }: { crew: Crew; neighbors:
       onDiscover={() => router.push("/feed")}
       onArchive={() => router.push(`/crew/${encodeURIComponent(crew.id)}`)}
     />
-    <NeighborStrip crews={neighbors} onVisit={id => router.push(`/crew/${encodeURIComponent(id)}`)} />
-    <CrewExchange groupId={crew.id} />
     <CrewShowcase groupId={crew.id} menus={data.menus} command={showcaseCommand} />
   </>
 }
 
 function CrewNextAction({
-  crewId,
   nextTier,
   unlocked,
   totalVisits,
@@ -258,7 +254,6 @@ function CrewNextAction({
   onDiscover,
   onArchive,
 }: {
-  crewId: string
   nextTier?: { name: string; need: number; remain: number } | null
   unlocked: number
   totalVisits: number
@@ -290,16 +285,13 @@ function CrewNextAction({
           <BookOpen className="h-3.5 w-3.5" /> 기록 보기
         </button>
       </div>
-      <a href={`/crew/${encodeURIComponent(crewId)}/missions?action=borrow`} className="mt-3 flex items-center justify-center gap-1 text-[11.5px] font-bold text-[#a36b3b]">
-        다른 크루의 리스트 둘러보기 <ArrowRight className="h-3.5 w-3.5" />
-      </a>
       <p className="mt-2 text-center text-[10.5px] text-[#a39a93]">저장한 장소 {unlocked}곳 · 방문 후 평가하면 기록이 완성돼요</p>
     </section>
   )
 }
 
 
-function CrewDirectory({ crews }: { crews: NeighborCrew[] }) {
+function CrewDirectory({ crews, groupId }: { crews: NeighborCrew[]; groupId?: string }) {
   const router = useRouter()
 
   return (
@@ -336,6 +328,7 @@ function CrewDirectory({ crews }: { crews: NeighborCrew[] }) {
           ))}
         </div>
       )}
+      {groupId && <CrewExchange groupId={groupId} />}
     </section>
   )
 }
