@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { Archive, BookOpen, Check, ClipboardList, Lock, Loader2, Trophy, X, type LucideIcon } from "lucide-react"
+import { Archive, BookOpen, Check, ClipboardList, Lock, Loader2, X, type LucideIcon } from "lucide-react"
 import Link from "next/link"
 import { useCrewResource } from "@/lib/use-crew-resource"
 import { CrewLoadError } from "@/components/ui/crew-load-error"
@@ -58,12 +58,10 @@ function Row({ m }: { m: Mission }) {
 export function CrewMissions({
   groupId,
   onMenuDex,
-  onRanking,
   onVisits,
 }: {
   groupId: string
   onMenuDex?: () => void
-  onRanking?: () => void
   onVisits?: () => void
 }) {
   const { data: m, loading, error, reload } = useCrewResource<Missions>(`/api/groups/${encodeURIComponent(groupId)}/missions`)
@@ -92,9 +90,8 @@ export function CrewMissions({
             </span>
           )}
         </button>
-        <FloatingAction icon={BookOpen} label="도감" onClick={onMenuDex} />
-        <FloatingAction icon={Trophy} label="랭킹" onClick={onRanking} />
         <FloatingAction icon={Archive} label="기록" onClick={onVisits} ariaLabel="방문 기록" />
+        <FloatingAction icon={BookOpen} label="도감" onClick={onMenuDex} />
       </div>
 
       {open && (
