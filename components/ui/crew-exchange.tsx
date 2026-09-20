@@ -66,13 +66,15 @@ export function CrewExchange({ groupId }: { groupId: string }) {
     return (
       <section className="mt-5 border-t border-[#eee9e1] pt-4">
         <div className="flex items-center gap-2 text-[12px] text-[#9b928b]">
-          <Loader2 className="h-4 w-4 animate-spin" /> 크루 교류를 불러오는 중…
+          <Loader2 className="h-4 w-4 animate-spin" /> 교류 기록을 불러오는 중…
         </div>
       </section>
     )
   }
   if (error && !data) return <CrewLoadError message={error} retry={reload} />
-  if (!data || !data.visible) return null
+  // 교류가 시작되기 전에는 다른 크루 탐색 화면의 CTA만 보여준다.
+  // 별도 빈 상태를 다시 노출하면 '다른 크루 구경하기'와 같은 행동을 중복 안내하게 된다.
+  if (!data || !data.visible || !data.observed) return null
 
   const hasIncoming = data.incoming.length > 0
   const hasOutgoing = data.outgoing.length > 0
@@ -87,9 +89,9 @@ export function CrewExchange({ groupId }: { groupId: string }) {
       )}
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-[16px] font-black tracking-[-0.03em] text-[#24201d]">크루 교류</h2>
+          <h2 className="text-[16px] font-black tracking-[-0.03em] text-[#24201d]">교류 기록</h2>
           <p className="mt-1 text-[12px] leading-relaxed text-[#756d67]">
-            다른 크루의 기록이 우리 크루의 다음 장소가 됩니다.
+            다른 크루의 리스트가 우리 크루 기록으로 이어진 순간들이에요.
           </p>
         </div>
         {data.observed && (
@@ -97,8 +99,7 @@ export function CrewExchange({ groupId }: { groupId: string }) {
         )}
       </div>
 
-      {data.observed ? (
-        <>
+      <>
           <div className="mt-4 grid grid-cols-2 divide-x divide-[#eee9e1] border-y border-[#eee9e1] py-3">
             <div className="px-2 text-center first:pl-0">
               <div className="text-[15px] font-black text-[#52745d]">{data.summary.incoming_places}</div>
@@ -127,23 +128,7 @@ export function CrewExchange({ groupId }: { groupId: string }) {
               </div>
             </div>
           )}
-        </>
-      ) : (
-        <div className="mt-4 border-y border-[#eee9e1] py-4">
-          <p className="text-[13px] font-bold text-[#4b433e]">아직 교류 기록이 없어요.</p>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-[#8d837b]">
-            다른 크루의 리스트에서 좋은 곳을 발견하면 우리 크루의 첫 교류가 시작돼요.
-          </p>
-          {data.can_borrow && (
-            <Link
-              href={"/crew/" + encodeURIComponent(groupId) + "/missions?action=borrow"}
-              className="mt-3 inline-flex items-center gap-1 rounded-xl bg-[#2b2622] px-3.5 py-2.5 text-[11.5px] font-bold text-white"
-            >
-              다른 크루 리스트 둘러보기 <ChevronRight className="h-3.5 w-3.5" />
-            </Link>
-          )}
-        </div>
-      )}
+      </>
     </section>
   )
 }
