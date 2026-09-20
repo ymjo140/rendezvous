@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, Loader2, Sparkles } from "lucide-react"
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, Loader2 } from "lucide-react"
 import { useCrewResource } from "@/lib/use-crew-resource"
 import { CrewLoadError } from "@/components/ui/crew-load-error"
 
@@ -32,24 +32,24 @@ type ExchangeResponse = {
 }
 
 function ExchangeRow({ item, direction }: { item: ExchangeItem; direction: "in" | "out" }) {
-  const tone = direction === "in" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+  const tone = direction === "in" ? "bg-[#f2f6f3] text-[#52745d]" : "bg-[#fff4df] text-[#a36b3b]"
   return (
     <Link
       href={"/lists/" + item.list_id}
-      className="flex items-center gap-2.5 rounded-xl border border-slate-100 bg-white px-3 py-2.5 transition-colors hover:bg-amber-50"
+      className="flex items-center gap-2.5 border-b border-[#eee9e1] py-3 transition-colors hover:bg-[#fffaf2]"
     >
       <span className={"flex h-8 w-8 shrink-0 items-center justify-center rounded-xl " + tone}>
         {direction === "in" ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12.5px] font-bold text-slate-800">
+        <span className="block truncate text-[13px] font-bold text-[#39322d]">
           {item.crew_icon} {item.crew_title}
         </span>
-        <span className="mt-0.5 block truncate text-[11px] text-slate-500">
+        <span className="mt-0.5 block truncate text-[11px] text-[#8d837b]">
           {item.list_name} · 장소 {item.added_count}곳
         </span>
       </span>
-      <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-slate-400">
+      <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-[#aaa19a]">
         {item.created_at ? item.created_at.slice(0, 10).replaceAll("-", ".") : ""}
         <ChevronRight className="h-3.5 w-3.5" />
       </span>
@@ -58,14 +58,14 @@ function ExchangeRow({ item, direction }: { item: ExchangeItem; direction: "in" 
 }
 
 export function CrewExchange({ groupId }: { groupId: string }) {
-  const { data, loading, error, reload } = useCrewResource<ExchangeResponse>(
+  const { data, loading, error, refreshing, reload } = useCrewResource<ExchangeResponse>(
     "/api/groups/" + encodeURIComponent(groupId) + "/exchange",
   )
 
   if (loading && !data) {
     return (
-      <section className="mt-3 rounded-3xl border border-slate-100 bg-white p-4">
-        <div className="flex items-center gap-2 text-sm text-slate-400">
+      <section className="mt-5 border-t border-[#eee9e1] pt-4">
+        <div className="flex items-center gap-2 text-[12px] text-[#9b928b]">
           <Loader2 className="h-4 w-4 animate-spin" /> 크루 교류를 불러오는 중…
         </div>
       </section>
@@ -78,39 +78,42 @@ export function CrewExchange({ groupId }: { groupId: string }) {
   const hasOutgoing = data.outgoing.length > 0
 
   return (
-    <section className="mt-3 rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 to-white p-4">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm">
-          <Sparkles className="h-5 w-5" />
+    <section className="mt-5 border-t border-[#eee9e1] pt-5">
+      {(refreshing || error) && (
+        <div className="mb-3 flex items-center gap-1.5 text-[10.5px] text-[#9b928b]" role="status">
+          {refreshing && <Loader2 className="h-3 w-3 animate-spin" />}
+          {error ? "마지막으로 확인된 교류 기록을 보여드리고 있어요." : "최신 교류 기록을 확인하는 중이에요."}
         </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[15px] font-bold text-slate-900">크루 교류</h2>
-          <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
-            다른 크루의 리스트가 우리 기록으로 이어지는 흐름이에요.
+      )}
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h2 className="text-[16px] font-black tracking-[-0.03em] text-[#24201d]">크루 교류</h2>
+          <p className="mt-1 text-[12px] leading-relaxed text-[#756d67]">
+            다른 크루의 기록이 우리 크루의 다음 장소가 됩니다.
           </p>
         </div>
-        <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-indigo-600">
-          {data.observed ? "관찰 중" : "기록 대기"}
-        </span>
+        {data.observed && (
+          <span className="shrink-0 text-[11px] font-bold text-[#a36b3b]">{data.summary.incoming_crews + data.summary.outgoing_crews}개 크루</span>
+        )}
       </div>
 
       {data.observed ? (
         <>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-2xl bg-white/80 px-3 py-2.5">
-              <div className="text-[15px] font-bold text-emerald-700">{data.summary.incoming_places}</div>
-              <div className="text-[10px] text-slate-500">다른 크루에서 담아온 장소</div>
+          <div className="mt-4 grid grid-cols-2 divide-x divide-[#eee9e1] border-y border-[#eee9e1] py-3">
+            <div className="px-2 text-center first:pl-0">
+              <div className="text-[15px] font-black text-[#52745d]">{data.summary.incoming_places}</div>
+              <div className="mt-0.5 text-[10.5px] text-[#8d837b]">담아온 장소</div>
             </div>
-            <div className="rounded-2xl bg-white/80 px-3 py-2.5">
-              <div className="text-[15px] font-bold text-amber-700">{data.summary.outgoing_places}</div>
-              <div className="text-[10px] text-slate-500">우리 리스트에서 이어진 장소</div>
+            <div className="px-2 text-center last:pr-0">
+              <div className="text-[15px] font-black text-[#a36b3b]">{data.summary.outgoing_places}</div>
+              <div className="mt-0.5 text-[10.5px] text-[#8d837b]">이어진 장소</div>
             </div>
           </div>
 
           {hasIncoming && (
             <div className="mt-3">
-              <p className="mb-1.5 text-[11px] font-bold text-slate-500">우리가 담아온 기록</p>
-              <div className="space-y-1.5">
+              <p className="mb-0.5 text-[11px] font-bold text-[#8d837b]">다른 크루에서 담아온 리스트</p>
+              <div>
                 {data.incoming.map((item) => <ExchangeRow key={item.id} item={item} direction="in" />)}
               </div>
             </div>
@@ -118,25 +121,25 @@ export function CrewExchange({ groupId }: { groupId: string }) {
 
           {hasOutgoing && (
             <div className="mt-3">
-              <p className="mb-1.5 text-[11px] font-bold text-slate-500">우리 리스트에서 이어진 기록</p>
-              <div className="space-y-1.5">
+              <p className="mb-0.5 text-[11px] font-bold text-[#8d837b]">우리 리스트에서 이어진 기록</p>
+              <div>
                 {data.outgoing.map((item) => <ExchangeRow key={item.id} item={item} direction="out" />)}
               </div>
             </div>
           )}
         </>
       ) : (
-        <div className="mt-3 rounded-2xl border border-dashed border-indigo-200 bg-white/70 px-4 py-4 text-center">
-          <p className="text-[12px] font-semibold text-slate-700">아직 다른 크루와 교류한 기록이 없어요.</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-            공개 리스트에서 좋은 곳을 담아오면 우리 크루의 첫 교류 기록이 생겨요.
+        <div className="mt-4 border-y border-[#eee9e1] py-4">
+          <p className="text-[13px] font-bold text-[#4b433e]">아직 교류 기록이 없어요.</p>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-[#8d837b]">
+            다른 크루의 리스트에서 좋은 곳을 발견하면 우리 크루의 첫 교류가 시작돼요.
           </p>
           {data.can_borrow && (
             <Link
               href={"/crew/" + encodeURIComponent(groupId) + "/missions?action=borrow"}
-              className="mt-3 inline-flex rounded-xl bg-indigo-100 px-3.5 py-2 text-[11.5px] font-bold text-indigo-700"
+              className="mt-3 inline-flex items-center gap-1 rounded-xl bg-[#2b2622] px-3.5 py-2.5 text-[11.5px] font-bold text-white"
             >
-              다른 크루 리스트 둘러보기
+              다른 크루 리스트 둘러보기 <ChevronRight className="h-3.5 w-3.5" />
             </Link>
           )}
         </div>
