@@ -16,7 +16,6 @@ class VisitInput(BaseModel):
 
 
 class CheckinRequest(VisitInput):
-    qr_token: str = Field(min_length=1, max_length=2048)
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
     accuracy_m: float = Field(gt=0, le=150)

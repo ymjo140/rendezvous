@@ -189,7 +189,11 @@ type Kitchen = {
   total_count: number
   regulars?: { place_id: number; name: string; visits: number; last_date: string; menu: string }[]
   hero_place?: HeroPlace | null
-  menus: { key: string; title: string; unlocked: boolean; place_name: string | null; image: string }[]
+  menus: {
+    key: string; title: string; group?: string; unlocked: boolean; place_name: string | null; image: string
+    visits?: number; unique_places?: number; score?: number; level?: number; next_goal?: number | null
+    remaining?: number; progress?: number
+  }[]
 }
 function KitchenContent({ crew }: { crew: Crew }) {
   const router = useRouter()

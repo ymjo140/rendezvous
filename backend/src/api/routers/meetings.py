@@ -373,7 +373,7 @@ def get_place_journey(
         "stage": "discover",
         "next_action": "save",
         "next_action_label": "가볼 리스트에 저장",
-        "next_action_description": "저장해 두면 방문 일정을 정하고, 현장 체크인까지 이어갈 수 있어요.",
+        "next_action_description": "저장해 두면 매장에 도착했을 때 위치 인증으로 방문 기록을 남길 수 있어요.",
         "checkin_path": None,
         "archive_path": None,
         "status_note": None,
@@ -452,9 +452,9 @@ def get_place_journey(
         stage = "discover"
 
     action_by_stage = {
-        "discover": ("save", "가볼 리스트에 저장", "저장해 두면 방문 일정을 정하고, 현장 체크인까지 이어갈 수 있어요."),
-        "saved": ("plan", "방문 일정 정하기", "날짜를 정하면 방문 당일 체크인으로 기록을 남길 수 있어요."),
-        "planned": ("checkin", "방문 당일 체크인하기", "도착하면 체크인해 주세요. 확인된 방문만 크루 기록에 반영돼요."),
+        "discover": ("save", "가볼 리스트에 저장", "저장해 두면 매장에 도착했을 때 위치 인증으로 방문 기록을 남길 수 있어요."),
+        "saved": ("checkin", "현장에서 위치 인증하기", "예약 없이도 매장에 도착하면 현재 위치로 방문을 확인할 수 있어요."),
+        "planned": ("checkin", "현장에서 위치 인증하기", "예약은 선택 사항이에요. 매장에 도착하면 현재 위치로 방문을 확인해 주세요."),
         "visited": ("review", "방문 기록 남기기", "방문 확인이 끝났어요. 짧은 평가를 남기면 아카이브가 완성돼요."),
         "archived": ("archive", "아카이브에서 보기", "확인된 방문과 후기가 크루 기록으로 남아 있어요."),
     }
@@ -465,6 +465,10 @@ def get_place_journey(
         checkin_path = f"/checkin/{place_id}?rid={upcoming_reservation.id}"
         if upcoming_reservation.community_id:
             checkin_path += f"&cid={upcoming_reservation.community_id}"
+    elif user:
+        checkin_path = f"/checkin/{place_id}"
+        if folder and folder.community_id:
+            checkin_path += f"?cid={folder.community_id}"
 
     archive_path = None
     if verified_visit:

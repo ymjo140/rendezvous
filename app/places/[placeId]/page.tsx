@@ -10,7 +10,6 @@ import {
   MapPin,
   Phone,
   Star,
-  CalendarCheck,
   Wallet,
   Loader2,
   X,
@@ -340,10 +339,10 @@ export default function PlaceDetailPage() {
           verified_visit: null,
           upcoming_reservation: null,
           stage: "saved",
-          next_action: "plan",
-          next_action_label: "방문 일정 정하기",
-          next_action_description: "날짜를 정하면 방문 당일 체크인으로 기록을 남길 수 있어요.",
-          checkin_path: null,
+          next_action: "checkin",
+          next_action_label: "현장에서 위치 인증하기",
+          next_action_description: "예약 없이도 매장에 도착하면 현재 위치로 방문을 확인할 수 있어요.",
+          checkin_path: `/checkin/${encodeURIComponent(String(placeId))}`,
           archive_path: null,
           status_note: null,
         }
@@ -353,12 +352,13 @@ export default function PlaceDetailPage() {
           ...prev,
           saved: true,
           stage: "saved",
-          next_action: "plan",
-          next_action_label: "방문 일정 정하기",
-          next_action_description: "날짜를 정하면 방문 당일 체크인으로 기록을 남길 수 있어요.",
+          next_action: "checkin",
+          next_action_label: "현장에서 위치 인증하기",
+          next_action_description: "예약 없이도 매장에 도착하면 현재 위치로 방문을 확인할 수 있어요.",
+          checkin_path: prev.checkin_path || `/checkin/${encodeURIComponent(String(placeId))}`,
         }
       }
-      return { ...prev, saved: true }
+      return { ...prev, saved: true, checkin_path: prev.checkin_path || `/checkin/${encodeURIComponent(String(placeId))}` }
     })
   }
 
@@ -724,15 +724,15 @@ export default function PlaceDetailPage() {
   const journeyCopy: Record<JourneyStage, { title: string; description: string }> = {
     discover: {
       title: "마음에 들면 다음 행동을 정해보세요",
-      description: "저장해 두면 방문 일정과 현장 체크인까지 한 흐름으로 이어져요.",
+      description: "저장해 두면 매장에 도착했을 때 위치 인증과 방문 기록으로 이어져요.",
     },
     saved: {
       title: "가볼 리스트에 담았어요",
-      description: "이제 언제 누구와 갈지 정하면 방문 당일 기록으로 이어져요.",
+      description: "예약 없이도 다녀온 날 현재 위치를 인증하면 크루 기록으로 이어져요.",
     },
     planned: {
       title: "방문 계획이 있어요",
-      description: "도착하면 체크인하고, 확인된 방문만 크루 기록에 남겨요.",
+      description: "예약은 선택 사항이에요. 도착하면 현재 위치를 인증해 주세요.",
     },
     visited: {
       title: "방문 확인이 완료됐어요",
@@ -800,7 +800,7 @@ export default function PlaceDetailPage() {
     place.name,
   )}`
   const reservationLink = place.external_link || mapLink
-  const reservationLabel = place.external_link ? "바로 예약하기" : "지도에서 보기"
+  const reservationLabel = place.external_link ? "예약(선택)" : "지도에서 보기"
 
   return (
     <main className="min-h-screen bg-gray-50 font-['Pretendard']">
@@ -1368,15 +1368,15 @@ export default function PlaceDetailPage() {
             </a>
           </Button>
           <Button
-            onClick={() => openReserve()}
+            onClick={() => router.push(`/checkin/${encodeURIComponent(String(place.id))}`)}
             className="flex-[1.4] bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
           >
-            <CalendarCheck className="w-4 h-4 mr-2" />
-            캐시로 예약
+            <MapPin className="w-4 h-4 mr-2" />
+            현장에서 위치 인증
           </Button>
         </div>
         <p className="text-[11px] text-gray-400 text-center pb-2">
-          캐시로 예약금을 결제하고, 취소하면 자동 환불돼요.
+          예약 없이도 매장에 도착하면 현재 위치로 방문을 기록할 수 있어요.
         </p>
       </div>
 
@@ -1682,6 +1682,3 @@ export default function PlaceDetailPage() {
     </main>
   )
 }
-
-
-

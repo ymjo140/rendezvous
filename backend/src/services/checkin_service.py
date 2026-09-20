@@ -76,7 +76,7 @@ def verify_qr(token, place, now):
 def distance_m(lat, lng, place):
     if (place.lat is None or place.lng is None or not isfinite(place.lat) or not isfinite(place.lng)
             or not -90 <= place.lat <= 90 or not -180 <= place.lng <= 180):
-        raise HTTPException(400, "가게 위치를 확인할 수 없어요. 직원에게 방문 승인을 요청해주세요.")
+        raise HTTPException(400, "가게 위치를 확인할 수 없어 위치 인증을 할 수 없어요.")
     a, b, c, d = map(radians, (lat, lng, place.lat, place.lng))
     h = sin((c - a) / 2) ** 2 + cos(a) * cos(c) * sin((d - b) / 2) ** 2
     return 6371000 * 2 * asin(min(1.0, sqrt(h)))
@@ -183,14 +183,16 @@ def checkin(db, user, req):
     now = clock.utc_now()
     try:
         place, cid = resolve_visit(db, user, req, now)
-        ref = verify_qr(req.qr_token, place, now)
         age = (now - clock.as_utc(req.position_at)).total_seconds()
         if not -10 <= age <= 90:
             raise HTTPException(400, "위치 확인 시간이 지났어요. 위치를 다시 확인해주세요.")
         distance = distance_m(req.lat, req.lng, place)
         if distance > CHECKIN_RADIUS_M:
             raise HTTPException(400, "가게 근처에서 체크인해주세요.")
-        event, already = record_attendance(db, user, place, cid, now, now, "signed_qr", ref,
+        # 신규 방문 인증은 브라우저 위치와 서버의 장소 좌표만 근거로 삼는다.
+        # QR/점주 승인 함수는 과거 데이터와 기존 merchant 화면 호환을 위해 남겨두지만,
+        # 일반 사용자 체크인에서는 더 이상 증거로 사용하지 않는다.
+        event, already = record_attendance(db, user, place, cid, now, now, "location", "browser-geolocation",
                                            req.party_size, req.context_tag, round(distance))
         payload = visit_payload(db, event, already)
         db.commit()

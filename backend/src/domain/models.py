@@ -1023,7 +1023,7 @@ class VisitParticipant(Base):
     distance_m = Column(Float, nullable=True)
     __table_args__ = (
         UniqueConstraint("visit_id", "user_id", name="uq_visit_participant"),
-        CheckConstraint("evidence_type IN ('signed_qr', 'merchant_approval')", name="ck_visit_evidence"),
+        CheckConstraint("evidence_type IN ('location', 'signed_qr', 'merchant_approval')", name="ck_visit_evidence"),
     )
 
 

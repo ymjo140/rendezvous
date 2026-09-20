@@ -27,6 +27,10 @@ TIERS = [
 
 REGULAR_MIN_VISITS = visit_service.REGULAR_MIN_VISITS
 
+# 도감은 전체와 메뉴별로 같은 기준을 쓴다. 인증 방문 1회와 새로운 가게 1곳이
+# 각각 누적되며, 서버가 계산한 값을 그대로 내려줘 화면마다 레벨이 달라지지 않게 한다.
+DEX_LEVEL_GOALS = (0, 3, 8, 15, 25, 40)
+
 
 def _recent(value, cutoff):
     if value is None:
@@ -211,6 +215,31 @@ def _tier_of(unlocked: int):
     return name, desc, nxt
 
 
+def _dex_progress(visits: int, unique_places: int) -> Dict[str, Any]:
+    """Return one menu's transparent cumulative level from verified visits only."""
+    visits = max(0, int(visits or 0))
+    unique_places = max(0, int(unique_places or 0))
+    score = visits + unique_places
+    level_index = 0
+    for index, goal in enumerate(DEX_LEVEL_GOALS[1:], start=1):
+        if score < goal:
+            break
+        level_index = index
+
+    current_goal = DEX_LEVEL_GOALS[level_index]
+    next_goal = DEX_LEVEL_GOALS[level_index + 1] if level_index + 1 < len(DEX_LEVEL_GOALS) else None
+    progress = 1.0 if next_goal is None else min(1.0, max(0.0, (score - current_goal) / (next_goal - current_goal)))
+    return {
+        "visits": visits,
+        "unique_places": unique_places,
+        "score": score,
+        "level": level_index + 1,
+        "next_goal": next_goal,
+        "remaining": 0 if next_goal is None else max(0, next_goal - score),
+        "progress": progress,
+    }
+
+
 def _place_visits(db, cid):
     return (db.query(models.Place, func.count(models.VisitEvent.id),
                      func.min(models.VisitEvent.visit_date_kst), func.max(models.VisitEvent.visit_date_kst))
@@ -242,12 +271,16 @@ def get_kitchen(db: Session, community_id: str) -> Dict[str, Any]:
 
     # 메뉴별로 '처음 해금한 가게'를 남긴다 — 카드에 "OO에서 해금" 하고 보여주려고
     unlocked: Dict[str, Dict[str, Any]] = {}
+    menu_stats: Dict[str, Dict[str, Any]] = {}
     regulars: List[Dict[str, Any]] = []
     total_visits = 0
 
     for place_id, visits, first_date, last_date, name, uptae, main_cat in rows:
         total_visits += int(visits or 0)
         key = mt.menu_key(name or "", uptae, main_cat)
+        stats = menu_stats.setdefault(key, {"visits": 0, "places": set()})
+        stats["visits"] += int(visits or 0)
+        stats["places"].add(place_id)
         prev = unlocked.get(key)
         if prev is None or (first_date or "") < prev["date"]:
             unlocked[key] = {"place_id": place_id, "place_name": name, "date": first_date or ""}
@@ -265,6 +298,8 @@ def get_kitchen(db: Session, community_id: str) -> Dict[str, Any]:
     menus = []
     for card in mt.MENU_CARDS:
         got = unlocked.get(card["key"])
+        stats = menu_stats.get(card["key"], {"visits": 0, "places": set()})
+        progress = _dex_progress(stats["visits"], len(stats["places"]))
         menus.append({
             "key": card["key"],
             "title": card["title"],
@@ -273,6 +308,7 @@ def get_kitchen(db: Session, community_id: str) -> Dict[str, Any]:
             "unlocked": got is not None,
             "place_name": got["place_name"] if got else None,
             "date": got["date"] if got else None,
+            **progress,
         })
 
     return {

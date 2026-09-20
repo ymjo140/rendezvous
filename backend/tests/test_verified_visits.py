@@ -1,10 +1,7 @@
 from datetime import datetime, timedelta
 
 import pytest
-from jose import jwt
-
 from core import visit_time as clock
-from core.config import settings
 from domain import models as m
 from services import checkin_service as checkin, visit_service, crew_kitchen_service as kitchen
 from services import redemption_service, payment_policy
@@ -28,7 +25,6 @@ def crew(db):
 
 def payload(db, cid="crew", **changes):
     data = {"place_id": 1, "community_id": cid, "party_size": 2,
-            "qr_token": checkin.issue_qr(db, 1, "merchant-1")["token"],
             "lat": 37.5, "lng": 127, "accuracy_m": 10, "position_at": clock.utc_now().isoformat()}
     data.update(changes)
     return data
@@ -63,12 +59,16 @@ def test_joint_visit_counts_once_across_every_surface(db, client_for, crew, now)
     assert second["status"] == "verified" and second["crew_visits"] == 1
     assert db.query(m.VisitEvent).count() == 1
     assert db.query(m.VisitParticipant).count() == 2
+    assert {p.evidence_type for p in db.query(m.VisitParticipant).all()} == {"location"}
     assert db.query(m.PlaceCheckin).count() == 0
     assert db.query(m.PartnershipRedemption).count() == 0
     d, app = deal(db)
     client = client_for(1, "merchant-1")
     assert client.get("/api/groups/crew").json()["member_visits"] == 1
-    assert client.get("/api/groups/crew/kitchen").json()["total_visits"] == 1
+    kitchen_data = client.get("/api/groups/crew/kitchen").json()
+    assert kitchen_data["total_visits"] == 1
+    gukbap = next(menu for menu in kitchen_data["menus"] if menu["key"] == "gukbap")
+    assert gukbap["visits"] == 1 and gukbap["unique_places"] == 1 and gukbap["level"] == 1
     assert client.get("/api/groups/crew/showcase").json()["visits"][0]["visits"] == 1
     assert client.get("/api/groups/crew/missions").json()["steps"][1]["done"] is True
     assert client.get("/api/checkin/1").json()["crews"][0]["visits"] == 1
@@ -77,18 +77,18 @@ def test_joint_visit_counts_once_across_every_surface(db, client_for, crew, now)
 
 
 @pytest.mark.parametrize("changes", [
-    {"qr_token": "forged"}, {"lat": 38.5},
+    {"lat": 38.5},
     {"position_at": "2026-09-08T02:58:29+00:00"},
     {"position_at": "2026-09-08T03:01:00+00:00"},
 ])
-def test_invalid_proof_rejected_without_rows(db, client_for, crew, now, changes):
+def test_invalid_location_rejected_without_rows(db, client_for, crew, now, changes):
     result = client_for(1).post("/api/checkin", json=payload(db, **changes))
     assert result.status_code == 400, result.text
     assert db.query(m.VisitEvent).count() == 0
 
 
 @pytest.mark.parametrize("changes", [
-    {"qr_token": None}, {"lat": "NaN"}, {"lng": 181}, {"accuracy_m": 151}, {"accuracy_m": 0},
+    {"lat": "NaN"}, {"lng": 181}, {"accuracy_m": 151}, {"accuracy_m": 0},
     {"position_at": "2026-09-08T03:00:00"}, {"party_size": 51}, {"context_tag": "forged"},
     {"partnership_app_id": 1}, {"visit_date_kst": "2025-01-01"},
 ])
@@ -97,16 +97,12 @@ def test_typed_validation_blocks_bad_fields(db, client_for, crew, now, changes):
     assert db.query(m.VisitEvent).count() == 0
 
 
-def test_qr_expiry_place_binding_and_auth_audience(db, client_for, crew, now):
-    proof = payload(db)
-    now["at"] += timedelta(seconds=180)
-    proof["position_at"] = clock.utc_now().isoformat()
-    assert client_for(1).post("/api/checkin", json=proof).status_code == 400
-    db.add(m.Place(id=2, name="다른 가게", lat=37.5, lng=127, owner_id="merchant-1")); db.commit()
-    assert client_for(1).post("/api/checkin", json=payload(db, place_id=2)).status_code == 400
-    auth = jwt.encode({"sub": "test1@example.invalid", "iat": int(clock.utc_now().timestamp()),
-                       "exp": int(clock.utc_now().timestamp()) + 180}, settings.SECRET_KEY, algorithm="HS256")
-    assert client_for(1).post("/api/checkin", json=payload(db, qr_token=auth)).status_code == 400
+def test_location_timestamp_and_radius_are_the_only_user_proof(db, client_for, crew, now):
+    stale = payload(db, position_at=(clock.utc_now() - timedelta(seconds=91)).isoformat())
+    assert client_for(1).post("/api/checkin", json=stale).status_code == 400
+    far_away = payload(db, lat=38.5)
+    assert client_for(1).post("/api/checkin", json=far_away).status_code == 400
+    assert db.query(m.VisitEvent).count() == 0
 
 
 def test_attendance_and_merchant_permissions(db, client_for, crew, now):

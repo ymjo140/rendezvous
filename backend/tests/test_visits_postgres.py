@@ -184,7 +184,7 @@ def test_concurrent_checkins_share_event_without_null_loophole(pg, uids, cid, pa
     engine, factory, now = pg
     with factory() as db:
         req = CheckinRequest(place_id=1, community_id=cid, lat=37.5, lng=127, accuracy_m=10,
-                             position_at=clock.utc_now(), qr_token=checkin.issue_qr(db, 1, "merchant-1")["token"])
+                             position_at=clock.utc_now())
     def submit(uid):
         with factory() as db:
             return checkin.checkin(db, db.get(m.User, uid), req)
@@ -224,7 +224,7 @@ def test_concurrent_merchant_approval_and_qr_dedupe(pg):
     with factory() as db:
         rid = checkin.request_approval(db, db.get(m.User, 1), VisitInput(place_id=1, community_id="crew"))["request_id"]
         req = CheckinRequest(place_id=1, community_id="crew", lat=37.5, lng=127, accuracy_m=10,
-                             position_at=clock.utc_now(), qr_token=checkin.issue_qr(db, 1, "merchant-1")["token"])
+                             position_at=clock.utc_now())
     def submit(kind):
         with factory() as db:
             if kind == "qr": return checkin.checkin(db, db.get(m.User, 1), req)
@@ -269,7 +269,7 @@ def test_postgres_rollback_leaves_no_partial_attendance(pg, monkeypatch):
     monkeypatch.setattr(checkin, "visit_payload", fail)
     with factory() as db:
         req = CheckinRequest(place_id=1, community_id="crew", lat=37.5, lng=127, accuracy_m=10,
-                             position_at=clock.utc_now(), qr_token=checkin.issue_qr(db, 1, "merchant-1")["token"])
+                             position_at=clock.utc_now())
         with pytest.raises(RuntimeError): checkin.checkin(db, db.get(m.User, 1), req)
     with factory() as db:
         assert db.query(m.VisitEvent).count() == 0

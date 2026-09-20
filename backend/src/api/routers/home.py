@@ -24,7 +24,7 @@ from domain import models
 from services import taste_service
 from services import visit_service
 from services import query_interpreter
-from services.crew_access import public_folder_clause, members as crew_members, is_member
+from services.crew_access import VISIBLE, public_folder_clause, members as crew_members, is_member
 from core import visit_time as visit_clock
 from services import checkin_service, redemption_service
 from schemas.visits import CheckinRequest
@@ -2004,7 +2004,7 @@ def checkin_context(
             out["reservation"] = {
                 "id": r.id, "date": r.date, "time": r.time,
                 "party_size": r.party_size, "community_id": r.community_id,
-                "needs_location": True, "proof_required": True,
+                "needs_location": True, "proof_required": True, "proof_type": "location",
             }
     return out
 

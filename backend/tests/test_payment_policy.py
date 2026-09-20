@@ -115,10 +115,8 @@ def test_checkin_records_visit_without_issuing_real_benefit(db, client_for, exis
                                    date=datetime.now().strftime("%Y-%m-%d"), partnership_app_id=1))
     db.commit()
     from core import visit_time as clock
-    from services.checkin_service import issue_qr
-    proof = issue_qr(db, 1, "merchant-1")["token"]
     result = client_for(1).post("/api/checkin", json={
-        "place_id": 1, "community_id": "crew", "qr_token": proof,
+        "place_id": 1, "community_id": "crew",
         "lat": 37.5, "lng": 127, "accuracy_m": 10, "position_at": clock.utc_now().isoformat(),
     })
     assert result.status_code == 200, result.text
