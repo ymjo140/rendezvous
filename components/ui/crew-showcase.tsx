@@ -13,9 +13,9 @@ import { stockCandidates } from "@/lib/stock-image"
  *  '우리 크루'는 보여주는 곳, '내 크루'는 운영하는 곳(채팅·예약·제휴)으로 갈랐다.
  *  놀러온 사람이 볼 게 여기 다 있어야 '다른 크루 놀러가기'가 성립한다.
  *
- *  25칸 메뉴 도감을 기본으로 깔지 않는 이유: 잠긴 22칸이 화면 대부분을 먹는다.
- *  안 가본 곳을 크게 보여줄 이유가 없고, 방문기록이 같은 걸 더 구체적으로 말한다 —
- *  '콩뼈숯뼈감자탕'이 '국밥·탕'보다 자랑거리다. 도감은 접어서 눌러야 열린다.
+ *  도감은 인증 방문과 방문 가게 수가 쌓이는 누적 레벨을 먼저 보여주고,
+ *  메뉴 카드는 접어서 상세로 연다. 잠긴 카드를 처음부터 펼치면 기록보다
+ *  빈칸이 먼저 보이기 때문에, 지금 해야 할 행동과 수집 결과를 분리한다.
  */
 
 type List = { id: number; name: string; description: string | null; count: number; cover_image: string | null }
@@ -42,6 +42,10 @@ type VisitSummary = {
 }
 type Post = { id: string; content: string | null; image: string | null; place_name: string; author: string; created_at: string; likes: number }
 type Menu = { key: string; title: string; unlocked: boolean; place_name: string | null; image: string }
+
+// 인증 방문 1회와 새로운 방문 가게 1곳을 각각 한 칸으로 쌓는다.
+// 화면에서 두 원천을 함께 보여주므로, 레벨 진행이 무엇으로 올라가는지 숨기지 않는다.
+const DEX_LEVEL_GOALS = [0, 3, 8, 15, 25, 40]
 
 const TABS = [
   { key: "visits", label: "방문기록" },
@@ -99,6 +103,9 @@ export function CrewShowcase({
 
   const count = { visits: d.visits.length, lists: d.lists.length, posts: d.posts.length }
   const unlockedCount = (menus || []).filter((m) => m.unlocked).length
+  const verifiedVisits = Math.max(0, d.visit_summary?.visits ?? 0)
+  const visitedPlaces = Math.max(0, d.visit_summary?.unique_places ?? 0)
+  const dexProgress = getDexProgress(verifiedVisits, visitedPlaces)
 
   return (
     <section id="crew-showcase" className="mt-5 scroll-mt-20 border-t border-[#eee9e1] pt-5">
@@ -276,21 +283,61 @@ export function CrewShowcase({
         )}
       </div>
 
-      {/* 메뉴 도감 — 접어둔다. 잠긴 칸이 화면을 먹지 않게. */}
+      {/* 메뉴 도감 — 누적 레벨을 먼저 보여주고, 카드 목록은 필요할 때 연다. */}
       {menus && menus.length > 0 && (
-        <div id="crew-menu-codex" className="mt-4 scroll-mt-20">
-          <button
-            onClick={() => setDexOpen((v) => !v)}
-            className="flex w-full items-center justify-between border-y border-[#eee9e1] py-3"
-          >
-            <span className="text-[13px] font-bold text-[#4b433e]">메뉴 도감</span>
-            <span className="flex items-center gap-1.5 text-[11.5px] text-[#9b928b]">
-              {unlockedCount} / {menus.length}종
-              <ChevronRight className={`h-4 w-4 transition-transform ${dexOpen ? "rotate-90" : ""}`} />
+        <div id="crew-menu-codex" className="mt-5 scroll-mt-20 border-t border-[#eee9e1] pt-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <BookOpen className="h-4 w-4 text-[#a36b3b]" />
+                <span className="text-[11px] font-bold text-[#a36b3b]">메뉴 도감</span>
+                <span className="rounded-full bg-[#f7f1e8] px-2 py-0.5 text-[10px] font-black text-[#8b552e]">Lv.{dexProgress.level}</span>
+              </div>
+              <h3 className="mt-1 text-[16px] font-black tracking-[-0.03em] text-[#2f2925]">우리 크루의 맛집 기록</h3>
+              <p className="mt-1 text-[11.5px] leading-relaxed text-[#8d837b]">인증 방문과 새로운 가게가 쌓일수록 도감 레벨이 올라가요.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDexOpen((v) => !v)}
+              aria-expanded={dexOpen}
+              className="flex shrink-0 items-center gap-1 rounded-full border border-[#eee1d1] bg-[#fffaf2] px-2.5 py-1.5 text-[10.5px] font-bold text-[#8b552e]"
+            >
+              메뉴 {unlockedCount}/{menus.length}
+              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${dexOpen ? "rotate-90" : ""}`} />
+            </button>
+          </div>
+
+          <div className="mt-4 flex items-end justify-between gap-3">
+            <div>
+              <span className="text-[26px] font-black tracking-[-0.06em] text-[#2f2925]">{dexProgress.score}</span>
+              <span className="ml-1 text-[11px] font-bold text-[#8d837b]">누적 활동</span>
+            </div>
+            <span className="pb-1 text-[10.5px] font-bold text-[#a36b3b]">
+              {dexProgress.nextGoal === null ? "최고 레벨" : `다음 레벨까지 ${dexProgress.remaining}칸`}
             </span>
-          </button>
+          </div>
+          <div
+            className="mt-2 h-2 overflow-hidden rounded-full bg-[#eee9e1]"
+            role="progressbar"
+            aria-label="메뉴 도감 레벨 진행도"
+            aria-valuemin={0}
+            aria-valuemax={dexProgress.nextGoal ?? Math.max(dexProgress.score, 1)}
+            aria-valuenow={dexProgress.score}
+          >
+            <span className="block h-full rounded-full bg-[#e9a23b] transition-[width] duration-500" style={{ width: `${Math.round(dexProgress.progress * 100)}%` }} />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[10.5px] text-[#9b928b]">
+            <span>인증 방문 {verifiedVisits}회</span>
+            <span>방문 가게 {visitedPlaces}곳</span>
+          </div>
+
           {dexOpen && (
-            <div className="mt-2 grid grid-cols-4 gap-1.5">
+            <div className="mt-4 border-t border-[#eee9e1] pt-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[11px] font-bold text-[#8d837b]">발견한 메뉴</span>
+                <span className="text-[10.5px] text-[#b0a69e]">방문한 가게에서 자동으로 쌓여요</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
               {[...menus].sort((a, b) => Number(b.unlocked) - Number(a.unlocked)).map((m) => (
                 <div key={m.key} className="overflow-hidden rounded-lg">
                   <div className="relative">
@@ -312,12 +359,36 @@ export function CrewShowcase({
                   </div>
                 </div>
               ))}
+              </div>
             </div>
           )}
         </div>
       )}
     </section>
   )
+}
+
+function getDexProgress(visits: number, places: number) {
+  const score = Math.max(0, Math.floor(visits)) + Math.max(0, Math.floor(places))
+  let levelIndex = 0
+  for (let i = 1; i < DEX_LEVEL_GOALS.length; i += 1) {
+    if (score < DEX_LEVEL_GOALS[i]) break
+    levelIndex = i
+  }
+
+  const currentGoal = DEX_LEVEL_GOALS[levelIndex]
+  const nextGoal = DEX_LEVEL_GOALS[levelIndex + 1] ?? null
+  const progress = nextGoal === null
+    ? 1
+    : Math.min(1, Math.max(0, (score - currentGoal) / (nextGoal - currentGoal)))
+
+  return {
+    score,
+    level: levelIndex + 1,
+    nextGoal,
+    remaining: nextGoal === null ? 0 : Math.max(0, nextGoal - score),
+    progress,
+  }
 }
 
 function ArchiveMetric({ label, value }: { label: string; value: string }) {

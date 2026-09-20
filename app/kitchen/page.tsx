@@ -166,7 +166,7 @@ export default function KitchenTabPage() {
         </div>
       ) : (
         <div className="px-4 pt-3">
-          {current && <KitchenContent key={current.id} crew={current} neighbors={neighbors} onRanking={() => setSection("ranking")} />}
+          {current && <KitchenContent key={current.id} crew={current} />}
         </div>
       )}
 
@@ -191,7 +191,7 @@ type Kitchen = {
   hero_place?: HeroPlace | null
   menus: { key: string; title: string; unlocked: boolean; place_name: string | null; image: string }[]
 }
-function KitchenContent({ crew, neighbors, onRanking }: { crew: Crew; neighbors: NeighborCrew[]; onRanking: () => void }) {
+function KitchenContent({ crew }: { crew: Crew }) {
   const router = useRouter()
   const { data, loading, error, refreshing, reload } = useCrewResource<Kitchen>(`/api/groups/${encodeURIComponent(crew.id)}/kitchen`)
   const [showcaseCommand, setShowcaseCommand] = useState<ShowcaseCommand | null>(null)
@@ -230,7 +230,6 @@ function KitchenContent({ crew, neighbors, onRanking }: { crew: Crew; neighbors:
       <CrewMissions
         groupId={crew.id}
         onMenuDex={() => focusShowcase("menu")}
-        onRanking={onRanking}
         onVisits={() => focusShowcase("visits")}
       />
     </div>
