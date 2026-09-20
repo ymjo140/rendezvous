@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, inspect, text
 
 TABLES = ("visit_events", "visit_participants", "visit_approval_requests", "partnership_redemptions")
 SQL = Path(__file__).resolve().parents[1] / "src/migrations/20260908_verified_visits.sql"
+LOCATION_SQL = Path(__file__).resolve().parents[1] / "src/migrations/20260920_location_checkin.sql"
 
 
 def main():
@@ -22,6 +23,7 @@ def main():
         if args.apply:
             conn.execute(text("SELECT pg_advisory_xact_lock(20260908, 2)"))
             conn.exec_driver_sql(SQL.read_text())
+            conn.exec_driver_sql(LOCATION_SQL.read_text())
         missing = set(TABLES) - set(inspect(conn).get_table_names())
         if missing:
             raise SystemExit("Missing tables: " + ", ".join(sorted(missing)))

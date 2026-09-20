@@ -39,7 +39,7 @@ BETA_METADATA_KEYS = frozenset({
 })
 BETA_METADATA_STRING_VALUES = {
     "surface": frozenset({"checkin", "list_copy", "crew_mission", "crew_profile"}),
-    "source": frozenset({"merchant_approval", "signed_qr", "crew_copy", "personal_copy", "manual"}),
+    "source": frozenset({"location", "merchant_approval", "signed_qr", "crew_copy", "personal_copy", "manual"}),
     "action": frozenset({"view", "borrow", "save", "other"}),
     "result": frozenset({"success", "error", "pending", "verified"}),
     "experiment_group": frozenset({"control", "variant_a", "variant_b"}),

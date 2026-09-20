@@ -27,7 +27,7 @@ type VisitArchiveItem = {
   visit_date_kst: string
   occurred_at: string
   participant_count: number
-  source_label: "signed_qr" | "merchant_approval" | "mixed" | "unknown"
+  source_label: "location" | "signed_qr" | "merchant_approval" | "mixed" | "unknown"
   visit_number: number
   revisit: boolean
 }
@@ -41,7 +41,11 @@ type VisitSummary = {
   source_counts: Record<string, number>
 }
 type Post = { id: string; content: string | null; image: string | null; place_name: string; author: string; created_at: string; likes: number }
-type Menu = { key: string; title: string; unlocked: boolean; place_name: string | null; image: string }
+type Menu = {
+  key: string; title: string; group?: string; unlocked: boolean; place_name: string | null; image: string
+  visits?: number; unique_places?: number; score?: number; level?: number; next_goal?: number | null
+  remaining?: number; progress?: number
+}
 
 // 인증 방문 1회와 새로운 방문 가게 1곳을 각각 한 칸으로 쌓는다.
 // 화면에서 두 원천을 함께 보여주므로, 레벨 진행이 무엇으로 올라가는지 숨기지 않는다.
@@ -169,7 +173,7 @@ export function CrewShowcase({
                         <div className="truncate text-[13px] font-bold text-[#39322d]">{v.place_name}</div>
                         <div className="mt-0.5 flex items-center gap-1 text-[11px] text-[#8d837b]">
                           <Clock3 className="h-3 w-3 text-[#b8aea5]" />
-                          {v.visit_date_kst} · {v.participant_count}명 · {v.source_label === "signed_qr" ? "QR 인증" : v.source_label === "merchant_approval" ? "점주 승인" : v.source_label === "mixed" ? "복합 인증" : "인증 확인"}
+                          {v.visit_date_kst} · {v.participant_count}명 · {v.source_label === "location" ? "위치 인증" : v.source_label === "signed_qr" ? "QR 인증" : v.source_label === "merchant_approval" ? "점주 승인" : v.source_label === "mixed" ? "복합 인증" : "인증 확인"}
                         </div>
                       </div>
                       <span className={`flex-shrink-0 text-[10px] font-bold ${v.revisit ? "text-[#a36b3b]" : "text-[#52745d]"}`}>
@@ -339,7 +343,7 @@ export function CrewShowcase({
               </div>
               <div className="grid grid-cols-4 gap-1.5">
               {[...menus].sort((a, b) => Number(b.unlocked) - Number(a.unlocked)).map((m) => (
-                <div key={m.key} className="overflow-hidden rounded-lg">
+                  <div key={m.key} className="overflow-hidden rounded-lg">
                   <div className="relative">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -348,6 +352,9 @@ export function CrewShowcase({
                       loading="lazy"
                       className={`aspect-square w-full object-cover bg-gray-100 ${m.unlocked ? "" : "grayscale opacity-40"}`}
                     />
+                    <span className={`absolute left-1 top-1 rounded-full px-1.5 py-0.5 text-[8px] font-black leading-none ${m.unlocked ? "bg-[#2f2925]/80 text-white" : "bg-black/45 text-white/85"}`}>
+                      Lv.{m.level ?? (m.unlocked ? 2 : 1)}
+                    </span>
                     {!m.unlocked && (
                       <span className="absolute inset-0 flex items-center justify-center">
                         <Lock className="h-3.5 w-3.5 text-white drop-shadow" />
@@ -356,6 +363,9 @@ export function CrewShowcase({
                   </div>
                   <div className={`px-1 py-1 text-[9.5px] font-bold leading-tight ${m.unlocked ? "text-gray-700" : "text-gray-400"}`}>
                     {m.title}
+                  </div>
+                  <div className="px-1 pb-1 text-[8.5px] leading-tight text-[#a29a93]">
+                    가게 {m.unique_places ?? 0}곳 · 방문 {m.visits ?? 0}회
                   </div>
                 </div>
               ))}

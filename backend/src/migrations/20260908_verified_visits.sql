@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS visit_participants (
 	distance_m FLOAT, 
 	PRIMARY KEY (id), 
 	CONSTRAINT uq_visit_participant UNIQUE (visit_id, user_id), 
-	CONSTRAINT ck_visit_evidence CHECK (evidence_type IN ('signed_qr', 'merchant_approval')), 
+	CONSTRAINT ck_visit_evidence CHECK (evidence_type IN ('location', 'signed_qr', 'merchant_approval')),
 	FOREIGN KEY(visit_id) REFERENCES visit_events (id) ON DELETE CASCADE, 
 	FOREIGN KEY(user_id) REFERENCES users (id)
 );
