@@ -107,12 +107,12 @@ export default function KitchenTabPage() {
       )}
 
       <div className="px-4 pt-3">
-        <p className="mb-2 px-1 text-[11.5px] leading-relaxed text-slate-500">크루원과 함께 방문하고, 다녀온 기록으로 서로의 취향을 증명해보세요.</p>
+        <p className="mb-2 px-1 text-[11.5px] leading-relaxed text-slate-500">모임 멤버와 함께 방문하고, 다녀온 기록으로 서로의 취향을 증명해보세요.</p>
       <div className="flex border-b border-[#e9e4dc]">
         {([
-          { key: "mine", label: "우리 크루", icon: Users },
-          { key: "ranking", label: "랭킹", icon: Trophy },
-          { key: "discover", label: "다른 크루", icon: Compass },
+          { key: "mine", label: "내 모임", icon: Users },
+          { key: "ranking", label: "모임 랭킹", icon: Trophy },
+          { key: "discover", label: "다른 모임", icon: Compass },
         ] as const).map((tab) => {
           const Icon = tab.icon
           return (

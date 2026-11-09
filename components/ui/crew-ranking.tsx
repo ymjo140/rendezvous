@@ -36,9 +36,9 @@ export function CrewRanking() {
 
   if (loading && !data) {
     return (
-      <section aria-label="크루 랭킹" className="rounded-3xl border border-slate-100 bg-white p-4">
+      <section aria-label="모임 랭킹" className="rounded-3xl border border-slate-100 bg-white p-4">
         <div className="flex items-center gap-2 text-sm text-slate-400">
-          <Loader2 className="h-4 w-4 animate-spin" /> 크루 랭킹을 불러오는 중…
+          <Loader2 className="h-4 w-4 animate-spin" /> 모임 랭킹을 불러오는 중…
         </div>
       </section>
     )
@@ -51,13 +51,13 @@ export function CrewRanking() {
   const items = data?.items ?? []
 
   return (
-    <section aria-label="크루 랭킹" className="rounded-3xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4">
+    <section aria-label="모임 랭킹" className="rounded-3xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4">
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-amber-600 shadow-sm">
           <Award className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="text-[15px] font-bold text-slate-900">공개 크루 랭킹</h2>
+          <h2 className="text-[15px] font-bold text-slate-900">모임 랭킹</h2>
           <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
             함께 다녀온 검증 방문과 새로운 장소 기록이 순위의 중심이에요.
           </p>

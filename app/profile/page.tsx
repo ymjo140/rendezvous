@@ -1,15 +1,18 @@
 "use client"
 
-// 🧪 [redesign/group-home] 프로필 탭 — 기존 MyPageTab 그대로 편입.
-// 내 폴더(저장)는 여기와 지도 탭 '저장 리스트'에서 접근 (저장 탭 삭제 결정).
+// ─────────────────────────────────────────────────────────────
+// 👤 MY — 계정 설정 · 내 활동 · 알림 관리
+// 기존 MyPageTab을 기반으로, 모임 관리/랭킹 진입점 제공.
+// 프로필 스탯(방문 맛집, 총 모임, 포인트) + 내 활동 메뉴 + 설정.
+// ─────────────────────────────────────────────────────────────
 
 import React from "react"
 import { MyPageTab } from "@/components/ui/mypage-tab"
 import { TabBar } from "../tab-bar"
 
-export default function ProfileTabPage() {
+export default function MyPage() {
   return (
-    <div className="mx-auto min-h-screen max-w-md bg-white pb-16">
+    <div className="mx-auto min-h-screen max-w-md bg-[#F5F9F8] pb-16">
       <MyPageTab />
       <TabBar />
     </div>

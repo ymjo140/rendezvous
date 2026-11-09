@@ -2,24 +2,25 @@
 
 import React from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { Compass, ChefHat, LayoutGrid, Mail, User } from "lucide-react"
+import { Home, Search, MessageCircle, ShoppingBag, User } from "lucide-react"
 
-const BRAND = "#F5A623"
+const MINT = "#3BD4AE"
 
 /**
- * 공개 경험은 크루 마을에서, 운영 기능은 크루 관리에서 연다.
- * /crews와 /map은 기존 링크 호환을 위해 라우트를 유지한다.
+ * 5탭 구조: 홈(스케줄러) | 탐색(숏폼+추천) | 채팅(모임별) | 샵(제휴·핫딜·IAP) | MY(설정)
+ * 모임의 전 과정을 앱 안에서 완결하는 플랫폼.
+ * 시각 언어: 민트 #3BD4AE = 메인 / 앰버 #FFB800 = 단골 모임 / 오렌지 #FF6B35 = 핫딜·긴급
  */
 export function TabBar() {
   const router = useRouter()
   const pathname = usePathname()
 
   const tabs = [
-    { key: "home", label: "홈", icon: Compass, path: "/", exact: true },
-    { key: "town", label: "크루 마을", icon: ChefHat, path: "/kitchen" },
-    { key: "feed", label: "탐색", icon: LayoutGrid, path: "/search" },
-    { key: "mail", label: "메일", icon: Mail, path: "/mail" },
-    { key: "profile", label: "프로필", icon: User, path: "/profile" },
+    { key: "home", label: "홈", icon: Home, path: "/", exact: true },
+    { key: "discover", label: "탐색", icon: Search, path: "/search" },
+    { key: "chat", label: "채팅", icon: MessageCircle, path: "/chats" },
+    { key: "shop", label: "샵", icon: ShoppingBag, path: "/shop" },
+    { key: "my", label: "MY", icon: User, path: "/profile" },
   ]
 
   return (
@@ -30,8 +31,8 @@ export function TabBar() {
           const active = t.exact ? pathname === t.path : pathname?.startsWith(t.path)
           return (
             <button key={t.key} onClick={() => router.push(t.path)} className="flex flex-1 flex-col items-center gap-0.5 py-2">
-              <Icon className="h-5 w-5" style={{ color: active ? BRAND : "#d1d5db" }} />
-              <span className="text-[10px] font-medium" style={{ color: active ? BRAND : "#9ca3af" }}>{t.label}</span>
+              <Icon className="h-5 w-5" style={{ color: active ? MINT : "#d1d5db" }} />
+              <span className="text-[10px] font-medium" style={{ color: active ? MINT : "#9ca3af" }}>{t.label}</span>
             </button>
           )
         })}

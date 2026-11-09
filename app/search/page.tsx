@@ -88,11 +88,43 @@ const TAGS = [
   { tag: "work", label: "회식", emoji: "🥂" },
   { tag: "drink", label: "술 한잔", emoji: "🍶" },
   { tag: "cafe", label: "카페", emoji: "☕" },
+  { tag: "exhibit", label: "전시", emoji: "🎨" },
+  { tag: "show", label: "공연", emoji: "🎬" },
+  { tag: "experience", label: "체험", emoji: "🏃" },
   { tag: "solo", label: "혼밥", emoji: "🍚" },
   { tag: "friends", label: "친구", emoji: "🍻" },
   { tag: "family", label: "가족", emoji: "🍲" },
   { tag: "special", label: "기념일", emoji: "🎂" },
 ]
+
+// ── 숏폼 섹션 컴포넌트 ──────────────────────────────────────
+type ShortFormItem = { id: string; title: string; emoji: string; author: string; views: string; duration: string; gradient: string }
+const SHORTFORM_MOCK: ShortFormItem[] = [
+  { id: "1", title: "을지로 골목 맛집", emoji: "🍜", author: "@맛집러", views: "12.3K", duration: "0:32", gradient: "linear-gradient(180deg,#f5d5c8,#e8b4a0)" },
+  { id: "2", title: "성수 카페 투어", emoji: "☕", author: "@카페헌터", views: "8.7K", duration: "0:45", gradient: "linear-gradient(180deg,#d4e8d0,#a8d4a0)" },
+  { id: "3", title: "호크니 전시 후기", emoji: "🎨", author: "@아트러버", views: "5.2K", duration: "1:02", gradient: "linear-gradient(180deg,#e0d0f0,#c8b0e0)" },
+  { id: "4", title: "이태원 숨은 바", emoji: "🍷", author: "@바텐더", views: "15.1K", duration: "0:28", gradient: "linear-gradient(180deg,#f5e0c8,#e8c8a0)" },
+]
+
+function ShortFormSection() {
+  return (
+    <section className="px-4 pt-4 pb-2">
+      <h2 className="text-[13px] font-black text-[#31251e] mb-2.5">🎬 오늘의 숏폼</h2>
+      <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+        {SHORTFORM_MOCK.map((item) => (
+          <button key={item.id} className="relative w-[100px] h-[140px] rounded-2xl overflow-hidden flex-shrink-0 shadow-sm active:scale-95 transition-transform" style={{ background: item.gradient }}>
+            <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-3xl opacity-90">{item.emoji}</span>
+            <span className="absolute top-1.5 left-1.5 bg-white/90 rounded px-1.5 py-0.5 text-[7px] font-bold text-[#FF6B35]">▶ {item.duration}</span>
+            <div className="absolute bottom-0 left-0 right-0 p-2" style={{ background: "linear-gradient(transparent, rgba(0,0,0,0.6))" }}>
+              <p className="text-[9px] font-semibold text-white leading-tight">{item.title}</p>
+              <p className="text-[7px] text-white/70 mt-0.5">{item.author} · {item.views}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
 
 const REGIONS = ["성수", "홍대", "강남", "연남", "이태원", "망원", "판교", "성북"]
 const SORTS = [
@@ -110,7 +142,7 @@ function normalizeDiscovery(data: {
 
   const lists: DiscoveryItem[] = (data.items || []).map((item) => ({
     kind: item.by?.kind === "crew" ? "crew" : "list",
-    label: item.by?.kind === "crew" ? "크루" : "리스트",
+    label: item.by?.kind === "crew" ? "단골 모임" : "리스트",
     id: item.by?.kind === "crew" && item.by.id ? item.by.id : item.folder_id,
     name: item.name,
     description: item.description || `${item.item_count || 0}곳을 담은 기록`,
@@ -294,7 +326,10 @@ export default function HomeSearchPage() {
         </div>
       </div>
 
-      <section className="px-4 pt-4">
+      {/* 숏폼 릴스 영역 */}
+      <ShortFormSection />
+
+      <section className="px-4 pt-1">
         <div className="flex items-end justify-between gap-3">
           <div>
             <p className="text-[11px] font-bold text-[#a7866d]">장소와 크루를 함께 발견해요</p>

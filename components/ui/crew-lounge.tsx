@@ -97,7 +97,7 @@ export function CrewLounge({
         </button>
         <button type="button" onClick={() => onOpenRanking?.()} className="flex flex-col items-center gap-1 rounded-xl bg-white/80 py-2 text-[10px] font-semibold text-[#806b57] transition-colors hover:bg-white">
           <Award className="h-4 w-4 text-[#d59a3a]" />
-          크루 랭킹
+          모임 랭킹
         </button>
       </div>
     </section>

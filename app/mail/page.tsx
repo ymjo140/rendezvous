@@ -66,7 +66,7 @@ type MailResponse = {
 const FILTERS: { key: MailCategory; label: string }[] = [
   { key: "all", label: "전체" },
   { key: "friend", label: "친구" },
-  { key: "crew", label: "크루" },
+  { key: "crew", label: "모임" },
   { key: "partnership", label: "제휴" },
   { key: "reward", label: "보상" },
   { key: "notice", label: "공지" },
